@@ -1,0 +1,50 @@
+{
+  "name": "@diviops/mcp-server",
+  "version": "0.1.0",
+  "description": "MCP server exposing Divi 5 Visual Builder as tools for Claude",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "diviops-mcp": "dist/index.js"
+  },
+  "files": [
+    "dist",
+    "templates",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsc --watch",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "mcp",
+    "divi",
+    "wordpress",
+    "claude",
+    "visual-builder",
+    "model-context-protocol"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/oaris-dev/diviops.git",
+    "directory": "diviops-server"
+  },
+  "bugs": {
+    "url": "https://github.com/oaris-dev/diviops/issues"
+  },
+  "homepage": "https://github.com/oaris-dev/diviops/tree/main/diviops-server#readme",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.7.0"
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "name": "divi-5-builder",
+  "description": "AI agent skill for building pages and layouts on WordPress sites running Divi 5. Create sections, modules, presets, theme builder templates, and design systems via MCP tools. Includes CSS effects and WebGL shader backgrounds via the DiviOps Design Library.",
+  "version": "1.0.0-beta.1",
+  "author": {
+    "name": "oaris-dev"
+  },
+  "homepage": "https://github.com/oaris-dev/diviops",
+  "repository": "https://github.com/oaris-dev/diviops",
+  "license": "MIT",
+  "keywords": [
+    "divi",
+    "divi-5",
+    "wordpress",
+    "page-builder",
+    "mcp",
+    "design",
+    "ai-agent",
+    "diviops"
+  ]
+}

@@ -1,0 +1,20 @@
+{
+  "name": "diviops",
+  "metadata": {
+    "description": "DiviOps — AI agent tools and skills for building Divi 5 WordPress pages with Claude Code"
+  },
+  "owner": {
+    "name": "oaris-dev",
+    "email": "hallo@oaris.de"
+  },
+  "plugins": [
+    {
+      "name": "divi-5-builder",
+      "description": "AI agent skill for building pages and layouts on WordPress sites running Divi 5. Create sections, modules, presets, theme builder templates, and design systems via MCP tools.",
+      "author": {
+        "name": "oaris-dev"
+      },
+      "source": "./"
+    }
+  ]
+}
