@@ -154,16 +154,20 @@ The `diviops_wp_cli` tool validates every command against a safety allowlist bef
 
 ### Default allowlist (always available)
 
-Read-only commands plus non-destructive writes needed for core MCP functionality:
+Read-only commands plus non-destructive writes needed for core MCP functionality and local development workflows:
 
 | Category | Commands |
 |----------|----------|
 | Options | `option get`, `option list` |
 | Posts | `post list`, `post get`, `post create`, `post update` |
 | Post meta | `post meta get`, `post meta list`, `post meta set`, `post meta update` |
+| Post types | `post-type list`, `post-type get` |
+| Taxonomies | `taxonomy list`, `term list`, `term create`, `term update` |
+| ACF / SCF | `acf export`, `acf import`, `acf field-group list`, `acf field-group get` |
 | Users | `user list` |
 | Cache | `cache flush`, `transient delete`, `rewrite flush` |
-| Info | `cron event list`, `plugin list`, `theme list`, `menu list`, `term list`, `term create`, `site url` |
+| Export | `export` (WXR data export to file) |
+| Info | `cron event list`, `plugin list`, `theme list`, `menu list`, `site url` |
 
 ### Extended commands (opt-in)
 
@@ -174,6 +178,9 @@ These commands carry higher risk and require explicit opt-in via the `DIVIOPS_WP
 | `option update` | High | Can change site URL, admin email, or security settings |
 | `post delete` | Medium | Permanently removes content |
 | `post meta delete` | Medium | Removes metadata |
+| `term delete` | Medium | Permanently removes taxonomy terms |
+| `search-replace` | High | Bulk database modification — can corrupt content if misused |
+| `import` | Medium | Bulk content ingestion from WXR files |
 | `plugin activate` | Medium | Can enable untrusted plugins |
 | `plugin deactivate` | Medium | Can disable security plugins |
 | `eval-file` | Critical | Executes arbitrary PHP from a file path |
@@ -186,11 +193,15 @@ claude mcp add diviops-mcp -- env \
   WP_USER=admin \
   WP_APP_PASSWORD=xxxx \
   WP_PATH="/path/to/wordpress" \
-  DIVIOPS_WP_CLI_ALLOW="option update,post delete" \
+  DIVIOPS_WP_CLI_ALLOW="option update,post delete,search-replace" \
   npx @diviops/mcp-server
 ```
 
 Only list the specific commands you need. Unknown entries are ignored with a warning.
+
+> **Note on `acf import`**: included in the default allowlist because it's an idempotent dev-time schema operation (re-creates field groups from JSON). Bulk content imports use `wp import` instead, which is opt-in.
+
+> **Known limitation — filesystem access**: Validation is prefix-based, not flag-aware. Commands that read from or write to the filesystem (`acf export`/`acf import`, `export`, opt-in `import`/`eval-file`) can target any path reachable by the WP-CLI user. For shared or multi-tenant environments, consider wrapping the MCP server with a stricter proxy or running it under an account with limited filesystem permissions. Flag-level validation is a candidate future enhancement.
 
 ## Example Usage
 

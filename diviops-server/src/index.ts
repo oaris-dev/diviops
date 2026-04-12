@@ -1234,7 +1234,7 @@ server.registerTool(
   "diviops_wp_cli",
   {
     description:
-      "Run a WP-CLI command on the WordPress site. Requires WP_PATH env var (LOCAL_SITE_ID auto-detected from Local by Flywheel). Commands validated against a safety allowlist. Default tier: read commands, post create/update, post meta read/write, cache/rewrite flush, term create. Extended tier (requires DIVIOPS_WP_CLI_ALLOW env var): option update, post delete, post meta delete, plugin activate/deactivate, eval-file. Use --format=json for structured output.",
+      "Run a WP-CLI command on the WordPress site. Requires WP_PATH env var (LOCAL_SITE_ID auto-detected from Local by Flywheel). Commands validated against a safety allowlist. Default tier covers read ops across options/posts/post-types/taxonomies/users/info, non-destructive writes (post/term create+update, post meta read/write, cache/rewrite/transient flush), ACF schema ops (export/import/list/get field-group), and WXR export. Extended tier (requires DIVIOPS_WP_CLI_ALLOW env var) adds destructive or bulk-modifying ops: option update, post/post meta/term delete, search-replace, import, plugin activate/deactivate, eval-file. Use --format=json for structured output. Full allowlist + tier rationale in the MCP server README.",
     inputSchema: {
       command: z
         .string()

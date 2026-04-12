@@ -339,6 +339,10 @@ This renders as `rgba(255,255,255,0.05)`. Used by the oa Glass Card preset for s
 
 ### When to Use Presets vs Inline Styles
 
+**If you're starting a new project, presets are optional.** DiviOps generates polished pages using hardcoded values from [design-guide.md](design-guide.md) patterns without any preset setup. See [SKILL.md "First time on a project?"](../SKILL.md#first-time-on-a-project-start-here) for the shortest path.
+
+The guidance below applies once you've bootstrapped the `oa` system on a site (via SKILL.md's bootstrap workflow):
+
 **Use attribute-level presets (`groupPreset`) when:**
 - Typography: heading sizes, body text sizes — always use `oa Heading H*` / `oa Text *` presets
 - Button styling: use `oa Button *` presets via `groupPreset.button`
@@ -352,6 +356,7 @@ This renders as `rgba(255,255,255,0.05)`. Used by the oa Glass Card preset for s
 **Use hardcoded values when:**
 - One-off values that don't fit the design system
 - Content-specific styling (animation delays, specific positioning)
+- You haven't bootstrapped the design system yet (this is the default for new sites — all patterns in design-guide.md work with hardcoded values)
 
 ## Design System Manifest Schema
 

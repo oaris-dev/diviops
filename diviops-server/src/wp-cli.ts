@@ -37,33 +37,58 @@ const DEFAULT_COMMANDS: readonly string[] = [
   'post meta list',
   'post meta set',
   'post meta update',
+  // Post types (read-only)
+  'post-type list',
+  'post-type get',
+  // Taxonomies (read + non-destructive write)
+  'taxonomy list',
+  'term list',
+  'term create',
+  'term update',
+  // ACF / SCF (schema ops — idempotent dev-time workflow)
+  'acf export',
+  'acf import',
+  'acf field-group list',
+  'acf field-group get',
   // Users (read-only)
   'user list',
   // Cache (non-destructive maintenance)
   'cache flush',
   'transient delete',
   'rewrite flush',
+  // Export (reads data, writes to file only)
+  'export',
   // Info (read-only)
   'cron event list',
   'plugin list',
   'theme list',
   'menu list',
-  'term list',
-  'term create',
   'site url',
 ];
 
 /**
  * Extended commands that require explicit opt-in via DIVIOPS_WP_CLI_ALLOW env var.
- * These carry higher risk: destructive operations, arbitrary code execution,
- * or the ability to disable security features.
+ * These carry higher risk: destructive operations, bulk database modification,
+ * arbitrary code execution, or the ability to disable security features.
  *
- * To enable, set: DIVIOPS_WP_CLI_ALLOW="option update,post delete,eval-file"
+ * To enable, set a comma-separated subset, e.g.:
+ *   DIVIOPS_WP_CLI_ALLOW="option update,post delete,search-replace"
+ *
+ * Only list the specific commands you need — unknown entries are ignored.
+ *
+ * Known limitation: validation is prefix-based, not flag-aware. Commands that
+ * touch the filesystem (acf export/import, export, eval-file) can write to
+ * or read from any path reachable by the WP-CLI user. For shared environments
+ * consider wrapping the MCP server with a stricter proxy or running it under
+ * an account with limited filesystem permissions.
  */
 const EXTENDED_COMMANDS: readonly string[] = [
   'option update',       // Can change site URL, admin email, active plugins
   'post delete',         // Destructive — permanently removes content
   'post meta delete',    // Destructive — removes metadata
+  'term delete',         // Destructive — removes taxonomy terms
+  'search-replace',      // Bulk DB modification — highest-risk content op
+  'import',              // Bulk content ingestion from WXR files
   'plugin activate',     // Can enable untrusted plugins
   'plugin deactivate',   // Can disable security plugins
   'eval-file',           // Executes arbitrary PHP from a file path
