@@ -335,7 +335,7 @@ When the oa design system is set up (see [presets.md](presets.md)), use `groupPr
 
 ### After (preset — ~180 chars, no size/weight/lineHeight attrs)
 ```jsonc
-{"title":{"innerContent":{"desktop":{"value":"Page Title"}},"decoration":{"font":{"font":{"desktop":{"value":{"color":"$variable({\"type\":\"color\",\"value\":{\"name\":\"gcid-oa-white\",\"settings\":{}}})"}}}}}},"groupPreset":{"designTitleText":{"presetId":["<heading-h1>"],"groupName":"divi/font"}}}
+{"title":{"innerContent":{"desktop":{"value":"Page Title"}},"decoration":{"font":{"font":{"desktop":{"value":{"color":"$variable({\"type\":\"color\",\"value\":{\"name\":\"gcid-oa-white\",\"settings\":{}}})$"}}}}}},"groupPreset":{"designTitleText":{"presetId":["<heading-h1>"],"groupName":"divi/font"}}}
 ```
 
 Size, weight, and line height come from the preset. Color uses a `$variable()$` token. Per-instance overrides (like animation delay) can still be added inline.
