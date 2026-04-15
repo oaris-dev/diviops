@@ -331,11 +331,25 @@ This renders as `rgba(255,255,255,0.05)`. Used by the oa Glass Card preset for s
 
 ### MCP Endpoints for Presets
 
-- `GET /divi-mcp/v1/presets` — Read all presets (D5 + legacy)
-- `GET /divi-mcp/v1/preset-audit` — Audit with referenced/unreferenced analysis
-- `POST /divi-mcp/v1/preset-cleanup` — Remove orphans, rename, dedup (dry_run default)
-- `POST /divi-mcp/v1/preset-update` — Update single preset (name, attrs)
-- `POST /divi-mcp/v1/preset-delete` — Delete single preset
+- `GET /diviops/v1/presets` — Read all presets (D5 + legacy)
+- `GET /diviops/v1/preset-audit` — Audit with referenced/unreferenced analysis
+- `GET /diviops/v1/preset-scan-orphans` — List UUIDs referenced in pages but missing from the D5 registry; separates dangling orphans from D4-legacy candidates
+- `POST /diviops/v1/preset-cleanup` — Remove orphans, rename, dedup (dry_run default)
+- `POST /diviops/v1/preset-create` — Create a new preset (module or group). Supported module types include `divi/button`, `divi/heading`, `divi/text`, `divi/blurb`, `divi/section`, `divi/row`, `divi/column`, `divi/group`, and any other type Divi tracks in the D5 registry
+- `POST /diviops/v1/preset-update` — Update single preset (name, attrs)
+- `POST /diviops/v1/preset-reassign` — Rewrite `modulePreset` refs across pages from `old_uuid` → `new_uuid`. Dry-run by default. `strip_inline: true` (default) also removes inline attrs that deep-equal the new preset — required so the preset actually takes effect (inline wins over preset)
+- `POST /diviops/v1/preset-delete` — Delete single preset
+
+### Consolidation workflow
+
+Typical flow for normalizing repeated inline styling into a reusable preset:
+
+1. `diviops_preset_scan_orphans` — identify UUIDs referenced in pages but missing from the registry (dangling deletions or D4-legacy refs)
+2. `diviops_preset_create` — create a fresh named preset with the desired shared attrs (e.g. `module_name: "divi/column"`, `name: "White Card Surface"`, `attrs: { module: { decoration: { background: ..., spacing: ..., border: ... } } }`) — returns `new_uuid`
+3. `diviops_preset_reassign` with `mode: "dry-run"` — preview which pages/modules would swap the orphan UUID → `new_uuid` and which inline attrs would be stripped
+4. `diviops_preset_reassign` with `mode: "apply"` — actually rewrite the pages; content goes through `parse_blocks` + `serialize_blocks` (no regex surgery) so only `modulePreset` arrays and redundant inline attrs are touched
+
+If you're starting from modules with *inline* styling (no existing UUID), substitute step 1 with a manual scan via `diviops_get_page` and use one of the modules' inline attrs as the seed for step 2.
 
 ### When to Use Presets vs Inline Styles
 

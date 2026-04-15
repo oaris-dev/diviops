@@ -845,6 +845,134 @@ server.registerTool(
   },
 );
 
+server.registerTool(
+  "diviops_preset_create",
+  {
+    description:
+      'Create a new preset in the Divi 5 registry. For module presets, supply module_name (e.g. "divi/column", "divi/button", "divi/section"), name, and attrs. For group (attribute-level) presets, set type="group" and supply group_name ("divi/font", "divi/button", etc.), group_id ("designTitleText", "button", etc.), and optionally primary_attr_name.',
+    inputSchema: {
+      module_name: z
+        .string()
+        .describe(
+          'Divi module slug (e.g. "divi/column", "divi/button", "divi/section"). For group presets, this is still required and describes the module the preset originated from.',
+        ),
+      name: z.string().describe("Display name for the new preset"),
+      attrs: z
+        .record(z.string(), z.any())
+        .describe(
+          "Full module attribute bag (same shape as a module's top-level attrs in block markup). Saved to both attrs and styleAttrs.",
+        ),
+      type: z
+        .enum(["module", "group"])
+        .optional()
+        .default("module")
+        .describe('"module" (default) or "group" for attribute-level presets.'),
+      group_name: z
+        .string()
+        .optional()
+        .describe(
+          'Group name (e.g. "divi/font", "divi/button"). Required when type="group".',
+        ),
+      group_id: z
+        .string()
+        .optional()
+        .describe(
+          'Group id (e.g. "designTitleText", "designText", "button"). Required when type="group".',
+        ),
+      primary_attr_name: z
+        .string()
+        .optional()
+        .describe(
+          'Primary attr name for the group (e.g. "title" for designTitleText). Optional.',
+        ),
+    },
+  },
+  async ({ module_name, name, attrs, type, group_name, group_id, primary_attr_name }) => {
+    if (type === "group" && (!group_name || !group_id)) {
+      throw new Error(
+        'type="group" requires both group_name and group_id. Example: group_name="divi/font", group_id="designTitleText".',
+      );
+    }
+    const body: Record<string, any> = { module_name, name, attrs, type };
+    if (group_name) body.group_name = group_name;
+    if (group_id) body.group_id = group_id;
+    if (primary_attr_name) body.primary_attr_name = primary_attr_name;
+    const result = await wp.request("/preset-create", { method: "POST", body });
+    return {
+      content: [
+        { type: "text" as const, text: JSON.stringify(result, null, 2) },
+      ],
+    };
+  },
+);
+
+server.registerTool(
+  "diviops_preset_reassign",
+  {
+    description:
+      'Reassign a preset UUID across page content. Walks pages and rewrites modules referencing old_uuid in their modulePreset array to reference new_uuid. Optionally strips inline attrs that duplicate the new preset\'s attrs (otherwise inline wins over preset). Defaults to dry-run — set mode="apply" to actually rewrite. Use this to consolidate repeated inline styling into a reusable preset after creating one with diviops_preset_create.',
+    inputSchema: {
+      old_uuid: z
+        .string()
+        .describe("Preset UUID to replace (can be a dangling/orphan UUID)"),
+      new_uuid: z
+        .string()
+        .describe(
+          "New preset UUID to insert. Must already exist in the registry.",
+        ),
+      page_ids: z
+        .array(z.number().int().positive())
+        .optional()
+        .describe(
+          "Restrict to specific post IDs. Omit to scan all pages and posts.",
+        ),
+      mode: z
+        .enum(["dry-run", "apply"])
+        .optional()
+        .default("dry-run")
+        .describe(
+          '"dry-run" (default) returns the diff without writing. "apply" rewrites page content.',
+        ),
+      strip_inline: z
+        .boolean()
+        .optional()
+        .default(true)
+        .describe(
+          "If true (default), strip inline attrs that deep-equal the new preset's attrs so the preset actually takes effect. Set false to swap UUIDs only.",
+        ),
+    },
+  },
+  async ({ old_uuid, new_uuid, page_ids, mode, strip_inline }) => {
+    const body: Record<string, any> = { old_uuid, new_uuid, mode, strip_inline };
+    if (page_ids) body.page_ids = page_ids;
+    const result = await wp.request("/preset-reassign", {
+      method: "POST",
+      body,
+    });
+    return {
+      content: [
+        { type: "text" as const, text: JSON.stringify(result, null, 2) },
+      ],
+    };
+  },
+);
+
+server.registerTool(
+  "diviops_preset_scan_orphans",
+  {
+    description:
+      "Scan page content for modulePreset UUIDs that are not in the D5 registry. Categorizes as dangling orphans (preset was deleted, reference remains) or D4-legacy candidates (preset exists in the legacy builder_global_presets_ng option but not in D5). Use before diviops_preset_reassign to identify stale UUIDs for consolidation.",
+  },
+  async () => {
+    const result = await wp.request("/preset-scan-orphans");
+    return {
+      content: [
+        { type: "text" as const, text: JSON.stringify(result, null, 2) },
+      ],
+    };
+  },
+);
+
 // ── Library Tools ───────────────────────────────────────────────────
 
 server.registerTool(

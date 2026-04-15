@@ -112,7 +112,7 @@ Use this to figure out which cascade path you're on without reading code:
 
 Run this only when you want the full token + preset setup for a site. **Not required for page generation** — inline styling works without any of it.
 
-This is a real commitment: ~72 API calls for tokens alone, plus manual preset creation in the Visual Builder (there is no programmatic preset-creation API yet — a future Visual Builder bridge would lift this). Bootstrap once you're sure you want design-system consistency across many pages on this site.
+This is a real commitment: ~72 API calls for tokens alone, plus ~24 `diviops_preset_create` calls to seed the oa preset catalog. Bootstrap once you're sure you want design-system consistency across many pages on this site.
 
 **Step 1 — Audit existing site:**
 1. `diviops_list_variables` with `prefix: "gcid-oa-"` — check for oa color tokens
@@ -126,9 +126,9 @@ This is a real commitment: ~72 API calls for tokens alone, plus manual preset cr
 4. Create number tokens (font sizes, spacings, radii, line heights) — ~37 calls (~72 total)
 
 **Step 3 — Create presets (if missing):**
-Presets must be built in the Visual Builder (no programmatic creation yet).
-1. Provide user a checklist of presets to create (see [presets.md](references/presets.md) for the full catalog)
-2. After each batch, run `diviops_preset_audit` to verify and capture UUIDs
+Use `diviops_preset_create` to write each preset to the D5 registry programmatically. Supply `module_name` (e.g. `divi/button`, `divi/column`, `divi/heading`), `name`, and the `attrs` bag (same shape as a module's top-level attrs in block markup). For attribute-level presets, set `type: "group"` with `group_name` + `group_id`.
+1. Walk the oa preset catalog in [presets.md](references/presets.md) and issue one `diviops_preset_create` call per entry (~24 calls). Capture each returned UUID.
+2. (Alternative) If you prefer a manual VB flow, create presets in the Visual Builder and then run `diviops_preset_audit` to discover UUIDs.
 
 **Step 4 — Generate manifest:**
 1. Match preset names to role keys (e.g. "oa Heading H1" → `heading-h1`)

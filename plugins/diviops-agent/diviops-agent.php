@@ -32,7 +32,8 @@ class DiviOps_Agent {
 	/**
 	 * REST namespace for all endpoints.
 	 */
-	const REST_NAMESPACE = 'diviops/v1';
+	const REST_NAMESPACE      = 'diviops/v1';
+	const REASSIGN_MAX_PAGES  = 1000;
 
 	/** Block comment tag constants for section parsing. */
 	const SECTION_OPEN  = '<!-- wp:divi/section';
@@ -337,6 +338,59 @@ class DiviOps_Agent {
 			'args'                => [
 				'preset_id' => [ 'required' => true, 'type' => 'string' ],
 			],
+		] );
+
+		register_rest_route( self::REST_NAMESPACE, '/preset-create', [
+			'methods'             => 'POST',
+			'callback'            => [ __CLASS__, 'preset_create' ],
+			'permission_callback' => [ __CLASS__, 'check_admin_permission' ],
+			'args'                => [
+				'module_name'       => [ 'required' => true,  'type' => 'string' ],
+				'name'              => [ 'required' => true,  'type' => 'string' ],
+				'attrs'             => [ 'required' => true,  'type' => 'object' ],
+				'type'              => [ 'required' => false, 'type' => 'string', 'default' => 'module' ],
+				'group_name'        => [ 'required' => false, 'type' => 'string' ],
+				'group_id'          => [ 'required' => false, 'type' => 'string' ],
+				'primary_attr_name' => [ 'required' => false, 'type' => 'string' ],
+			],
+		] );
+
+		register_rest_route( self::REST_NAMESPACE, '/preset-reassign', [
+			'methods'             => 'POST',
+			'callback'            => [ __CLASS__, 'preset_reassign' ],
+			'permission_callback' => [ __CLASS__, 'check_admin_permission' ],
+			'args'                => [
+				'old_uuid'     => [ 'required' => true,  'type' => 'string' ],
+				'new_uuid'     => [ 'required' => true,  'type' => 'string' ],
+				'page_ids'     => [
+					'required' => false,
+					'type'     => 'array',
+					'items'    => [ 'type' => 'integer' ],
+					'validate_callback' => static function ( $value ) {
+						if ( ! is_array( $value ) ) {
+							return new WP_Error( 'rest_invalid_param', 'page_ids must be an array of positive integers', [ 'status' => 400 ] );
+						}
+						foreach ( $value as $v ) {
+							if ( ! is_numeric( $v ) || (int) $v <= 0 || (float) $v !== (float) (int) $v ) {
+								return new WP_Error( 'rest_invalid_param', 'page_ids must contain only positive integers', [ 'status' => 400 ] );
+							}
+						}
+						return true;
+					},
+					'sanitize_callback' => static function ( $value ) {
+						return array_map( 'absint', (array) $value );
+					},
+				],
+				'mode'         => [ 'required' => false, 'type' => 'string', 'default' => 'dry-run', 'enum' => [ 'dry-run', 'apply' ] ],
+				'strip_inline' => [ 'required' => false, 'type' => 'boolean', 'default' => true ],
+			],
+		] );
+
+		register_rest_route( self::REST_NAMESPACE, '/preset-scan-orphans', [
+			'methods'             => 'GET',
+			'callback'            => [ __CLASS__, 'preset_scan_orphans' ],
+			// Admin-only: response includes page IDs + titles correlated to preset refs — inventory-leak risk.
+			'permission_callback' => [ __CLASS__, 'check_admin_permission' ],
 		] );
 
 		// ── Library Operations ───────────────────────────────────────
@@ -2823,6 +2877,457 @@ class DiviOps_Agent {
 			'success' => true,
 			'deleted' => $found,
 			'message' => "Preset '{$preset_id}' deleted.",
+		] );
+	}
+
+	/**
+	 * Create a new preset in the D5 registry.
+	 *
+	 * For type='module': writes to $d5['module'][module_name]['items'][uuid].
+	 * For type='group': writes to $d5['group'][group_name]['items'][uuid] — requires group_name and group_id; primary_attr_name is optional.
+	 */
+	public static function preset_create( $request ) {
+		$module_name  = sanitize_text_field( $request->get_param( 'module_name' ) );
+		$name         = sanitize_text_field( $request->get_param( 'name' ) );
+		$attrs        = $request->get_param( 'attrs' );
+		$type         = sanitize_key( $request->get_param( 'type' ) ?: 'module' );
+		$group_name   = sanitize_text_field( $request->get_param( 'group_name' ) ?? '' );
+		$group_id     = sanitize_text_field( $request->get_param( 'group_id' ) ?? '' );
+		$primary_attr = sanitize_text_field( $request->get_param( 'primary_attr_name' ) ?? '' );
+
+		if ( '' === $module_name || '' === $name || ! is_array( $attrs ) ) {
+			return new WP_Error( 'bad_request', 'module_name, name, attrs are required', [ 'status' => 400 ] );
+		}
+		if ( ! in_array( $type, [ 'module', 'group' ], true ) ) {
+			return new WP_Error( 'bad_request', "type must be 'module' or 'group'", [ 'status' => 400 ] );
+		}
+		if ( 'group' === $type && ( '' === $group_name || '' === $group_id ) ) {
+			return new WP_Error( 'bad_request', "group presets require group_name and group_id", [ 'status' => 400 ] );
+		}
+
+		$d5  = self::get_d5_presets();
+		$uid = wp_generate_uuid4();
+		$now = round( microtime( true ) * 1000 );
+
+		$preset = [
+			'id'         => $uid,
+			'name'       => $name,
+			'moduleName' => $module_name,
+			'attrs'      => $attrs,
+			'styleAttrs' => $attrs,
+			'type'       => $type,
+			'created'    => $now,
+			'updated'    => $now,
+		];
+		if ( defined( 'ET_BUILDER_VERSION' ) && '' !== ET_BUILDER_VERSION ) {
+			$preset['version'] = ET_BUILDER_VERSION;
+		}
+
+		if ( 'group' === $type ) {
+			$preset['groupName'] = $group_name;
+			$preset['groupId']   = $group_id;
+			if ( '' !== $primary_attr ) {
+				$preset['primaryAttrName'] = $primary_attr;
+			}
+			$bucket_key = $group_name;
+			$bucket     = 'group';
+		} else {
+			$bucket_key = $module_name;
+			$bucket     = 'module';
+		}
+
+		$d5[ $bucket ]                                   = (array) ( $d5[ $bucket ] ?? [] );
+		$d5[ $bucket ][ $bucket_key ]                    = (array) ( $d5[ $bucket ][ $bucket_key ] ?? [] );
+		$d5[ $bucket ][ $bucket_key ]['items']           = (array) ( $d5[ $bucket ][ $bucket_key ]['items'] ?? [] );
+		$d5[ $bucket ][ $bucket_key ]['default']         = $d5[ $bucket ][ $bucket_key ]['default'] ?? '';
+		$d5[ $bucket ][ $bucket_key ]['items'][ $uid ]   = $preset;
+
+		self::save_d5_presets( $d5 );
+
+		return rest_ensure_response( [
+			'success' => true,
+			'preset'  => [
+				'id'          => $uid,
+				'name'        => $name,
+				'module_name' => $module_name,
+				'type'        => $type,
+				'bucket_key'  => $bucket_key,
+			],
+		] );
+	}
+
+	/**
+	 * Reassign modulePreset UUID references across pages.
+	 *
+	 * Walks posts/pages, rewrites `"modulePreset":[...]` entries containing old_uuid to new_uuid.
+	 * In apply mode, optionally strips inline attrs that duplicate the new preset's attrs (strip_inline=true) —
+	 * but only when the post-swap modulePreset stack is singular ([new_uuid]); stacked presets keep inline so
+	 * other presets in the stack can't silently override through the freshly-stripped fields.
+	 * Dry-run (default) returns a summary of proposed changes without writing.
+	 */
+	public static function preset_reassign( $request ) {
+		$old_uuid     = sanitize_text_field( $request->get_param( 'old_uuid' ) );
+		$new_uuid     = sanitize_text_field( $request->get_param( 'new_uuid' ) );
+		$mode         = sanitize_key( $request->get_param( 'mode' ) ?: 'dry-run' );
+		$strip_inline = rest_sanitize_boolean( $request->get_param( 'strip_inline' ) ?? true );
+		$page_ids     = $request->get_param( 'page_ids' );
+
+		if ( '' === $old_uuid || '' === $new_uuid ) {
+			return new WP_Error( 'bad_request', 'old_uuid and new_uuid are required', [ 'status' => 400 ] );
+		}
+		if ( ! in_array( $mode, [ 'dry-run', 'apply' ], true ) ) {
+			return new WP_Error( 'bad_request', "mode must be 'dry-run' or 'apply'", [ 'status' => 400 ] );
+		}
+
+		$d5        = self::get_d5_presets();
+		$new_entry = null;
+		$new_mod   = '';
+		foreach ( [ 'module', 'group' ] as $bucket ) {
+			if ( ! isset( $d5[ $bucket ] ) ) {
+				continue;
+			}
+			foreach ( (array) $d5[ $bucket ] as $mod => $info ) {
+				$info = (array) $info;
+				if ( isset( $info['items'][ $new_uuid ] ) ) {
+					$new_entry = (array) $info['items'][ $new_uuid ];
+					$new_mod   = $mod;
+					break 2;
+				}
+			}
+		}
+		if ( null === $new_entry ) {
+			return new WP_Error( 'not_found', "new_uuid '{$new_uuid}' does not exist in preset registry", [ 'status' => 404 ] );
+		}
+		// Merge styleAttrs + attrs for the inline-strip comparison bag. VB-created presets sometimes
+		// populate only styleAttrs for CSS-generating fields; attrs wins on conflict (same precedence Divi uses).
+		$preset_style_attrs = is_array( $new_entry['styleAttrs'] ?? null ) ? $new_entry['styleAttrs'] : [];
+		$preset_base_attrs  = is_array( $new_entry['attrs'] ?? null ) ? $new_entry['attrs'] : [];
+		$preset_attrs       = self::_deep_merge( $preset_style_attrs, $preset_base_attrs );
+
+		// Safety cap for full-site scans to avoid timeout/memory issues on large sites.
+		// Also enforced when page_ids is explicitly supplied — reject oversized batches so callers chunk.
+		$max_pages = self::REASSIGN_MAX_PAGES;
+		$truncated = false;
+		if ( is_array( $page_ids ) && ! empty( $page_ids ) ) {
+			if ( count( $page_ids ) > $max_pages ) {
+				return new WP_Error(
+					'too_many_pages',
+					"page_ids count (" . count( $page_ids ) . ") exceeds REASSIGN_MAX_PAGES ({$max_pages}). Chunk the request.",
+					[ 'status' => 400 ]
+				);
+			}
+			$query_args = [
+				'post_type'      => [ 'page', 'post' ],
+				'post_status'    => [ 'publish', 'draft', 'private' ],
+				'post__in'       => array_map( 'absint', $page_ids ),
+				'posts_per_page' => -1,
+			];
+		} else {
+			$query_args = [
+				'post_type'      => [ 'page', 'post' ],
+				'post_status'    => [ 'publish', 'draft', 'private' ],
+				'posts_per_page' => $max_pages + 1,
+			];
+		}
+		$posts = get_posts( $query_args );
+		if ( count( $posts ) > $max_pages ) {
+			$posts     = array_slice( $posts, 0, $max_pages );
+			$truncated = true;
+		}
+
+		$summary = [
+			'pages_scanned'   => count( $posts ),
+			'pages_modified'  => 0,
+			'uuid_swaps'      => 0,
+			'inline_stripped' => 0,
+			'truncated'       => $truncated,
+			'max_pages'       => $max_pages,
+			'errors'          => [],
+			'details'         => [],
+		];
+
+		foreach ( $posts as $p ) {
+			$content = $p->post_content;
+
+			// Fast-path: skip the expensive parse_blocks() when the raw content doesn't even mention old_uuid.
+			// Only matters at scale — for a single-page targeted reassign this is a noop.
+			if ( strpos( $content, $old_uuid ) === false ) {
+				continue;
+			}
+
+			$swap_hits        = 0;
+			$strip_hits       = 0;
+			$per_page_details = [];
+
+			// Parse WP blocks to rewrite safely.
+			$blocks = parse_blocks( $content );
+			$rewrite = function ( array $blocks ) use ( &$rewrite, $old_uuid, $new_uuid, $preset_attrs, $strip_inline, &$swap_hits, &$strip_hits, &$per_page_details ) {
+				foreach ( $blocks as $i => $block ) {
+					$attrs = is_array( $block['attrs'] ?? null ) ? $block['attrs'] : [];
+					if ( isset( $attrs['modulePreset'] ) && is_array( $attrs['modulePreset'] ) ) {
+						// Replace every occurrence — modulePreset is a stacked-preset array, same UUID may appear multiple times.
+						$block_swaps = 0;
+						foreach ( $attrs['modulePreset'] as $idx => $uuid_value ) {
+							if ( $old_uuid === $uuid_value ) {
+								$attrs['modulePreset'][ $idx ] = $new_uuid;
+								$block_swaps++;
+							}
+						}
+						if ( $block_swaps > 0 ) {
+							$swap_hits += $block_swaps;
+							$detail = [
+								'block'       => $block['blockName'] ?? '',
+								'admin_label' => self::get_nested_array_value( $attrs, [ 'meta', 'adminLabel', 'desktop', 'value' ], '' ),
+								'swaps'       => $block_swaps,
+								'action'      => 'swap',
+							];
+							// Safe-strip guard: only strip inline attrs when the resulting preset stack is singular.
+							// If other presets remain in modulePreset after the swap, they may intentionally override
+							// fields — stripping inline could let them win and change rendering.
+							$post_swap_stack = array_values( array_unique( $attrs['modulePreset'] ) );
+							$is_singular_stack = ( 1 === count( $post_swap_stack ) && $new_uuid === $post_swap_stack[0] );
+
+							if ( $strip_inline && $is_singular_stack && ! empty( $preset_attrs ) ) {
+								$before_hash = md5( wp_json_encode( $attrs ) );
+								$attrs = self::_strip_redundant_inline_attrs( $attrs, $preset_attrs );
+								if ( md5( wp_json_encode( $attrs ) ) !== $before_hash ) {
+									$strip_hits++;
+									$detail['action'] = 'swap+strip';
+								}
+							} elseif ( $strip_inline && ! $is_singular_stack ) {
+								$detail['strip_skipped'] = 'stacked_presets_present';
+							}
+							$per_page_details[] = $detail;
+							$block['attrs'] = $attrs;
+						}
+					}
+					if ( ! empty( $block['innerBlocks'] ) && is_array( $block['innerBlocks'] ) ) {
+						$block['innerBlocks'] = $rewrite( $block['innerBlocks'] );
+					}
+					$blocks[ $i ] = $block;
+				}
+				return $blocks;
+			};
+			$new_blocks = $rewrite( $blocks );
+
+			if ( $swap_hits > 0 ) {
+				$summary['pages_modified']++;
+				$summary['uuid_swaps']      += $swap_hits;
+				$summary['inline_stripped'] += $strip_hits;
+				$page_detail = [
+					'page_id'     => $p->ID,
+					'title'       => $p->post_title,
+					'swaps'       => $swap_hits,
+					'strips'      => $strip_hits,
+					'modules'     => $per_page_details,
+				];
+
+				if ( 'apply' === $mode ) {
+					// Per-post capability gate — matches the pattern used by every other content-writing
+					// endpoint in this plugin; defends against custom roles that hold manage_options but
+					// are restricted on specific post types.
+					if ( ! current_user_can( 'edit_post', $p->ID ) ) {
+						$summary['errors'][] = [
+							'page_id' => $p->ID,
+							'title'   => $p->post_title,
+							'error'   => 'Current user cannot edit this post',
+						];
+						$page_detail['update_error'] = 'Current user cannot edit this post';
+					} else {
+						$new_content   = serialize_blocks( $new_blocks );
+						$update_result = wp_update_post(
+							[
+								'ID'           => $p->ID,
+								'post_content' => wp_slash( $new_content ),
+							],
+							true
+						);
+						if ( is_wp_error( $update_result ) ) {
+							$summary['errors'][] = [
+								'page_id' => $p->ID,
+								'title'   => $p->post_title,
+								'error'   => $update_result->get_error_message(),
+							];
+							$page_detail['update_error'] = $update_result->get_error_message();
+						} elseif ( 0 === (int) $update_result ) {
+							$summary['errors'][] = [
+								'page_id' => $p->ID,
+								'title'   => $p->post_title,
+								'error'   => 'wp_update_post returned 0 (no update performed)',
+							];
+							$page_detail['update_error'] = 'wp_update_post returned 0';
+						} else {
+							self::invalidate_divi_cache( $p->ID );
+						}
+					}
+				}
+
+				$summary['details'][] = $page_detail;
+			}
+		}
+
+		$success = 'apply' !== $mode || empty( $summary['errors'] );
+		return rest_ensure_response( [
+			'success'      => $success,
+			'mode'         => $mode,
+			'strip_inline' => $strip_inline,
+			'old_uuid'     => $old_uuid,
+			'new_uuid'     => $new_uuid,
+			'new_module'   => $new_mod,
+			'summary'      => $summary,
+		] );
+	}
+
+	/**
+	 * Top-level block-attr keys that carry identity/binding data, not style — never strip these
+	 * even if a caller happened to store matching values in preset attrs.
+	 */
+	private static function strip_reserved_keys(): array {
+		return [
+			'meta',                // adminLabel, module identity
+			'modulePreset',        // preset reference itself
+			'groupPreset',         // attribute-level preset references
+			'dynamicOptionGroups', // Composable Settings tracking
+			'id',
+			'storeInstanceId',
+			'name',
+			'moduleName',
+			'builderVersion',
+		];
+	}
+
+	/**
+	 * Deep-merge two arrays — $overrides wins on leaf conflicts. Used to build the inline-strip
+	 * comparison bag by merging preset.styleAttrs + preset.attrs.
+	 */
+	private static function _deep_merge( $base, $overrides ) {
+		if ( ! is_array( $base ) ) {
+			return $overrides;
+		}
+		if ( ! is_array( $overrides ) ) {
+			return $base;
+		}
+		foreach ( $overrides as $key => $val ) {
+			if ( isset( $base[ $key ] ) && is_array( $base[ $key ] ) && is_array( $val ) ) {
+				$base[ $key ] = self::_deep_merge( $base[ $key ], $val );
+			} else {
+				$base[ $key ] = $val;
+			}
+		}
+		return $base;
+	}
+
+	/**
+	 * Recursively remove attrs from $inline that are deep-equal to the value in $preset at the same path.
+	 * Preserves unrelated branches. Top-level reserved keys (meta, modulePreset, etc.) are always preserved
+	 * so preset_reassign never strips identity/binding data even if a caller wrote matching values into the preset.
+	 */
+	private static function _strip_redundant_inline_attrs( $inline, $preset, bool $is_root = true ) {
+		if ( ! is_array( $inline ) || ! is_array( $preset ) ) {
+			return $inline;
+		}
+		$reserved = $is_root ? self::strip_reserved_keys() : [];
+		foreach ( $inline as $key => $val ) {
+			if ( in_array( $key, $reserved, true ) ) {
+				continue;
+			}
+			if ( ! array_key_exists( $key, $preset ) ) {
+				continue;
+			}
+			if ( is_array( $val ) && is_array( $preset[ $key ] ) ) {
+				$inline[ $key ] = self::_strip_redundant_inline_attrs( $val, $preset[ $key ], false );
+				if ( is_array( $inline[ $key ] ) && empty( $inline[ $key ] ) ) {
+					unset( $inline[ $key ] );
+				}
+			} elseif ( $val === $preset[ $key ] ) {
+				unset( $inline[ $key ] );
+			}
+		}
+		return $inline;
+	}
+
+	/**
+	 * Scan page content for modulePreset UUIDs that do NOT exist in the D5 registry.
+	 * Categorizes as dangling orphans or D4-legacy refs.
+	 */
+	public static function preset_scan_orphans( $request ) {
+		$d5     = self::get_d5_presets();
+		$refs   = self::collect_page_preset_refs();
+		// Mirror get_presets: the option can be serialized-string on some environments.
+		$legacy = et_get_option( 'builder_global_presets_ng', (object) [], '', true, false, '', '', true );
+		$legacy = is_string( $legacy ) ? maybe_unserialize( $legacy ) : $legacy;
+		$legacy = is_array( $legacy ) || is_object( $legacy ) ? (array) $legacy : [];
+
+		$d5_uuids = [];
+		foreach ( [ 'module', 'group' ] as $bucket ) {
+			if ( ! isset( $d5[ $bucket ] ) ) {
+				continue;
+			}
+			foreach ( (array) $d5[ $bucket ] as $mod => $info ) {
+				$info  = (array) $info;
+				$items = isset( $info['items'] ) ? (array) $info['items'] : [];
+				foreach ( $items as $pid => $_ ) {
+					$d5_uuids[ $pid ] = true;
+				}
+			}
+		}
+
+		$legacy_uuids = [];
+		foreach ( $legacy as $mod => $module_presets ) {
+			$module_presets = is_array( $module_presets ) ? (object) $module_presets : $module_presets;
+			if ( ! is_object( $module_presets ) || empty( $module_presets->presets ) ) {
+				continue;
+			}
+			foreach ( (array) $module_presets->presets as $pid => $_ ) {
+				$legacy_uuids[ $pid ] = $mod;
+			}
+		}
+
+		// Build uuid → pages[] index once (O(P) pre-pass) so orphan/legacy resolution is O(U) instead of O(U×P).
+		// Dedup per (uuid,page_id) defensively: `custom_uuids` is already deduped per page in
+		// collect_page_preset_refs, but keep this robust if that invariant ever changes.
+		$uuid_to_pages = [];
+		foreach ( $refs['per_page'] as $pid => $pinfo ) {
+			$page_entry   = [ 'page_id' => $pid, 'title' => $pinfo['title'] ];
+			$custom_uuids = array_unique( (array) ( $pinfo['custom_uuids'] ?? [] ) );
+			foreach ( $custom_uuids as $uuid ) {
+				$uuid_to_pages[ $uuid ][ $pid ] = $page_entry;
+			}
+		}
+		foreach ( $uuid_to_pages as $uuid => $pages ) {
+			$uuid_to_pages[ $uuid ] = array_values( $pages );
+		}
+
+		$orphans     = [];
+		$legacy_refs = [];
+		foreach ( $refs['all_uuids'] as $uuid => $count ) {
+			if ( isset( $d5_uuids[ $uuid ] ) ) {
+				continue;
+			}
+			$pages_with = $uuid_to_pages[ $uuid ] ?? [];
+			if ( isset( $legacy_uuids[ $uuid ] ) ) {
+				$legacy_refs[] = [
+					'uuid'          => $uuid,
+					'ref_count'     => $count,
+					'legacy_module' => $legacy_uuids[ $uuid ],
+					'pages'         => $pages_with,
+				];
+			} else {
+				$orphans[] = [
+					'uuid'      => $uuid,
+					'ref_count' => $count,
+					'pages'     => $pages_with,
+				];
+			}
+		}
+
+		return rest_ensure_response( [
+			'orphan_count'         => count( $orphans ),
+			'legacy_ref_count'     => count( $legacy_refs ),
+			'total_referenced'     => count( $refs['all_uuids'] ),
+			'total_in_registry'    => count( $d5_uuids ),
+			'orphans'              => $orphans,
+			'd4_legacy_candidates' => $legacy_refs,
 		] );
 	}
 
