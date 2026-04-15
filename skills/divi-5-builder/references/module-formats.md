@@ -88,7 +88,7 @@ Since Divi 5.1.1, decoration groups are universally available on **any element**
 
 **Implication for Tier 3**: Per-module docs only list **element names**, **innerContent shapes**, and **surprises** (non-standard fields or paths that break the universal pattern). Standard decoration on any element is assumed — never repeated.
 
-**`dynamicOptionGroups`**: When non-default decoration groups are activated in VB, a top-level `dynamicOptionGroups` key tracks what was enabled. Format: `{"element": {"groupName": {"decoration": {"groupType": true}}}}`. Informational only — decoration paths work regardless.
+**`dynamicOptionGroups`**: When a user **dynamically adds a design sub-group** via the Composable Settings "+" affordance (on elements with `dynamicSubgroupHost: true`), a top-level `dynamicOptionGroups` key is written to track what was enabled. Format: `{"element": {"groupName": {"decoration": {"groupType": true}}}}`. Example (Button, layout sub-group added to `button` element): `{"button": {"button": {"decoration": {"layout": true}}}}`. Informational only — decoration paths work regardless. Applying values to existing default groups (e.g. box shadow on the Module wrapper) does NOT write this key.
 
 ### Verification depth
 
