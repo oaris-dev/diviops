@@ -76,11 +76,8 @@ class DiviOps_Agent {
 			return $result;
 		}
 
-		// Allow disabling via constant or env var.
-		if (
-			( defined( 'DIVIOPS_RATE_LIMIT_DISABLED' ) && DIVIOPS_RATE_LIMIT_DISABLED ) ||
-			filter_var( getenv( 'DIVIOPS_RATE_LIMIT_DISABLED' ), FILTER_VALIDATE_BOOLEAN )
-		) {
+		// Allow disabling via bootstrap-resolved constant.
+		if ( DIVIOPS_RATE_LIMIT_DISABLED ) {
 			return $result;
 		}
 
@@ -93,9 +90,9 @@ class DiviOps_Agent {
 		$method   = $request->get_method();
 		$is_write = in_array( $method, [ 'POST', 'PUT', 'PATCH', 'DELETE' ], true );
 
-		// Resolve limits: constant > env var > default.
-		$read_limit  = (int) ( defined( 'DIVIOPS_RATE_LIMIT_READ' ) ? DIVIOPS_RATE_LIMIT_READ : ( getenv( 'DIVIOPS_RATE_LIMIT_READ' ) ?: self::RATE_LIMIT_READ ) );
-		$write_limit = (int) ( defined( 'DIVIOPS_RATE_LIMIT_WRITE' ) ? DIVIOPS_RATE_LIMIT_WRITE : ( getenv( 'DIVIOPS_RATE_LIMIT_WRITE' ) ?: self::RATE_LIMIT_WRITE ) );
+		// Bootstrap-resolved constants are the single source of truth.
+		$read_limit  = (int) DIVIOPS_RATE_LIMIT_READ;
+		$write_limit = (int) DIVIOPS_RATE_LIMIT_WRITE;
 
 		$limits = apply_filters( 'diviops_rate_limits', [
 			'read'  => $read_limit,
@@ -4521,10 +4518,9 @@ class DiviOps_Agent {
 		$divi_active   = function_exists( 'et_get_option' );
 		$divi_version  = $divi_active && defined( 'ET_BUILDER_PRODUCT_VERSION' ) ? ET_BUILDER_PRODUCT_VERSION : null;
 		$rest_url      = rest_url( self::REST_NAMESPACE );
-		$rate_disabled = ( defined( 'DIVIOPS_RATE_LIMIT_DISABLED' ) && DIVIOPS_RATE_LIMIT_DISABLED )
-			|| filter_var( getenv( 'DIVIOPS_RATE_LIMIT_DISABLED' ), FILTER_VALIDATE_BOOLEAN );
-		$read_limit    = (int) ( defined( 'DIVIOPS_RATE_LIMIT_READ' ) ? DIVIOPS_RATE_LIMIT_READ : ( getenv( 'DIVIOPS_RATE_LIMIT_READ' ) ?: self::RATE_LIMIT_READ ) );
-		$write_limit   = (int) ( defined( 'DIVIOPS_RATE_LIMIT_WRITE' ) ? DIVIOPS_RATE_LIMIT_WRITE : ( getenv( 'DIVIOPS_RATE_LIMIT_WRITE' ) ?: self::RATE_LIMIT_WRITE ) );
+		$rate_disabled = (bool) DIVIOPS_RATE_LIMIT_DISABLED;
+		$read_limit    = (int) DIVIOPS_RATE_LIMIT_READ;
+		$write_limit   = (int) DIVIOPS_RATE_LIMIT_WRITE;
 
 		$limits = apply_filters( 'diviops_rate_limits', [
 			'read'  => $read_limit,
@@ -4667,5 +4663,29 @@ class DiviOps_Agent {
 		<?php
 	}
 }
+
+// Rate-limit constants — resolved once at bootstrap so these are the single
+// source of truth at runtime. Placed after the class declaration so the
+// class constants can serve as defaults. Precedence: wp-config.php constant >
+// env var > class default. Empty / non-numeric env values fall through to the
+// class default; an explicit numeric "0" is honored so operators can fully
+// disable a bucket. When a wp-config.php constant is set, the env var is
+// intentionally ignored (constant wins) — this is consistent across all three.
+$diviops_env_disabled = getenv( 'DIVIOPS_RATE_LIMIT_DISABLED' );
+$diviops_env_read     = getenv( 'DIVIOPS_RATE_LIMIT_READ' );
+$diviops_env_write    = getenv( 'DIVIOPS_RATE_LIMIT_WRITE' );
+defined( 'DIVIOPS_RATE_LIMIT_DISABLED' ) || define(
+	'DIVIOPS_RATE_LIMIT_DISABLED',
+	filter_var( $diviops_env_disabled, FILTER_VALIDATE_BOOLEAN )
+);
+defined( 'DIVIOPS_RATE_LIMIT_READ' ) || define(
+	'DIVIOPS_RATE_LIMIT_READ',
+	is_numeric( $diviops_env_read ) ? (int) $diviops_env_read : DiviOps_Agent::RATE_LIMIT_READ
+);
+defined( 'DIVIOPS_RATE_LIMIT_WRITE' ) || define(
+	'DIVIOPS_RATE_LIMIT_WRITE',
+	is_numeric( $diviops_env_write ) ? (int) $diviops_env_write : DiviOps_Agent::RATE_LIMIT_WRITE
+);
+unset( $diviops_env_disabled, $diviops_env_read, $diviops_env_write );
 
 DiviOps_Agent::init();

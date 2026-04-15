@@ -1,6 +1,6 @@
 # Mega Menu Pattern (Divi 5)
 
-Accessible, semantic mega menu using native Divi 5 modules. Discovered from VB prototype on header layout #349.
+Accessible, semantic mega menu using native Divi 5 modules.
 
 ## Core Concept: Module Nesting
 
