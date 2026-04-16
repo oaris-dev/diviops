@@ -3,7 +3,7 @@
  * Plugin Name: DiviOps Agent
  * Plugin URI: https://github.com/oaris-dev/diviops
  * Description: REST API bridge for DiviOps — connects Claude Code to your Divi 5 site for AI-powered page building and design management.
- * Version: 1.0.0-beta.23
+ * Version: 1.0.0-beta.24
  * Author: oaris.de
  * Author URI: https://oaris.de
  * Text Domain: diviops-agent
@@ -22,7 +22,7 @@ class DiviOps_Agent {
 	/**
 	 * Plugin version — used for handshake compatibility checks.
 	 */
-	const VERSION = '1.0.0-beta.23';
+	const VERSION = '1.0.0-beta.24';
 
 	/**
 	 * Minimum MCP server version this plugin is compatible with.
@@ -2946,8 +2946,18 @@ class DiviOps_Agent {
 					$preset['name'] = sanitize_text_field( $new_name );
 				}
 				if ( null !== $new_attrs && is_array( $new_attrs ) ) {
-					$preset['attrs']      = $new_attrs;
-					$preset['styleAttrs'] = $new_attrs;
+					// Mirror attrs into styleAttrs + renderAttrs to match VB save semantics.
+					// Divi renders preset-affected CSS via two parallel passes: Pass A emits
+					// `.preset--module--{module}--{uuid}` rules from preset.attrs (low specificity);
+					// Pass B emits `.et_pb_{module}_N` rules with body-level parent chain from
+					// preset.renderAttrs (high specificity). When both are populated, Pass B wins
+					// the cascade. Without this mirror, removing a breakpoint from attrs leaves a
+					// stale renderAttrs entry whose higher-specificity rule keeps rendering.
+					// Writing all three keys keeps the two passes in lockstep and matches how VB
+					// persists preset edits.
+					$preset['attrs']       = $new_attrs;
+					$preset['styleAttrs']  = $new_attrs;
+					$preset['renderAttrs'] = $new_attrs;
 				}
 
 				$preset['updated'] = time() * 1000;
@@ -3052,15 +3062,21 @@ class DiviOps_Agent {
 		$uid = wp_generate_uuid4();
 		$now = round( microtime( true ) * 1000 );
 
+		// Write all three attribute buckets in parallel to match VB save semantics.
+		// See preset_update for the full Pass A / Pass B architecture note; the short
+		// version here is that renderAttrs is what the high-specificity instance-class
+		// CSS reads from, so populating it at create time keeps MCP-created presets
+		// consistent with VB-created ones for any consumer that reads renderAttrs.
 		$preset = [
-			'id'         => $uid,
-			'name'       => $name,
-			'moduleName' => $module_name,
-			'attrs'      => $attrs,
-			'styleAttrs' => $attrs,
-			'type'       => $type,
-			'created'    => $now,
-			'updated'    => $now,
+			'id'          => $uid,
+			'name'        => $name,
+			'moduleName'  => $module_name,
+			'attrs'       => $attrs,
+			'styleAttrs'  => $attrs,
+			'renderAttrs' => $attrs,
+			'type'        => $type,
+			'created'     => $now,
+			'updated'     => $now,
 		];
 		if ( defined( 'ET_BUILDER_VERSION' ) && '' !== ET_BUILDER_VERSION ) {
 			$preset['version'] = ET_BUILDER_VERSION;

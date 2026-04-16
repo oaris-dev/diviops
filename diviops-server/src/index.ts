@@ -797,14 +797,16 @@ server.registerTool(
   "diviops_preset_update",
   {
     description:
-      "Update a specific preset by ID. Can rename and/or replace its style attributes.",
+      "Update a specific preset by ID. Can rename and/or replace its style attributes. Note: Divi serves frontend CSS from a per-post static cache at wp-content/et-cache/{post_id}/ that wp cache flush does NOT invalidate — if you're verifying a preset change on the rendered frontend, delete that dir for affected pages to force regeneration. Server-side preset state updates immediately; only the pre-rendered CSS file is stale.",
     inputSchema: {
       preset_id: z.string().describe("Preset ID (UUID or short ID)"),
       name: z.string().optional().describe("New display name for the preset"),
       attrs: z
         .record(z.string(), z.any())
         .optional()
-        .describe("New style attributes (replaces both attrs and styleAttrs)"),
+        .describe(
+          "New style attributes (replaces attrs, styleAttrs, and renderAttrs — matches VB save semantics so render cache stays in sync with edit state)",
+        ),
     },
   },
   async ({ preset_id, name, attrs }) => {

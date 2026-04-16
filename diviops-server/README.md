@@ -237,6 +237,21 @@ The MCP server and WP plugin versions are incompatible. Update whichever side is
 curl -u "username:apppassword" http://site.local/wp-json/diviops/v1/settings
 ```
 
+### Preset edits not visible on the frontend
+
+After `preset_update` / `preset_create`, the preset option is updated immediately but Divi serves frontend CSS from a **per-post static cache** that neither `wp cache flush` nor `wp transient delete --all` invalidates.
+
+Cache location: `wp-content/et-cache/{post_id}/` — contains files like `et-divi-dynamic-tb-*-{post_id}-critical.css` with preset CSS baked in.
+
+To force regeneration for a specific page:
+```bash
+rm -rf wp-content/et-cache/{post_id}/
+```
+
+Next visit re-renders and writes fresh CSS. Applies to: any change that affects preset-derived CSS output (preset_update, preset_create when used by an existing page, preset_reassign in apply mode).
+
+The preset option (`et_divi_builder_global_presets_d5`) always reflects the current MCP-written state — if `wp option get et_divi_builder_global_presets_d5` shows your change but the frontend doesn't, it's this cache.
+
 ## License
 
 MIT
