@@ -335,21 +335,29 @@ This renders as `rgba(255,255,255,0.05)`. Used by the oa Glass Card preset for s
 - `GET /diviops/v1/preset-audit` — Audit with referenced/unreferenced analysis
 - `GET /diviops/v1/preset-scan-orphans` — List UUIDs referenced in pages but missing from the D5 registry; separates dangling orphans from D4-legacy candidates
 - `POST /diviops/v1/preset-cleanup` — Remove orphans, rename, dedup (dry_run default)
-- `POST /diviops/v1/preset-create` — Create a new preset (module or group). Supported module types include `divi/button`, `divi/heading`, `divi/text`, `divi/blurb`, `divi/section`, `divi/row`, `divi/column`, `divi/group`, and any other type Divi tracks in the D5 registry
+- `POST /diviops/v1/preset-create` — Create a new preset (module or group). Supported module types include `divi/button`, `divi/heading`, `divi/text`, `divi/blurb`, `divi/section`, `divi/row`, `divi/column`, `divi/group`, and any other type Divi tracks in the D5 registry. The `attrs` shape differs by `type`: `module` uses the **full module top-level attrs tree** (e.g. `{module: {decoration: {...}}, content: {...}}`); `group` uses the **fragment for that attribute group only** (e.g. `{title: {decoration: {font: {...}}}}` for a font preset on a heading's designTitleText slot). Response payload returns the created UUID as `preset.id` (nested under a `preset` object)
 - `POST /diviops/v1/preset-update` — Update single preset (name, attrs)
-- `POST /diviops/v1/preset-reassign` — Rewrite `modulePreset` refs across pages from `old_uuid` → `new_uuid`. Dry-run by default. `strip_inline: true` (default) also removes inline attrs that deep-equal the new preset — required so the preset actually takes effect (inline wins over preset)
+- `POST /diviops/v1/preset-reassign` — Rewrite **`modulePreset` refs only** across pages from `old_uuid` → `new_uuid`. Walks each block's `attrs.modulePreset` **array** and swaps matching UUIDs. Dry-run by default. **Currently rewrites array-form `attrs.modulePreset: ["uuid"]` only — legacy single-string form `attrs.modulePreset: "uuid"` (D4-migrated content) is not rewritten; normalize to array form first if needed.** **Does not rewrite `groupPreset.<slot>.presetId` (attribute-level) refs** — that consolidation is currently manual; tooling extension tracked separately. `strip_inline: true` (default) recursively walks `attrs` and removes only the **per-attribute leaf values** that deep-equal the new preset's value at the same path; unrelated branches (admin label, custom CSS classes, `meta.*`, `dynamicOptionGroups`, etc.) are preserved. Inline-strip only fires when the post-swap `modulePreset` stack is singular `[new_uuid]` — stacked presets keep inline so other presets in the stack can't silently override through the freshly-stripped fields
 - `POST /diviops/v1/preset-delete` — Delete single preset
 
 ### Consolidation workflow
 
-Typical flow for normalizing repeated inline styling into a reusable preset:
+Typical flow for normalizing repeated styling into a reusable preset, **when modules already share an existing preset UUID** (orphaned or otherwise):
 
 1. `diviops_preset_scan_orphans` — identify UUIDs referenced in pages but missing from the registry (dangling deletions or D4-legacy refs)
-2. `diviops_preset_create` — create a fresh named preset with the desired shared attrs (e.g. `module_name: "divi/column"`, `name: "White Card Surface"`, `attrs: { module: { decoration: { background: ..., spacing: ..., border: ... } } }`) — returns `new_uuid`
+2. `diviops_preset_create` — create a fresh named preset with the desired shared attrs (e.g. `module_name: "divi/column"`, `name: "White Card Surface"`, `attrs: { module: { decoration: { background: ..., spacing: ..., border: ... } } }`) — the created UUID is returned as `preset.id` in the response; use that for the next step's `new_uuid` parameter
 3. `diviops_preset_reassign` with `mode: "dry-run"` — preview which pages/modules would swap the orphan UUID → `new_uuid` and which inline attrs would be stripped
 4. `diviops_preset_reassign` with `mode: "apply"` — actually rewrite the pages; content goes through `parse_blocks` + `serialize_blocks` (no regex surgery) so only `modulePreset` arrays and redundant inline attrs are touched
 
-If you're starting from modules with *inline* styling (no existing UUID), substitute step 1 with a manual scan via `diviops_get_page` and use one of the modules' inline attrs as the seed for step 2.
+**Purely-inline modules (no existing UUID)** have no automated batch migration path today. `diviops_preset_reassign` keys off `old_uuid`, so modules with no `modulePreset` entry can't be batch-attached to a freshly-created preset. The manual workflow:
+
+1. `diviops_get_page` (or `diviops_get_page_layout`) — find the inline modules to consolidate; pick one as the seed
+2. `diviops_preset_create` — create the preset using the seed module's inline attrs → the new preset UUID comes back as `preset.id` in the response
+3. For each previously-inline module, call `diviops_update_module` with `attrs: { modulePreset: ["<preset.id>"] }` to attach the preset reference. Inline attrs that duplicate the preset's values can be cleared in the same call by setting them to `null`, or left in place (inline wins over preset, so duplicates are harmless but redundant)
+
+A future tool (`preset_attach_inline` or similar) could automate step 3 by attribute-shape matching across pages — not implemented today.
+
+**Attribute-level (`groupPreset`) consolidation** across pages is also currently manual — `diviops_preset_reassign` rewrites `modulePreset` refs only, not `groupPreset.<slot>.presetId`. Same workflow applies: use `diviops_update_module` to rewrite individual blocks' `groupPreset.<slot>.presetId` arrays. Tooling extension to walk slot maps in batch is tracked as a separate enhancement.
 
 ### When to Use Presets vs Inline Styles
 

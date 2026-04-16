@@ -1,8 +1,8 @@
 # MCP Tool Reference
 
-43 tools for reading and writing Divi 5 pages, presets, variables, library, canvas, Theme Builder, and WP-CLI.
+46 tools for reading and writing Divi 5 pages, presets, variables, library, canvas, Theme Builder, and WP-CLI.
 
-## Read Tools (22 + 2 canvas)
+## Read Tools (25)
 
 - `diviops_test_connection` — verify WordPress + plugin connection
 - `diviops_server_info` — DiviOps server identity, version, license type, capabilities
@@ -12,7 +12,8 @@
 - `diviops_find_icon` — search 1,989 icons by keyword (returns unicode, type, weight)
 - `diviops_get_section` — get a section's markup by admin label or text content
 - `diviops_list_templates` / `diviops_get_template` — load verified block markup templates
-- `diviops_preset_audit` — audit presets with referenced/unreferenced analysis
+- `diviops_preset_audit` — audit presets with referenced/unreferenced analysis (exposes `block_ref_count`, `group_ref_count`, `referenced_by_presets` chain)
+- `diviops_preset_scan_orphans` — list page-referenced preset UUIDs missing from the D5 registry; separates dangling orphans from D4-legacy refs
 - `diviops_list_library` / `diviops_get_library_item` — browse and load Divi Library items
 - `diviops_render_preview` — render block markup to HTML for preview
 - `diviops_validate_blocks` — validate block markup (structure, required attrs, known pitfalls)
@@ -20,7 +21,7 @@
 - `diviops_list_canvases` / `diviops_get_canvas` — browse and read off-canvas workspaces (popups, modals, menus)
 - `diviops_list_variables` — list design token variables, filter by type (`colors`, `numbers`, etc.) or ID prefix (e.g. `gcid-oa-` for oa design system colors, `gvid-oa-` for numbers)
 
-## Write Tools (18)
+## Write Tools (20)
 
 - `diviops_create_page` — create new page with Divi content
 - `diviops_update_page_content` — full page rewrite
@@ -30,6 +31,8 @@
 - `diviops_update_module` — surgically update module attributes (dot notation, 3 targeting modes + occurrence)
 - `diviops_move_module` — move any block to a new position (before/after a target block). Separate source + target targeting (auto_index, label, or text). Works across sections.
 - `diviops_preset_cleanup` — manage presets: default (spam removal), `action=remove_orphans` with `scope=spam|all`, `action=rename_strip_prefix`, `dedup=true`
+- `diviops_preset_create` — create a new preset in the D5 registry. Required: `module_name`, `name`, `attrs`. For `type: "group"` (attribute-level preset), also requires `group_name` (e.g. `divi/font`, `divi/button`) + `group_id` (e.g. `designTitleText`, `designButton`). Returns the created UUID as `preset.id` (nested under a `preset` object in the response). See [presets.md](presets.md) for the attrs-shape difference between `module` and `group` types
+- `diviops_preset_reassign` — rewrite `modulePreset` refs across pages from `old_uuid` → `new_uuid`. Walks `attrs.modulePreset` **arrays only** (does NOT cover `groupPreset.<slot>.presetId`). Legacy single-string form `"modulePreset": "uuid"` (D4-migrated content) is **not** rewritten — normalize to array form `["uuid"]` first if needed. `mode: "dry-run"` (default) or `"apply"`. `strip_inline: true` (default) recursively removes per-attribute inline values that deep-equal the new preset's value at the same path; only fires when post-swap stack is singular `[new_uuid]`
 - `diviops_preset_update` / `diviops_preset_delete` — update or delete individual presets
 - `diviops_save_to_library` — save block markup to Divi Library for reuse
 - `diviops_update_tb_layout` — update Theme Builder header/footer/body content
@@ -39,7 +42,10 @@
 - `diviops_delete_canvas` — remove a canvas
 - `diviops_create_variable` — create a design token variable (colors: `gcid-*` + hex, numbers: `gvid-*` + CSS value)
 - `diviops_delete_variable` — delete a variable by ID (auto-detects storage from prefix)
-- `diviops_wp_cli` — run WP-CLI commands (allowlisted, Local by Flywheel)
+
+## Utility Tools (1)
+
+- `diviops_wp_cli` — run WP-CLI commands (allowlisted; default safelist + opt-in extended commands via `DIVIOPS_WP_CLI_ALLOW`; requires `WP_PATH` for Local by Flywheel or `WP_CLI_CMD` for containerized envs)
 
 ## Targeting Reference
 

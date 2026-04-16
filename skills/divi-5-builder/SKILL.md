@@ -126,7 +126,11 @@ This is a real commitment: ~72 API calls for tokens alone, plus ~24 `diviops_pre
 4. Create number tokens (font sizes, spacings, radii, line heights) — ~37 calls (~72 total)
 
 **Step 3 — Create presets (if missing):**
-Use `diviops_preset_create` to write each preset to the D5 registry programmatically. Supply `module_name` (e.g. `divi/button`, `divi/column`, `divi/heading`), `name`, and the `attrs` bag (same shape as a module's top-level attrs in block markup). For attribute-level presets, set `type: "group"` with `group_name` + `group_id`.
+Use `diviops_preset_create` to write each preset to the D5 registry programmatically. The `attrs` bag shape differs by `type`:
+
+- `type: "module"` (default) — `attrs` is the **full module top-level attrs tree**, same shape as block-markup `attrs` (e.g. `{module: {decoration: {...}}, content: {...}}`). Supply `module_name` (e.g. `divi/button`, `divi/column`, `divi/heading`).
+- `type: "group"` — `attrs` is the **fragment for the attribute group only**, not the full module tree. For a font preset, that's the font-relevant subtree (e.g. `{title: {decoration: {font: {...}}}}` or similar — exact path depends on the group). Supply `module_name` plus `group_name` (the VB component, e.g. `divi/font`, `divi/font-body`, `divi/button`) and `group_id` (the VB panel section, e.g. `designTitleText`, `designText`, `designButton`). When unsure of the canonical shape for a given `group_name`, inspect an existing group preset via `diviops_preset_audit` and copy its `attrs` structure.
+
 1. Walk the oa preset catalog in [presets.md](references/presets.md) and issue one `diviops_preset_create` call per entry (~24 calls). Capture each returned UUID.
 2. (Alternative) If you prefer a manual VB flow, create presets in the Visual Builder and then run `diviops_preset_audit` to discover UUIDs.
 
