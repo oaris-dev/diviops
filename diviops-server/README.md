@@ -91,9 +91,9 @@ The server connects via standard WordPress REST API and works with any environme
 
 > **WP-CLI note:** `WP_PATH` keeps the existing Local by Flywheel behavior by running `wp` directly on the host filesystem. For Docker-based environments (DDEV, wp-env, DevKinsta, WordPress Studio), set `WP_CLI_CMD` to the wrapper command instead. When `WP_CLI_CMD` is set, the server executes the wrapper from `WP_PATH` if provided, otherwise from its current working directory. The MCP server still validates the requested WP-CLI subcommand against its allowlist before executing either path.
 
-## Available Tools (43)
+## Available Tools (46)
 
-### Read (24)
+### Read (25)
 | Tool | Description |
 |------|-------------|
 | `diviops_test_connection` | Test WordPress connection and Divi version |
@@ -111,6 +111,7 @@ The server connects via standard WordPress REST API and works with any environme
 | `diviops_list_templates` | List available MCP prompt templates |
 | `diviops_get_template` | Get a specific template's block markup |
 | `diviops_preset_audit` | Audit presets with referenced/unreferenced analysis |
+| `diviops_preset_scan_orphans` | List page-referenced preset UUIDs missing from the D5 registry (separates dangling orphans from D4-legacy refs) |
 | `diviops_list_library` | List saved Divi Library items |
 | `diviops_get_library_item` | Get a library item's block markup |
 | `diviops_render_preview` | Render block markup to HTML for preview |
@@ -121,7 +122,7 @@ The server connects via standard WordPress REST API and works with any environme
 | `diviops_list_canvases` | List all canvas pages |
 | `diviops_get_canvas` | Get canvas content |
 
-### Write (17)
+### Write (20)
 | Tool | Description |
 |------|-------------|
 | `diviops_create_page` | Create a new page with optional Divi content |
@@ -132,6 +133,8 @@ The server connects via standard WordPress REST API and works with any environme
 | `diviops_update_module` | Update specific module attributes by label or text match |
 | `diviops_move_module` | Move a block before/after another block (reorder modules, sections) |
 | `diviops_preset_cleanup` | Remove spam/duplicate presets, bulk rename |
+| `diviops_preset_create` | Write a new preset to the D5 registry (module or group type, supports `divi/column` etc.) |
+| `diviops_preset_reassign` | Rewrite `modulePreset` references across pages (dry-run by default; optional `strip_inline` removes redundant inline attrs) |
 | `diviops_preset_update` | Update a specific preset (name, attrs) |
 | `diviops_preset_delete` | Delete a preset by ID |
 | `diviops_save_to_library` | Save block markup to Divi Library |
