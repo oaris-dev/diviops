@@ -17,7 +17,7 @@ Claude Code <-> MCP Server (stdio) <-> WordPress REST API <-> Divi MCP Plugin
 
 ### 1. Install the WordPress Plugin
 
-Download and activate the **DiviOps Agent** plugin from the [releases page](https://github.com/oaris-dev/diviops-internal/releases).
+Download and activate the **DiviOps Agent** plugin — [direct zip](https://github.com/oaris-dev/diviops/raw/main/diviops-agent.zip) or browse the [public distribution repo](https://github.com/oaris-dev/diviops).
 
 ### 2. Create an Application Password
 
