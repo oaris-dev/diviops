@@ -13,11 +13,7 @@ Get from zero to generating Divi 5 pages with Claude Code in ~15 minutes.
 
 ## Step 1: Install the WordPress Plugin
 
-1. In this repo, zip the plugin directory:
-   ```bash
-   cd wp-content/plugins
-   zip -r diviops-agent.zip diviops-agent/
-   ```
+1. Download `diviops-agent.zip` from the dist repo root (`oaris-dev/diviops` or `oaris-dev/diviops-internal`) — it ships at the top level of each dist repo
 2. Go to **WP Admin → Plugins → Add New → Upload Plugin**
 3. Upload `diviops-agent.zip` and activate it
 4. Verify: visit `http://your-site.local/wp-json/diviops/v1/settings` — you should get a 401 (auth required)
@@ -29,29 +25,15 @@ Get from zero to generating Divi 5 pages with Claude Code in ~15 minutes.
 1. Go to **WP Admin → Users → Your Profile**
 2. Scroll to **Application Passwords**
 3. Enter a name (e.g., "Claude MCP") and click **Add New Application Password**
-4. Copy the generated password (spaces are fine)
+4. Copy the generated password
+
+> **Strip the spaces.** WordPress generates passwords like `758r WQ1X URcg GW3s wCwQ QI0V` for readability but accepts them without spaces. Use `758rWQ1XURcgGW3swCwQQI0V` in `claude mcp add` — spaces can be misparsed as separate arguments.
 
 > Save this — you won't see it again.
 
-## Step 3: Build the MCP Server
+## Step 3: Register with Claude Code
 
-```bash
-cd diviops-server
-npm install
-npm run build
-```
-
-Verify: `ls dist/index.js` should exist.
-
-## Step 4: Register with Claude Code
-
-First, find the absolute path to the MCP server:
-
-```bash
-cd diviops-server && echo "$(pwd)/dist/index.js"
-```
-
-Copy that path — you'll need it below.
+The MCP server runs via `npx @diviops/mcp-server` — no clone, no build step.
 
 > **Important**: Choose a unique MCP name that won't conflict with other MCP servers you have registered. Use your site name (e.g., `diviops-mysite`).
 
@@ -62,7 +44,7 @@ claude mcp add diviops-mysite -- env \
   WP_URL=http://your-site.local \
   WP_USER=your-username \
   WP_APP_PASSWORD=xxxxXXXXxxxxXXXXxxxxXXXX \
-  node /Users/you/projects/diviops-server/dist/index.js
+  npx @diviops/mcp-server
 ```
 
 ### With WP-CLI (Local by Flywheel — enables the `diviops_wp_cli` tool)
@@ -73,22 +55,51 @@ claude mcp add diviops-mysite -- env \
   WP_USER=your-username \
   WP_APP_PASSWORD=xxxxXXXXxxxxXXXXxxxxXXXX \
   WP_PATH="/Users/you/Local Sites/your-site/app/public" \
-  node /Users/you/projects/diviops-server/dist/index.js
+  npx @diviops/mcp-server
 ```
 
 > `LOCAL_SITE_ID` is auto-detected from `WP_PATH` — no need to find it manually.
 
+### Local Development Environments
+
+DiviOps connects via standard WordPress REST API and works with any host that exposes WordPress over HTTP with Application Password support.
+
+| Environment | `WP_URL` | WP-CLI setup | Notes |
+|-------------|----------|--------------|-------|
+| **Local by Flywheel** | `http://site-name.local` | `WP_PATH=/path/to/site/app/public` | Site ID auto-detected |
+| **WordPress Studio** | `http://localhost:{port}` | `WP_CLI_CMD="studio wp --path=/path/to/site"` | Port auto-assigned (8881, 8882, …); SQLite |
+| **DDEV** | `https://site-name.ddev.site` | `WP_CLI_CMD="ddev wp"` plus `WP_PATH=/path/to/project` | Wrapper runs from `WP_PATH` |
+| **wp-env** | `http://localhost:8888` | `WP_CLI_CMD="npx wp-env run cli wp"` plus `WP_PATH=/path/to/project` | Requires `WP_ENVIRONMENT_TYPE=local` (see below) |
+| **DevKinsta** | `https://site-name.local` | `WP_CLI_CMD="docker exec -u www-data devkinsta_fpm wp --path=/www/kinsta/public/sitename"` | HTTPS with self-signed certs |
+| **Custom / Remote** | Your site URL | `WP_PATH=/path/to/site` or `WP_CLI_CMD="..."` | Works with any WP host |
+
+> **Application Passwords on HTTP:** WordPress requires HTTPS for Application Passwords unless `WP_ENVIRONMENT_TYPE` is set to `'local'`. HTTPS environments (DDEV, DevKinsta) work out of the box. HTTP environments (wp-env, WordPress Studio) need this in `wp-config.php`:
+> ```php
+> define('WP_ENVIRONMENT_TYPE', 'local');
+> ```
+> Local by Flywheel sets this automatically.
+
+### Environment Variables
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `WP_URL` | Yes | WordPress site URL (e.g. `http://mysite.local`) |
+| `WP_USER` | Yes | WordPress username with Editor or Admin role |
+| `WP_APP_PASSWORD` | Yes | Application Password (spaces stripped) |
+| `WP_PATH` | No | WordPress filesystem path for Local by Flywheel, or wrapper working directory when `WP_CLI_CMD` needs project context |
+| `WP_CLI_CMD` | No | Custom WP-CLI command prefix for containerized environments |
+| `LOCAL_SITE_ID` | No | Override auto-detection of Local by Flywheel site ID |
+| `DIVIOPS_WP_CLI_ALLOW` | No | Comma-separated list of extended WP-CLI commands to enable ([see below](#wp-cli-security)) |
+
 ### Common Pitfalls
 
-- **Strip spaces from the app password** — WordPress generates passwords like `758r WQ1X URcg GW3s wCwQ QI0V` with spaces. **Remove the spaces** when using `claude mcp add`: `WP_APP_PASSWORD=758rWQ1XURcgGW3swCwQQI0V`. WordPress accepts both formats, but `claude mcp add` can misparse the spaces as separate arguments.
-- **Use absolute paths** for both `WP_PATH` and the `node` script — relative paths break when Claude Code runs from a different directory
-- **Unique MCP name** — don't reuse a name from another project (e.g., if you have `directus-mcp`, don't name this one the same)
+- **Strip spaces from the app password** — covered above; this is the #1 setup snag
+- **Use absolute paths** for `WP_PATH` — relative paths break when Claude Code runs from a different directory
+- **Unique MCP name** — don't reuse a name from another project
 - **Paths with spaces** — directories like `Local Sites/my site` work as long as they're quoted
 - **MCP not appearing after registration** — run `claude mcp list` to verify. If it's not there, `claude mcp remove` and re-add. Fully restart Claude Code (not just the window) after adding.
 
-## Step 5: Verify Registration
-
-Before restarting Claude Code, confirm the registration:
+## Step 4: Verify Registration
 
 ```bash
 claude mcp list
@@ -101,7 +112,7 @@ claude mcp remove diviops-mysite
 claude mcp add diviops-mysite -- env ...
 ```
 
-## Step 6: Test Connection
+## Step 5: Test Connection
 
 Restart Claude Code (or open a new window), then run:
 
@@ -117,20 +128,18 @@ Then try:
 Use diviops_list_pages to show all pages.
 ```
 
-> **If tools don't appear**: Check `claude mcp list` output. The `node` path must be absolute and the `dist/index.js` file must exist (run `npm run build` first).
+> **If tools don't appear**: Check `claude mcp list` output. The `npx` command must be reachable on your `PATH` (it ships with Node.js, which provides `npm`/`npx`). `npx` then fetches and runs the `@diviops/mcp-server` package on demand.
 
-## Step 7: Optional — Install the Design Library Plugin
+## Step 6: Optional — Install the Design Library Plugin
 
 For CSS entrance animations (`ddl-fade-up`, `ddl-scale-in`), gradient text effects, and Three.js WebGL shaders:
 
-```bash
-cd wp-content/plugins
-zip -r diviops-design-library.zip diviops-design-library/
-```
+1. Download `diviops-design-library.zip` from the dist repo root (also at the top level of `oaris-dev/diviops` and `oaris-dev/diviops-internal`)
+2. Upload and activate in **WP Admin → Plugins → Add New → Upload Plugin**
 
-Upload and activate in WP Admin. This is optional — the MCP agent works without it.
+This is optional — the MCP agent works without it.
 
-## Step 8: Load the Divi 5 Builder Skill
+## Step 7: Load the Divi 5 Builder Skill
 
 The skill teaches Claude the correct Divi 5 block format — module attribute paths, design patterns, and format rules. **Without it, Claude will guess attribute formats and produce broken pages** (e.g., empty buttons, wrong innerContent format).
 
@@ -146,8 +155,9 @@ claude plugin update divi-5-builder
 
 **Option B — Load from cloned repo**:
 ```bash
-cd /path/to/diviops     # the cloned repo
-claude --plugin-dir .    # load plugin structure from repo root
+git clone https://github.com/oaris-dev/diviops.git
+cd diviops
+claude --plugin-dir .
 ```
 
 **Option C — Copy skill to your project** (auto-loads without flags):
@@ -164,7 +174,7 @@ What skills do you have?
 ```
 You should see `divi-5-builder` in the list.
 
-## Step 9: Optional — Bootstrap the Design System
+## Step 8: Optional — Bootstrap the Design System
 
 The skill uses a per-project design system manifest (`.claude/design-system.json`) to resolve preset role keys to site-specific UUIDs. Without it, the agent falls back to inline styling or runtime discovery via `diviops_preset_audit`.
 
@@ -270,7 +280,7 @@ Also create .claude/instructions/design-system.md with my project's brand
 personality and design preferences.
 ```
 
-See [SKILL.md — Design System Lifecycle](skills/divi-5-builder/SKILL.md#design-system-lifecycle) for the full technical reference.
+See [SKILL.md — Design System Lifecycle](https://github.com/oaris-dev/diviops/blob/main/skills/divi-5-builder/SKILL.md#design-system-lifecycle) for the full technical reference.
 
 ## Quick Test: Generate Your First Page
 
@@ -295,28 +305,31 @@ Claude will use the `divi-5-builder` skill to generate the page. Check the resul
        ▼
 ┌──────────────┐
 │    Skill     │  Block format rules, verified attr paths,
-│ (knowledge)  │  design patterns, 16 VB-verified modules
+│ (knowledge)  │  design patterns, VB-verified module attr paths
 └──────────────┘
 ```
 
-**How it works:** When you ask Claude to build a Divi page, it uses the **MCP Server** to talk to your WordPress site via REST API. The **Skill** teaches Claude the correct Divi 5 block format — without it, Claude would guess attr paths and produce broken content. The **WP Plugin** exposes Divi-specific endpoints that WordPress doesn't have natively.
+**How it works:** When you ask Claude to build a Divi page, it uses the **MCP Server** (npm package) to talk to your WordPress site via REST API. The **Skill** teaches Claude the correct Divi 5 block format — without it, Claude would guess attr paths and produce broken content. The **WP Plugin** exposes Divi-specific endpoints that WordPress doesn't have natively.
 
-| Component | Location | Purpose |
-|-----------|----------|---------|
-| **MCP Server** | `diviops-server/` | Bridges Claude to WordPress via 43 tools (read pages, edit modules, validate blocks) |
-| **WP Plugin** | `plugins/diviops-agent/` | REST API endpoints for Divi page data, section targeting, block validation |
-| **Skill** | `skills/divi-5-builder/` | Verified attr paths for 16 modules, design patterns, format rules |
-| **Design Library** | `plugins/diviops-design-library/` | CSS animations, glass effects, Three.js WebGL (optional) |
+| Component | Distribution | Purpose |
+|-----------|--------------|---------|
+| **MCP Server** | npm: `@diviops/mcp-server` | Bridges Claude to WordPress via 46 tools (read pages, edit modules, validate blocks) |
+| **WP Plugin** | `diviops-agent.zip` (in this repo) | REST API endpoints for Divi page data, section targeting, block validation |
+| **Skill** | `claude plugin install oaris-dev/diviops` | VB-verified attr paths, design patterns, block-format rules |
+| **Design Library** | `diviops-design-library.zip` (in this repo) | CSS animations, glass effects, Three.js WebGL (optional) |
 
-## Available Tools (33)
+## Available Tools (46)
 
-### Read (20)
-Pages, modules, settings, icons, presets, library, Theme Builder, block validation, schema optimization
+### Read (25)
+Pages, modules, sections, settings, icons, presets, library, Theme Builder, canvas, variables, templates, block validation, schema optimization
 
-### Write (13)
-Create/edit pages, sections, modules, presets, library items, Theme Builder templates, WP-CLI
+### Write (20)
+Create/edit pages, sections, modules, presets (create/update/delete/reassign/cleanup), library items, Theme Builder templates, canvas, variables
 
-See `skills/divi-5-builder/SKILL.md` for the complete tool reference with attribute formats and design patterns.
+### Utility (1)
+WP-CLI (allowlisted, requires `WP_PATH` or `WP_CLI_CMD`)
+
+See [`skills/divi-5-builder/SKILL.md`](https://github.com/oaris-dev/diviops/blob/main/skills/divi-5-builder/SKILL.md) for the complete tool reference with attribute formats and design patterns.
 
 ## Targeting Modules
 
@@ -328,6 +341,35 @@ Four ways to target modules for editing:
 | **Text match** | `match_text: "Hello"` | Find by visible text |
 | **Auto-index** | `auto_index: "text:5"` | Any module (from layout response) |
 | **Occurrence** | `occurrence: 2` | Duplicate labels |
+
+## WP-CLI Security
+
+The `diviops_wp_cli` tool validates every command against a safety allowlist. Default allowlist covers read-only commands (options, posts, taxonomies, users, ACF field groups, cron/plugin/theme/menu info) plus non-destructive writes (post/term/post-meta create and update, ACF schema export/import, cache flush, transient delete, rewrite flush, WXR export).
+
+**Extended commands** (opt-in via `DIVIOPS_WP_CLI_ALLOW`):
+
+| Command | Risk |
+|---------|------|
+| `option update` | High — can change site URL, admin email, security settings |
+| `post delete` / `post meta delete` / `term delete` | Medium — permanent removal |
+| `search-replace` | High — bulk DB modification |
+| `import` | Medium — bulk content ingestion |
+| `plugin activate` / `plugin deactivate` | Medium |
+| `eval-file` | Critical — executes arbitrary PHP |
+
+To enable extended commands:
+
+```bash
+claude mcp add diviops-mysite -- env \
+  WP_URL=http://your-site.local \
+  WP_USER=admin \
+  WP_APP_PASSWORD=xxxxXXXXxxxxXXXXxxxxXXXX \
+  WP_PATH="/path/to/wordpress" \
+  DIVIOPS_WP_CLI_ALLOW="option update,post delete,search-replace" \
+  npx @diviops/mcp-server
+```
+
+Only list the specific commands you need. Unknown entries are ignored with a warning.
 
 ## Security
 
@@ -349,45 +391,31 @@ The MCP server is a Node.js process that connects to any WordPress site via HTTP
 claude mcp add diviops-main -- env \
   WP_URL=http://main-site.local \
   WP_USER=admin WP_APP_PASSWORD="xxxx" \
-  node /path/to/diviops-server/dist/index.js
+  npx @diviops/mcp-server
 
-# Test site (same MCP server build, different credentials)
+# Test site (same MCP package, different credentials)
 claude mcp add diviops-test -- env \
   WP_URL=http://test-site.local \
   WP_USER=admin WP_APP_PASSWORD="yyyy" \
-  node /path/to/diviops-server/dist/index.js
+  npx @diviops/mcp-server
 ```
 
-Each registration is independent — different site, different credentials, different MCP name. The same `diviops-server/dist/index.js` build works for all.
+Each registration is independent — different site, different credentials, different MCP name.
 
 **Teammate setup**: They only need:
-1. The `diviops-agent` plugin zip (installed in their WP site)
-2. A copy of `diviops-server/` (clone repo or copy the directory, then `npm install && npm run build`)
-3. Their own `WP_URL`, `WP_USER`, `WP_APP_PASSWORD`
+1. The `diviops-agent.zip` (installed in their WP site — download from this repo)
+2. `claude mcp add ... npx @diviops/mcp-server` with their own `WP_URL`, `WP_USER`, `WP_APP_PASSWORD`
+3. The skill via `claude plugin install oaris-dev/diviops`
+
+No clone, no build.
 
 ## Troubleshooting
 
 | Issue | Solution |
 |-------|----------|
-| 401 Unauthorized | Check WP_USER and WP_APP_PASSWORD |
-| 503 Divi unavailable | Activate Divi theme |
-| WP-CLI "not configured" | Set WP_PATH (Local by Flywheel only) |
+| 401 Unauthorized | Check `WP_USER` and `WP_APP_PASSWORD` (strip spaces) |
+| 503 Divi unavailable | Activate Divi 5 theme |
+| WP-CLI "not configured" | Set `WP_PATH` (Local by Flywheel) or `WP_CLI_CMD` (containerized) |
 | Styles not rendering | Hard-refresh browser (Cmd+Shift+R) — CSS cache |
 | VB shows raw `$variable()$` | Dynamic content binding — click the chip to edit |
-
-## For Maintainers: Updating the Distribution Repo
-
-This guide is also the README for the distribution repo (`oaris-dev/diviops-internal`). The dist repo is **not auto-synced** — it must be updated manually after merging changes to the dev repo.
-
-```bash
-# From the dev repo root:
-./scripts/package-dist.sh
-
-# Push to dist repo:
-cd dist-package
-git add -A
-git commit -m "Sync: [describe what changed]"
-git push
-```
-
-The packaging script copies only distribution files (MCP server, plugins, skill, tests) — no dev history, research docs, or test pages. See `scripts/package-dist.sh` for details.
+| `npx` can't find package | Update Node.js to 18+; verify `npx --version` works |
