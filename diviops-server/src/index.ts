@@ -723,7 +723,7 @@ server.registerTool(
   "diviops_preset_audit",
   {
     description:
-      "Audit all Divi module presets. Returns counts and details of spam vs descriptive presets, which are referenced by pages, and which are orphaned.",
+      "Audit all Divi presets (module + group). Each entry reports `block_ref_count` (page-content refs via modulePreset / groupPreset block markup), `group_ref_count` (in-registry chain refs from other presets via attrs.groupPresets), and `referenced` (true if either > 0). Group presets that are chain-referenced also expose `referenced_by_presets` (UUIDs of the presets that wire them in — typically module presets, but type-agnostic). Use this before deleting — orphan-cleanup based only on page refs would silently wipe load-bearing chain-wired group presets (font, border, box-shadow, spacing, button).",
   },
   async () => {
     const result = await wp.request("/preset-audit");

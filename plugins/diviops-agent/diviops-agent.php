@@ -2368,7 +2368,17 @@ class DiviOps_Agent {
 	}
 
 	/**
-	 * Collect all modulePreset UUIDs referenced across all posts/pages.
+	 * Collect preset UUIDs referenced in page/post block markup.
+	 *
+	 * Uses `parse_blocks()` + recursion into `innerBlocks` so the scan is
+	 * structurally scoped: we only pick up UUIDs from `attrs.modulePreset`
+	 * and `attrs.groupPreset.<slot>.presetId`. An earlier regex approach
+	 * false-matched unrelated `"presetId"` keys that Divi uses elsewhere in
+	 * block attrs (e.g. `module.decoration.interactions[].presetId`).
+	 *
+	 * `presetId` in `groupPreset` slots is accepted as both an array and a
+	 * bare string — Divi accepts both via the stacking convention, and older
+	 * or hand-edited blocks may serialize as a string.
 	 */
 	private static function collect_page_preset_refs() {
 		$posts = get_posts( [
@@ -2381,35 +2391,145 @@ class DiviOps_Agent {
 		$per_page  = [];
 
 		foreach ( $posts as $p ) {
-			preg_match_all( '/"modulePreset":\s*(\[[^\]]*\])/', $p->post_content, $matches );
-			if ( empty( $matches[1] ) ) {
+			$content = $p->post_content;
+
+			// Cheap string pre-check avoids parse_blocks() (O(content length)
+			// tokenizer) on posts that can't possibly contain preset refs —
+			// the audit is an admin-only op but preset_cleanup runs here too,
+			// and large sites have thousands of non-Divi posts.
+			if ( false === strpos( $content, '"modulePreset"' ) && false === strpos( $content, '"groupPreset"' ) ) {
 				continue;
 			}
 
+			$blocks     = parse_blocks( $content );
 			$page_uuids = [];
-			foreach ( $matches[1] as $m ) {
-				$decoded = json_decode( $m, true );
-				if ( ! is_array( $decoded ) ) {
-					continue;
-				}
-				foreach ( $decoded as $uuid ) {
-					if ( 'default' !== $uuid ) {
-						$all_uuids[ $uuid ] = ( $all_uuids[ $uuid ] ?? 0 ) + 1;
-						$page_uuids[]       = $uuid;
-					}
-				}
-			}
+			$ref_count  = 0;
+			self::walk_blocks_for_preset_refs( $blocks, $all_uuids, $page_uuids, $ref_count );
 
 			if ( ! empty( $page_uuids ) ) {
 				$per_page[ $p->ID ] = [
 					'title'        => $p->post_title,
-					'total_refs'   => count( $matches[1] ),
+					'total_refs'   => $ref_count,
 					'custom_uuids' => array_values( array_unique( $page_uuids ) ),
 				];
 			}
 		}
 
 		return [ 'all_uuids' => $all_uuids, 'per_page' => $per_page ];
+	}
+
+	/**
+	 * Recursively walk a parsed-blocks tree collecting modulePreset +
+	 * groupPreset.<slot>.presetId UUID references. Updates counters by ref.
+	 *
+	 * Empty strings and `'default'` sentinels are skipped so bogus entries
+	 * (e.g. unset interaction presetId that slipped through in some other
+	 * scope) can never inflate ref counts. `$ref_count` is only incremented
+	 * when a container actually yielded at least one valid UUID, so
+	 * `per_page[...]['total_refs']` stays consistent with `custom_uuids`.
+	 */
+	private static function walk_blocks_for_preset_refs( $blocks, &$all_uuids, &$page_uuids, &$ref_count ) {
+		foreach ( $blocks as $block ) {
+			$attrs = isset( $block['attrs'] ) && is_array( $block['attrs'] ) ? $block['attrs'] : [];
+
+			if ( isset( $attrs['modulePreset'] ) ) {
+				// Accept both the canonical array form and the scalar string
+				// form — the latter can appear in hand-edited or legacy block
+				// markup, and matches the defensive pattern we use for
+				// groupPreset.<slot>.presetId below.
+				$uuids = is_array( $attrs['modulePreset'] )
+					? $attrs['modulePreset']
+					: [ $attrs['modulePreset'] ];
+				$found = false;
+				foreach ( $uuids as $uuid ) {
+					if ( is_string( $uuid ) && '' !== $uuid && 'default' !== $uuid ) {
+						$all_uuids[ $uuid ] = ( $all_uuids[ $uuid ] ?? 0 ) + 1;
+						$page_uuids[]       = $uuid;
+						$found              = true;
+					}
+				}
+				if ( $found ) {
+					$ref_count++;
+				}
+			}
+
+			if ( isset( $attrs['groupPreset'] ) && is_array( $attrs['groupPreset'] ) ) {
+				foreach ( $attrs['groupPreset'] as $slot ) {
+					if ( ! is_array( $slot ) || ! isset( $slot['presetId'] ) ) {
+						continue;
+					}
+					$ids   = is_array( $slot['presetId'] ) ? $slot['presetId'] : [ $slot['presetId'] ];
+					$found = false;
+					foreach ( $ids as $uuid ) {
+						if ( is_string( $uuid ) && '' !== $uuid && 'default' !== $uuid ) {
+							$all_uuids[ $uuid ] = ( $all_uuids[ $uuid ] ?? 0 ) + 1;
+							$page_uuids[]       = $uuid;
+							$found              = true;
+						}
+					}
+					if ( $found ) {
+						$ref_count++;
+					}
+				}
+			}
+
+			if ( ! empty( $block['innerBlocks'] ) && is_array( $block['innerBlocks'] ) ) {
+				self::walk_blocks_for_preset_refs( $block['innerBlocks'], $all_uuids, $page_uuids, $ref_count );
+			}
+		}
+	}
+
+	/**
+	 * Collect group-preset UUIDs referenced via the in-registry groupPresets chain.
+	 *
+	 * Walks every preset's `attrs.groupPresets.<slot>.presetId` and records who
+	 * wires what. Without this, every chain-only group preset (font, border,
+	 * box-shadow, spacing, button, etc.) reports `ref_count: 0` and gets flagged
+	 * as orphaned by audit + cleanup workflows — even though deleting them
+	 * silently breaks the module presets that pull them in. See issue #302.
+	 *
+	 * `presetId` in the registry is sometimes a single string and sometimes an
+	 * array (Divi accepts both via the stacking convention) — handle both shapes.
+	 */
+	private static function collect_group_chain_refs( $d5 ) {
+		$counts        = [];
+		// Build `referenced_by` with the referencing UUID as KEY (not value)
+		// so deduplication is O(1) isset() rather than O(N) in_array() inside
+		// the nested walker. Flatten to indexed arrays at the end so the
+		// returned shape matches consumer expectations.
+		$referenced_by = [];
+		foreach ( [ 'module', 'group' ] as $type ) {
+			if ( ! isset( $d5[ $type ] ) ) {
+				continue;
+			}
+			foreach ( (array) $d5[ $type ] as $info ) {
+				$info  = (array) $info;
+				$items = isset( $info['items'] ) ? (array) $info['items'] : [];
+				foreach ( $items as $referencing_uuid => $preset ) {
+					$preset = (array) $preset;
+					$attrs  = isset( $preset['attrs'] ) ? (array) $preset['attrs'] : [];
+					$slots  = isset( $attrs['groupPresets'] ) ? (array) $attrs['groupPresets'] : [];
+					foreach ( $slots as $slot ) {
+						$slot = (array) $slot;
+						if ( ! isset( $slot['presetId'] ) ) {
+							continue;
+						}
+						$ids = is_array( $slot['presetId'] ) ? $slot['presetId'] : [ $slot['presetId'] ];
+						foreach ( $ids as $gid ) {
+							if ( ! is_string( $gid ) || '' === $gid || 'default' === $gid ) {
+								continue;
+							}
+							$counts[ $gid ] = ( $counts[ $gid ] ?? 0 ) + 1;
+							$referenced_by[ $gid ][ $referencing_uuid ] = true;
+						}
+					}
+				}
+			}
+		}
+		foreach ( $referenced_by as $gid => $set ) {
+			$referenced_by[ $gid ] = array_keys( $set );
+		}
+		return [ 'counts' => $counts, 'referenced_by' => $referenced_by ];
 	}
 
 	/**
@@ -2442,10 +2562,16 @@ class DiviOps_Agent {
 	 * Audit presets: categorize as spam/descriptive, referenced/unreferenced.
 	 */
 	public static function preset_audit( $request ) {
-		$d5   = self::get_d5_presets();
-		$refs = self::collect_page_preset_refs();
+		$d5    = self::get_d5_presets();
+		$refs  = self::collect_page_preset_refs();
+		$chain = self::collect_group_chain_refs( $d5 );
 
-		$referenced_uuids = array_keys( $refs['all_uuids'] );
+		// Union of page-content refs and in-registry chain refs. A preset is
+		// "referenced" — and therefore unsafe to delete — if either axis sees it.
+		// Use `+` instead of array_merge: keys are UUIDs and array_merge would
+		// re-index any that happen to be all-digit strings, silently dropping
+		// the original UUID from the union.
+		$referenced_uuids = array_keys( $refs['all_uuids'] + $chain['counts'] );
 
 		$summary = [
 			'total_presets'       => 0,
@@ -2469,19 +2595,30 @@ class DiviOps_Agent {
 					$name        = $preset['name'] ?? '';
 					$has_content = ! empty( $preset['attrs'] ) || ! empty( $preset['styleAttrs'] );
 					$is_spam     = self::is_spam_preset_name( $name );
-					$is_ref      = in_array( $pid, $referenced_uuids, true );
+					$block_count = $refs['all_uuids'][ $pid ] ?? 0;
+					$group_count = $chain['counts'][ $pid ] ?? 0;
+					$is_ref      = $block_count > 0 || $group_count > 0;
 					$is_default  = ( $info['default'] ?? '' ) === $pid;
 
 					$entry = [
-						'id'         => $pid,
-						'module'     => $mod,
-						'type'       => $type,
-						'name'       => $name,
-						'has_attrs'  => $has_content,
-						'is_default' => $is_default,
-						'referenced' => $is_ref,
-						'ref_count'  => $refs['all_uuids'][ $pid ] ?? 0,
+						'id'              => $pid,
+						'module'          => $mod,
+						'type'            => $type,
+						'name'            => $name,
+						'has_attrs'       => $has_content,
+						'is_default'      => $is_default,
+						'referenced'      => $is_ref,
+						'ref_count'       => $block_count + $group_count,
+						'block_ref_count' => $block_count,
+						'group_ref_count' => $group_count,
 					];
+					if ( 'group' === $type && $group_count > 0 ) {
+						// Type-agnostic name: collect_group_chain_refs walks both
+						// `module` and `group` buckets, so the referencing UUID can
+						// belong to either type. Consumers needing the type can
+						// look the UUID up in the audit response.
+						$entry['referenced_by_presets'] = $chain['referenced_by'][ $pid ] ?? [];
+					}
 
 					if ( ! $has_content ) {
 						$summary['empty_defaults'][] = $entry;
@@ -2527,8 +2664,17 @@ class DiviOps_Agent {
 		$scope      = in_array( $scope_raw, [ 'spam', 'all' ], true ) ? $scope_raw : 'spam';
 		$d5         = self::get_d5_presets();
 		$refs       = self::collect_page_preset_refs();
+		$chain      = self::collect_group_chain_refs( $d5 );
 
-		$referenced_uuids = array_keys( $refs['all_uuids'] );
+		// Treat a preset as "in use" if it's referenced by page content OR by
+		// another preset's groupPresets chain. Without the chain union,
+		// remove_orphans / dedup would silently delete load-bearing group presets
+		// (font, border, box-shadow, spacing, button) that module presets wire in.
+		// See issue #302. Use `+` rather than array_merge so all-digit UUID keys
+		// don't get silently re-indexed out of the union. Keep as an assoc set
+		// so membership tests inside the preset loops are O(1) via isset()
+		// rather than O(N) via in_array().
+		$referenced_set = $refs['all_uuids'] + $chain['counts'];
 
 		$removed  = [];
 		$renamed  = [];
@@ -2610,7 +2756,7 @@ class DiviOps_Agent {
 					foreach ( $info['items'] as $pid => $preset ) {
 						$preset     = (array) $preset;
 						$name       = $preset['name'] ?? '';
-						$is_ref     = in_array( $pid, $referenced_uuids, true );
+						$is_ref     = isset( $referenced_set[ $pid ] );
 						$is_default = $pid === $default_id;
 
 						$should_remove = ! $is_ref && ! $is_default;
@@ -2672,9 +2818,9 @@ class DiviOps_Agent {
 						$hash = md5( wp_json_encode( $attrs ) );
 						if ( isset( $seen_hashes[ $hash ] ) ) {
 							$keeper    = $seen_hashes[ $hash ];
-							$is_ref    = in_array( $pid, $referenced_uuids, true );
+							$is_ref    = isset( $referenced_set[ $pid ] );
 							$is_def    = $pid === $default_id;
-							$keep_ref  = in_array( $keeper, $referenced_uuids, true );
+							$keep_ref  = isset( $referenced_set[ $keeper ] );
 							$keep_def  = $keeper === $default_id;
 
 							// Remove the one that is NOT referenced/default.
@@ -2719,7 +2865,7 @@ class DiviOps_Agent {
 					}
 					$name        = $preset['name'] ?? '';
 					$is_spam     = self::is_spam_preset_name( $name );
-					$is_ref      = in_array( $pid, $referenced_uuids, true );
+					$is_ref      = isset( $referenced_set[ $pid ] );
 					$is_default  = $pid === $default_id;
 
 					if ( $is_spam && ! $is_ref && ! $is_default ) {

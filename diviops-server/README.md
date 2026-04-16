@@ -110,7 +110,7 @@ The server connects via standard WordPress REST API and works with any environme
 | `diviops_find_icon` | Search 1,989 icons by keyword (FA + Divi) |
 | `diviops_list_templates` | List available MCP prompt templates |
 | `diviops_get_template` | Get a specific template's block markup |
-| `diviops_preset_audit` | Audit presets with referenced/unreferenced analysis |
+| `diviops_preset_audit` | Audit presets with referenced/unreferenced analysis. Walks both page content and in-registry `groupPresets` chains; exposes `block_ref_count`, `group_ref_count`, `referenced_by_presets` |
 | `diviops_preset_scan_orphans` | List page-referenced preset UUIDs missing from the D5 registry (separates dangling orphans from D4-legacy refs) |
 | `diviops_list_library` | List saved Divi Library items |
 | `diviops_get_library_item` | Get a library item's block markup |
