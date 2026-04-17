@@ -3,7 +3,7 @@
  * Plugin Name: DiviOps Agent
  * Plugin URI: https://github.com/oaris-dev/diviops
  * Description: REST API bridge for DiviOps — connects Claude Code to your Divi 5 site for AI-powered page building and design management.
- * Version: 1.0.0-beta.26
+ * Version: 1.0.0-beta.27
  * Author: oaris.de
  * Author URI: https://oaris.de
  * Text Domain: diviops-agent
@@ -1073,9 +1073,18 @@ class DiviOps_Agent {
 			$color_map = $existing;
 		}
 
-		// Add/update new colors.
+		// Add/update new colors. Offset past Divi's customizer-bound colors —
+		// see create_variable for the full rationale. Seed from max existing
+		// order (not count) to stay stable across gaps from deletions.
+		$max_existing = 0;
+		if ( ! empty( $color_map ) ) {
+			$orders = array_column( $color_map, 'order' );
+			if ( ! empty( $orders ) ) {
+				$max_existing = max( array_map( 'intval', $orders ) );
+			}
+		}
 		$added = 0;
-		$order = count( $color_map ) + 1;
+		$order = max( self::get_customizer_color_count(), $max_existing ) + 1;
 		foreach ( $new_colors as $c ) {
 			if ( ! is_array( $c ) ) {
 				continue;
@@ -4804,6 +4813,23 @@ class DiviOps_Agent {
 	}
 
 	/**
+	 * Count Divi's customizer-bound colors (gcid-primary-color etc.). They
+	 * render implicitly at the start of the Variable Manager but live in
+	 * GlobalData::$customizer_colors — separate storage from the user palette
+	 * at et_global_data.global_colors. New user variables must offset past
+	 * this count to avoid colliding with the implicit first-slot defaults.
+	 * Sourced via the class property so future upstream additions land
+	 * automatically; class_exists guard protects against Divi 4 / namespace
+	 * churn. Shared by create_variable and update_global_colors.
+	 */
+	private static function get_customizer_color_count() {
+		if ( ! class_exists( '\ET\Builder\Packages\GlobalData\GlobalData' ) ) {
+			return 0;
+		}
+		return count( (array) ( \ET\Builder\Packages\GlobalData\GlobalData::$customizer_colors ?? [] ) );
+	}
+
+	/**
 	 * Create a single variable in the Variable Manager.
 	 * Type "colors" writes to et_divi.et_global_data.global_colors.
 	 * Other types write to et_divi_global_variables.
@@ -4847,6 +4873,10 @@ class DiviOps_Agent {
 					$max_order = max( array_map( 'intval', $orders ) );
 				}
 			}
+
+			// Offset past Divi's customizer-bound colors — see
+			// get_customizer_color_count() for rationale.
+			$max_order = max( self::get_customizer_color_count(), $max_order );
 
 			$colors[ $id ] = [
 				'color'       => $color,
