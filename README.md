@@ -313,12 +313,12 @@ Claude will use the `divi-5-builder` skill to generate the page. Check the resul
 
 | Component | Distribution | Purpose |
 |-----------|--------------|---------|
-| **MCP Server** | npm: `@diviops/mcp-server` | Bridges Claude to WordPress via 47 tools (read pages, edit modules, validate blocks) |
+| **MCP Server** | npm: `@diviops/mcp-server` | Bridges Claude to WordPress via 48 tools (read pages, edit modules, validate blocks) |
 | **WP Plugin** | `diviops-agent.zip` (in this repo) | REST API endpoints for Divi page data, section targeting, block validation |
 | **Skill** | `claude plugin install oaris-dev/diviops` | VB-verified attr paths, design patterns, block-format rules |
 | **Design Library** | `diviops-design-library.zip` (in this repo) | CSS animations, glass effects, Three.js WebGL (optional) |
 
-## Available Tools (47)
+## Available Tools (48)
 
 ### Read (26)
 Pages, modules, sections, settings, icons, presets, library, Theme Builder, canvas, variables, templates, block validation, schema optimization
@@ -326,8 +326,8 @@ Pages, modules, sections, settings, icons, presets, library, Theme Builder, canv
 ### Write (20)
 Create/edit pages, sections, modules, presets (create/update/delete/reassign/cleanup), library items, Theme Builder templates, canvas, variables
 
-### Utility (1)
-WP-CLI (allowlisted, requires `WP_PATH` or `WP_CLI_CMD`)
+### Utility (2)
+WP-CLI (allowlisted, requires `WP_PATH` or `WP_CLI_CMD`); flush Divi's per-post static CSS cache (`wp-content/et-cache/{post_id}/`) after mutations — `wp cache flush` doesn't touch these files
 
 See [`skills/divi-5-builder/SKILL.md`](https://github.com/oaris-dev/diviops/blob/main/skills/divi-5-builder/SKILL.md) for the complete tool reference with attribute formats and design patterns.
 

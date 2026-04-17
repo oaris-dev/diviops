@@ -1,6 +1,6 @@
 # MCP Tool Reference
 
-47 tools for reading and writing Divi 5 pages, presets, variables, library, canvas, Theme Builder, and WP-CLI.
+48 tools for reading and writing Divi 5 pages, presets, variables, library, canvas, Theme Builder, and WP-CLI.
 
 ## Read Tools (26)
 
@@ -44,9 +44,10 @@
 - `diviops_create_variable` — create a design token variable (colors: `gcid-*` + hex, numbers: `gvid-*` + CSS value)
 - `diviops_delete_variable` — delete a variable by ID (auto-detects storage from prefix). Refuses with HTTP 409 when live references exist unless `force=true`; run `diviops_variables_scan_orphans` to find where they live. Returns HTTP 403 for Divi's customizer-bound defaults (`gcid-primary-color`, `gcid-secondary-color`, `gcid-heading-color`, `gcid-body-color`, `gcid-link-color`) — those are managed via WP Customizer theme options, not this tool
 
-## Utility Tools (1)
+## Utility Tools (2)
 
 - `diviops_wp_cli` — run WP-CLI commands (allowlisted; default safelist + opt-in extended commands via `DIVIOPS_WP_CLI_ALLOW`; requires `WP_PATH` for Local by Flywheel or `WP_CLI_CMD` for containerized envs)
+- `diviops_flush_static_cache` — flush Divi's compiled CSS cache at `wp-content/et-cache/`. Needed after preset / variable / module mutations because `wp cache flush` does NOT invalidate this on-disk cache — stale CSS keeps serving until the cache is cleared. Delegates to Divi's native `ET_Core_PageResource::remove_static_resources` when available (response field `backend: "divi_native"`); native mode additionally clears Theme Builder CSS scattered across other post dirs, archive / taxonomy / home / notfound CSS, object cache, module features cache, post features cache, dynamic assets cache, Google Fonts cache, and post meta caches — significantly broader than the fs fallback. Falls back to a targeted filesystem walk of numeric-named subdirs when the Divi class is absent (`backend: "fs_fallback"`). Exactly one selector required: `post_id` (single post), `all` (every cached file), or `after` (unix ts — iterate dirs with mtime greater than ts, flushing each). No default to `all` — omitting a selector returns HTTP 400 to prevent accidental site-wide flushes. Safety in fallback mode: only numeric-named subdirs are touched; siblings like `.cache-cleared-at`, `global/`, `en_US/`, `notfound/`, `*.data` are never removed. Response includes `mode`, `backend`, `flushed`, `files_freed`, `bytes_freed`, and a `scope_note` in native mode reminding that counts reflect per-post dirs only (lower bound — broader WP caches are purged but not counted). Idempotent when cache root missing (returns 200 with empty list)
 
 ## Targeting Reference
 

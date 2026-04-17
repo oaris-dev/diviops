@@ -91,7 +91,7 @@ The server connects via standard WordPress REST API and works with any environme
 
 > **WP-CLI note:** `WP_PATH` keeps the existing Local by Flywheel behavior by running `wp` directly on the host filesystem. For Docker-based environments (DDEV, wp-env, DevKinsta, WordPress Studio), set `WP_CLI_CMD` to the wrapper command instead. When `WP_CLI_CMD` is set, the server executes the wrapper from `WP_PATH` if provided, otherwise from its current working directory. The MCP server still validates the requested WP-CLI subcommand against its allowlist before executing either path.
 
-## Available Tools (47)
+## Available Tools (48)
 
 ### Read (26)
 | Tool | Description |
@@ -147,10 +147,11 @@ The server connects via standard WordPress REST API and works with any environme
 | `diviops_update_canvas` | Update canvas content |
 | `diviops_delete_canvas` | Delete a canvas page |
 
-### Utility (1)
+### Utility (2)
 | Tool | Description |
 |------|-------------|
 | `diviops_wp_cli` | Run WP-CLI commands (allowlisted, requires `WP_PATH` or `WP_CLI_CMD`) |
+| `diviops_flush_static_cache` | Flush Divi's compiled CSS cache under `wp-content/et-cache/`. `wp cache flush` does NOT touch these files — the frontend can keep serving stale CSS after mutations. Delegates to Divi's native clearer (`ET_Core_PageResource::remove_static_resources`) when available — also clears Theme Builder / archive / taxonomy / home / notfound CSS, object cache, module features cache, post features cache, dynamic assets cache, Google Fonts cache, post meta caches. Falls back to a filesystem walk of numeric-named subdirs when Divi is inactive. Response includes `backend: "divi_native"` or `"fs_fallback"`. Exactly one selector required: `post_id`, `all`, or `after` (unix ts) — no default to `all` |
 
 ## WP-CLI Security
 

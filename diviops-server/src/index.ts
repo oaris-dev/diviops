@@ -1726,6 +1726,54 @@ server.registerTool(
   },
 );
 
+server.registerTool(
+  "diviops_flush_static_cache",
+  {
+    description:
+      "Flush Divi's compiled static CSS cache under wp-content/et-cache/. wp cache flush does NOT touch these files — the frontend can keep serving stale CSS after a preset/variable/module mutation until the cache is cleared. Delegates to Divi's native ET_Core_PageResource::remove_static_resources when available (response backend: \"divi_native\"), which additionally clears Theme Builder CSS scattered across other post dirs, archive/taxonomy/home/notfound CSS, the object cache, module features cache, post features cache, Google Fonts cache, dynamic assets cache, and post meta caches. Falls back to a targeted filesystem walk of numeric-named et-cache subdirs when the Divi class is absent (backend: \"fs_fallback\"). Provide exactly one selector — no site-wide default to prevent accidental full flush. Idempotent: missing cache root returns 200 with empty list.",
+    inputSchema: {
+      post_id: z
+        .number()
+        .int()
+        .positive()
+        .optional()
+        .describe(
+          "Flush cache for one post. Native backend also clears matching Theme Builder CSS in other post dirs; fs_fallback only clears wp-content/et-cache/{post_id}/.",
+        ),
+      all: z
+        .boolean()
+        .optional()
+        .default(false)
+        .describe(
+          "Flush every cached file. Native backend clears archive/taxonomy/home/notfound CSS + multi-layer WP caches; fs_fallback only clears numeric-named subdirs (siblings like .cache-cleared-at, global/, en_US/, notfound/, *.data are preserved in either mode).",
+        ),
+      after: z
+        .number()
+        .int()
+        .positive()
+        .optional()
+        .describe(
+          "Unix timestamp — iterate numeric subdirs with mtime greater than this value, flushing each. Useful for flushing entries touched since a known deployment or mutation batch. Native clearer runs once per matched post.",
+        ),
+    },
+  },
+  async ({ post_id, all, after }) => {
+    const body: Record<string, unknown> = {};
+    if (post_id !== undefined) body.post_id = post_id;
+    if (all) body.all = true;
+    if (after !== undefined) body.after = after;
+    const result = await wp.request("/flush-static-cache", {
+      method: "POST",
+      body,
+    });
+    return {
+      content: [
+        { type: "text" as const, text: JSON.stringify(result, null, 2) },
+      ],
+    };
+  },
+);
+
 // ── Start ────────────────────────────────────────────────────────────
 
 async function main() {
