@@ -313,14 +313,14 @@ Claude will use the `divi-5-builder` skill to generate the page. Check the resul
 
 | Component | Distribution | Purpose |
 |-----------|--------------|---------|
-| **MCP Server** | npm: `@diviops/mcp-server` | Bridges Claude to WordPress via 46 tools (read pages, edit modules, validate blocks) |
+| **MCP Server** | npm: `@diviops/mcp-server` | Bridges Claude to WordPress via 47 tools (read pages, edit modules, validate blocks) |
 | **WP Plugin** | `diviops-agent.zip` (in this repo) | REST API endpoints for Divi page data, section targeting, block validation |
 | **Skill** | `claude plugin install oaris-dev/diviops` | VB-verified attr paths, design patterns, block-format rules |
 | **Design Library** | `diviops-design-library.zip` (in this repo) | CSS animations, glass effects, Three.js WebGL (optional) |
 
-## Available Tools (46)
+## Available Tools (47)
 
-### Read (25)
+### Read (26)
 Pages, modules, sections, settings, icons, presets, library, Theme Builder, canvas, variables, templates, block validation, schema optimization
 
 ### Write (20)

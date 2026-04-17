@@ -91,9 +91,9 @@ The server connects via standard WordPress REST API and works with any environme
 
 > **WP-CLI note:** `WP_PATH` keeps the existing Local by Flywheel behavior by running `wp` directly on the host filesystem. For Docker-based environments (DDEV, wp-env, DevKinsta, WordPress Studio), set `WP_CLI_CMD` to the wrapper command instead. When `WP_CLI_CMD` is set, the server executes the wrapper from `WP_PATH` if provided, otherwise from its current working directory. The MCP server still validates the requested WP-CLI subcommand against its allowlist before executing either path.
 
-## Available Tools (46)
+## Available Tools (47)
 
-### Read (25)
+### Read (26)
 | Tool | Description |
 |------|-------------|
 | `diviops_test_connection` | Test WordPress connection and Divi version |
@@ -119,6 +119,7 @@ The server connects via standard WordPress REST API and works with any environme
 | `diviops_list_tb_templates` | List Theme Builder templates with conditions and layout IDs |
 | `diviops_get_tb_layout` | Get a Theme Builder layout's block markup (header/body/footer) |
 | `diviops_list_variables` | List design token variables (filter by type or prefix) |
+| `diviops_variables_scan_orphans` | Find `gvid-`/`gcid-` refs with no backing Variable Manager entry (orphans render as invalid CSS) + unused variables (defined, never referenced). Scans pages, Theme Builder layouts (header/body/footer), Divi Library items, canvas pages, and the preset registry |
 | `diviops_list_canvases` | List all canvas pages |
 | `diviops_get_canvas` | Get canvas content |
 
@@ -141,7 +142,7 @@ The server connects via standard WordPress REST API and works with any environme
 | `diviops_update_tb_layout` | Update a Theme Builder layout's block markup |
 | `diviops_create_tb_template` | Create Theme Builder template with header/footer and conditions |
 | `diviops_create_variable` | Create a design token variable |
-| `diviops_delete_variable` | Delete a variable by ID |
+| `diviops_delete_variable` | Delete a variable by ID. Returns HTTP 409 when live references exist unless `force=true` (use `diviops_variables_scan_orphans` to find reference locations). Returns HTTP 403 for Divi's customizer-bound defaults (`gcid-primary-color`, `gcid-secondary-color`, `gcid-heading-color`, `gcid-body-color`, `gcid-link-color` — managed via WP Customizer) |
 | `diviops_create_canvas` | Create a canvas page |
 | `diviops_update_canvas` | Update canvas content |
 | `diviops_delete_canvas` | Delete a canvas page |

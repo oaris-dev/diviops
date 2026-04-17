@@ -1681,20 +1681,43 @@ server.registerTool(
   "diviops_delete_variable",
   {
     description:
-      "Delete a design token variable by ID. Auto-detects storage from ID prefix (gcid-* = colors, gvid-* = numbers/strings/etc).",
+      "Delete a design token variable by ID. Auto-detects storage from ID prefix (gcid-* = colors, gvid-* = numbers/strings/etc). Returns HTTP 409 when live references exist unless force=true — run diviops_variables_scan_orphans to see where the references live. Returns HTTP 403 for Divi's customizer-bound defaults (gcid-primary-color, gcid-secondary-color, gcid-heading-color, gcid-body-color, gcid-link-color); those are managed via WP Customizer theme options and can't be deleted via this tool.",
     inputSchema: {
       id: z
         .string()
         .describe(
           'Variable ID to delete (e.g. "gcid-oa-accent" or "gvid-oa-size-xl")',
         ),
+      force: z
+        .boolean()
+        .optional()
+        .default(false)
+        .describe(
+          "Delete even if live references exist. Orphans will remain in page/preset content and render as invalid CSS on the frontend — run diviops_variables_scan_orphans afterwards to audit.",
+        ),
     },
   },
-  async ({ id }) => {
+  async ({ id, force }) => {
     const result = await wp.request("/variable/delete", {
       method: "POST",
-      body: { id },
+      body: { id, force },
     });
+    return {
+      content: [
+        { type: "text" as const, text: JSON.stringify(result, null, 2) },
+      ],
+    };
+  },
+);
+
+server.registerTool(
+  "diviops_variables_scan_orphans",
+  {
+    description:
+      "Scan pages, Theme Builder layouts (header/body/footer), Divi Library items, canvas pages, and the preset registry for gvid-/gcid- references that have no backing entry in the Variable Manager (orphans), plus variables defined but referenced nowhere (unused). Orphans render as invalid CSS on the frontend — the $variable()$ resolver falls through with no fallback. Use after a deletion with force=true, or periodically as a hygiene check. Symmetric to diviops_preset_scan_orphans.",
+  },
+  async () => {
+    const result = await wp.request("/variables-scan-orphans");
     return {
       content: [
         { type: "text" as const, text: JSON.stringify(result, null, 2) },

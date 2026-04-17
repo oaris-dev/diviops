@@ -3,7 +3,7 @@
  * Plugin Name: DiviOps Agent
  * Plugin URI: https://github.com/oaris-dev/diviops
  * Description: REST API bridge for DiviOps — connects Claude Code to your Divi 5 site for AI-powered page building and design management.
- * Version: 1.0.0-beta.24
+ * Version: 1.0.0-beta.25
  * Author: oaris.de
  * Author URI: https://oaris.de
  * Text Domain: diviops-agent
@@ -22,7 +22,7 @@ class DiviOps_Agent {
 	/**
 	 * Plugin version — used for handshake compatibility checks.
 	 */
-	const VERSION = '1.0.0-beta.24';
+	const VERSION = '1.0.0-beta.25';
 
 	/**
 	 * Minimum MCP server version this plugin is compatible with.
@@ -34,6 +34,29 @@ class DiviOps_Agent {
 	 */
 	const REST_NAMESPACE      = 'diviops/v1';
 	const REASSIGN_MAX_PAGES  = 1000;
+	const VARIABLES_SCAN_MAX_POSTS = 2000;
+
+	/**
+	 * Post types that can contain Divi block markup — scanned for
+	 * preset / variable references. Kept in one place so the ref-scanner
+	 * and the delete_variable SQL fast-path stay in lockstep.
+	 *
+	 * Excludes:
+	 * - et_theme_builder / et_template — these are template ASSIGNMENT records
+	 *   (which layout runs where, conditions, duplication metadata), not the
+	 *   block markup itself. Verified empty post_content on every record.
+	 * - wp_block / wp_template / wp_template_part — Gutenberg reusable blocks
+	 *   and FSE templates, not in use on Divi-rendered pages.
+	 */
+	const SCANNABLE_POST_TYPES = [
+		'page',
+		'post',
+		'et_header_layout',
+		'et_body_layout',
+		'et_footer_layout',
+		'et_pb_layout',
+		'et_pb_canvas',
+	];
 
 	/** Block comment tag constants for section parsing. */
 	const SECTION_OPEN  = '<!-- wp:divi/section';
@@ -789,8 +812,16 @@ class DiviOps_Agent {
 			'callback'            => [ __CLASS__, 'delete_variable' ],
 			'permission_callback' => [ __CLASS__, 'check_admin_permission' ],
 			'args'                => [
-				'id' => [ 'required' => true, 'type' => 'string' ],
+				'id'    => [ 'required' => true, 'type' => 'string' ],
+				'force' => [ 'required' => false, 'type' => 'boolean', 'default' => false ],
 			],
+		] );
+
+		register_rest_route( self::REST_NAMESPACE, '/variables-scan-orphans', [
+			'methods'             => 'GET',
+			'callback'            => [ __CLASS__, 'variables_scan_orphans' ],
+			// Admin-only: response correlates variable IDs with page titles — inventory-leak risk (matches /preset-scan-orphans).
+			'permission_callback' => [ __CLASS__, 'check_admin_permission' ],
 		] );
 	}
 
@@ -2530,6 +2561,314 @@ class DiviOps_Agent {
 			$referenced_by[ $gid ] = array_keys( $set );
 		}
 		return [ 'counts' => $counts, 'referenced_by' => $referenced_by ];
+	}
+
+	/**
+	 * Recursively walk any PHP value collecting `gvid-` and `gcid-` references
+	 * from $variable(...)$ tokens. Token shape (after parse_blocks decodes block attrs):
+	 * `$variable({"type":"...","value":{"name":"gvid-XXXX","settings":{}}})$`
+	 *
+	 * Pre-check on the `$variable(` substring avoids running preg_match_all on
+	 * every string leaf of every attr tree — most leaves are short values like
+	 * px/color/url that can't possibly carry a variable token.
+	 */
+	private static function walk_value_for_variable_refs( $value, &$all_ids, &$local_ids ) {
+		if ( is_string( $value ) ) {
+			if ( false === strpos( $value, '$variable(' ) ) {
+				return;
+			}
+			if ( preg_match_all( '/"name"\s*:\s*"(g[vc]id-[A-Za-z0-9_-]+)"/', $value, $m ) ) {
+				foreach ( $m[1] as $id ) {
+					$all_ids[ $id ] = ( $all_ids[ $id ] ?? 0 ) + 1;
+					$local_ids[]    = $id;
+				}
+			}
+			return;
+		}
+		if ( is_array( $value ) || is_object( $value ) ) {
+			foreach ( (array) $value as $v ) {
+				self::walk_value_for_variable_refs( $v, $all_ids, $local_ids );
+			}
+		}
+	}
+
+	/**
+	 * Recursively walk a parsed-blocks tree, scanning each block's attrs for
+	 * gvid-/gcid- references via walk_value_for_variable_refs.
+	 */
+	private static function walk_blocks_for_variable_refs( $blocks, &$all_ids, &$local_ids ) {
+		foreach ( $blocks as $block ) {
+			if ( isset( $block['attrs'] ) && is_array( $block['attrs'] ) ) {
+				self::walk_value_for_variable_refs( $block['attrs'], $all_ids, $local_ids );
+			}
+			if ( ! empty( $block['innerBlocks'] ) && is_array( $block['innerBlocks'] ) ) {
+				self::walk_blocks_for_variable_refs( $block['innerBlocks'], $all_ids, $local_ids );
+			}
+		}
+	}
+
+	/**
+	 * Collect every variable reference across all content surfaces.
+	 *
+	 * Scanned surfaces:
+	 * - Pages + posts (post_content blocks)
+	 * - Theme Builder layouts — header / body / footer (each stored as a
+	 *   separate post type: et_header_layout / et_body_layout / et_footer_layout).
+	 *   The et_theme_builder / et_template records that link these together
+	 *   hold only assignment metadata (which layout runs where), not the
+	 *   block markup itself — they're intentionally excluded from scanning
+	 * - Divi Library items (et_pb_layout) — saved module/row/section markup
+	 * - Canvas pages (et_pb_canvas)
+	 * - Preset registry (et_divi_builder_global_presets_d5) — a preset's attrs /
+	 *   styleAttrs / renderAttrs / groupPresets chain may all embed $variable()$
+	 *   tokens when the preset was saved against a variable-bound control
+	 *
+	 * Capped at VARIABLES_SCAN_MAX_POSTS to avoid OOM / timeout on large
+	 * sites. When the cap is hit, `scan_truncated` flags the response so
+	 * callers know the orphan list may be incomplete.
+	 *
+	 * Returns:
+	 *   all_ids         — { id => ref_count } aggregated across all surfaces
+	 *   locations       — { id => [ { type, ... } ] } per-reference location records
+	 *   scan_truncated  — true if the post cap was hit
+	 *   scanned_posts   — number of posts actually scanned
+	 */
+	private static function collect_variable_refs() {
+		$all_ids        = [];
+		$locations      = [];
+		$scan_truncated = false;
+
+		// Pages + TB layouts + library + canvas. Fetch one sentinel row
+		// past the cap so we can distinguish "site has exactly N posts" (no
+		// truncation) from "site has more than N" (real truncation) without
+		// paying for a SELECT FOUND_ROWS() pass. `no_found_rows` skips that
+		// pass. Discard the sentinel before scanning so the scan scope stays
+		// honest.
+		$posts = get_posts( [
+			'post_type'      => self::SCANNABLE_POST_TYPES,
+			'post_status'    => [ 'publish', 'draft', 'private' ],
+			'posts_per_page' => self::VARIABLES_SCAN_MAX_POSTS + 1,
+			'orderby'        => 'ID',
+			'order'          => 'ASC',
+			'no_found_rows'  => true,
+		] );
+
+		if ( count( $posts ) > self::VARIABLES_SCAN_MAX_POSTS ) {
+			$scan_truncated = true;
+			$posts          = array_slice( $posts, 0, self::VARIABLES_SCAN_MAX_POSTS );
+		}
+
+		foreach ( $posts as $p ) {
+			$content = $p->post_content;
+			if ( false === strpos( $content, '$variable(' ) ) {
+				continue;
+			}
+			$blocks    = parse_blocks( $content );
+			$local_ids = [];
+			self::walk_blocks_for_variable_refs( $blocks, $all_ids, $local_ids );
+
+			foreach ( array_unique( $local_ids ) as $id ) {
+				$locations[ $id ][] = [
+					'type'    => $p->post_type,
+					'post_id' => $p->ID,
+					'title'   => $p->post_title,
+				];
+			}
+		}
+
+		// Preset registry.
+		$d5 = self::get_d5_presets();
+		foreach ( [ 'module', 'group' ] as $bucket ) {
+			if ( ! isset( $d5[ $bucket ] ) ) {
+				continue;
+			}
+			foreach ( (array) $d5[ $bucket ] as $mod => $info ) {
+				$info  = (array) $info;
+				$items = isset( $info['items'] ) ? (array) $info['items'] : [];
+				foreach ( $items as $uuid => $preset ) {
+					$preset    = (array) $preset;
+					$local_ids = [];
+					self::walk_value_for_variable_refs( $preset, $all_ids, $local_ids );
+					foreach ( array_unique( $local_ids ) as $id ) {
+						$locations[ $id ][] = [
+							'type'        => 'preset',
+							'bucket'      => $bucket,
+							'module'      => $mod,
+							'preset_uuid' => $uuid,
+							'preset_name' => $preset['name'] ?? '',
+						];
+					}
+				}
+			}
+		}
+
+		return [
+			'all_ids'        => $all_ids,
+			'locations'      => $locations,
+			'scan_truncated' => $scan_truncated,
+			'scanned_posts'  => count( $posts ),
+		];
+	}
+
+	/**
+	 * Cheap existence check — "does this variable id appear anywhere?".
+	 * No parse_blocks; a single SQL LIKE on `post_content` (scoped to the
+	 * scannable post types + post_status and limited to 1 row — note
+	 * `post_content` is not indexed in the stock WordPress schema, so the
+	 * query still scans the matching rows, but the scope + LIMIT keep it
+	 * cheap), plus a substring check on the preset registry option.
+	 *
+	 * Used by delete_variable to short-circuit the happy path: if nothing
+	 * anywhere references the id, skip the expensive collect_variable_refs()
+	 * call. False-positive tolerant — `$id` is distinctive (`g[vc]id-...`) so
+	 * a literal occurrence in page content or the preset registry almost
+	 * always corresponds to a real ref; on a hit we fall through to the
+	 * full scan to produce an accurate 409 location list anyway.
+	 */
+	private static function variable_id_appears_anywhere( $id ) {
+		global $wpdb;
+		if ( '' === $id ) {
+			return false;
+		}
+
+		// Needle is just the bare id — Divi stores tokens with unicode-escaped
+		// quotes (`\u0022name\u0022:\u0022gvid-...\u0022`), and the preset
+		// registry is serialized PHP (raw quotes), so any quoted-wrapper
+		// pattern would mismatch one of the two surfaces. The `g[vc]id-`
+		// prefix is distinctive enough that a literal occurrence of the id
+		// in content/options almost always corresponds to a real ref;
+		// positive hits fall through to the full parse_blocks scan which
+		// rigorously confirms + locates. False-positive tolerant by design.
+		$placeholders = implode( ',', array_fill( 0, count( self::SCANNABLE_POST_TYPES ), '%s' ) );
+		$needle       = '%' . $wpdb->esc_like( $id ) . '%';
+
+		// Content scan.
+		$sql = $wpdb->prepare(
+			"SELECT 1 FROM {$wpdb->posts}
+				WHERE post_status IN ('publish','draft','private')
+					AND post_type IN ($placeholders)
+					AND post_content LIKE %s
+				LIMIT 1",
+			array_merge( self::SCANNABLE_POST_TYPES, [ $needle ] )
+		);
+		if ( (bool) $wpdb->get_var( $sql ) ) {
+			return true;
+		}
+
+		// Preset registry scan. `get_option` returns the already-unserialized
+		// value when the option was stored via `update_option` (typical
+		// Divi path → stored as array/object), so a naive is_string guard
+		// would miss the array case and let preset-only references slip
+		// past the fast-path — silently orphaning the preset on delete.
+		//
+		// Rather than materializing the whole structure via wp_json_encode
+		// on every call (allocation + encoding pressure that scales with
+		// registry size), walk the in-memory tree and strpos only string
+		// leaves, returning on first hit. Early-exit keeps the fast-path
+		// genuinely fast even on large preset registries.
+		$raw = get_option( 'et_divi_builder_global_presets_d5', '' );
+		if ( self::value_contains_substring( $raw, $id ) ) {
+			return true;
+		}
+
+		return false;
+	}
+
+	/**
+	 * Recursive early-exit substring check — walks any PHP value (string,
+	 * array, object) and returns true at the first string leaf containing
+	 * `$needle`. Used by `variable_id_appears_anywhere` to scan the preset
+	 * registry without the allocation cost of serializing the whole tree.
+	 */
+	private static function value_contains_substring( $value, $needle ) {
+		if ( '' === $needle ) {
+			return false;
+		}
+		if ( is_string( $value ) ) {
+			return false !== strpos( $value, $needle );
+		}
+		if ( is_array( $value ) || is_object( $value ) ) {
+			foreach ( (array) $value as $v ) {
+				if ( self::value_contains_substring( $v, $needle ) ) {
+					return true;
+				}
+			}
+		}
+		return false;
+	}
+
+	/**
+	 * Get the map of every defined variable ID from the Variable Manager.
+	 * Colors live in `et_global_data.global_colors`; others live in
+	 * `et_divi_global_variables` grouped by type. Divi's customizer-bound
+	 * accent colors (gcid-primary-color, gcid-secondary-color, gcid-heading-color,
+	 * gcid-body-color, gcid-link-color) resolve via a separate code path
+	 * (`GlobalData::$customizer_colors`) and are intentionally excluded from
+	 * et_global_colors on save — include them here so they don't false-positive
+	 * as orphans on every stock Divi 5 install.
+	 */
+	private static function get_defined_variable_ids() {
+		$ids = [];
+
+		// Colors.
+		$raw         = et_get_option( 'et_global_data' );
+		$global_data = ! empty( $raw ) ? maybe_unserialize( $raw ) : [];
+		$colors      = ( is_array( $global_data ) && is_array( $global_data['global_colors'] ?? null ) )
+			? $global_data['global_colors']
+			: [];
+		foreach ( $colors as $id => $c ) {
+			if ( is_array( $c ) ) {
+				$ids[ $id ] = [
+					'type'  => 'colors',
+					'label' => $c['label'] ?? $id,
+					'value' => $c['color'] ?? '',
+				];
+			}
+		}
+
+		// Divi customizer-bound colors. Source via the class property (not a
+		// hardcoded list) so new customizer colors added by upstream Divi land
+		// automatically. Guard with class_exists in case Divi 4 is active or
+		// the class is namespaced differently in a future release. Tagged
+		// with source='customizer' so variables_scan_orphans can exclude them
+		// from the unused_variables bucket — they can't be deleted via
+		// delete_variable (bound to theme options, not the Variable Manager),
+		// so surfacing them as "deletion candidates" would mislead callers.
+		if ( class_exists( '\ET\Builder\Packages\GlobalData\GlobalData' ) ) {
+			$customizer = \ET\Builder\Packages\GlobalData\GlobalData::$customizer_colors ?? [];
+			foreach ( (array) $customizer as $id => $meta ) {
+				if ( isset( $ids[ $id ] ) ) {
+					continue; // User override in global_colors wins.
+				}
+				$ids[ $id ] = [
+					'type'   => 'colors',
+					'label'  => $meta['label'] ?? $id,
+					'value'  => $meta['default'] ?? '',
+					'source' => 'customizer',
+				];
+			}
+		}
+
+		// Non-color types.
+		$vars = get_option( 'et_divi_global_variables', [] );
+		if ( is_array( $vars ) ) {
+			foreach ( [ 'numbers', 'strings', 'images', 'links', 'fonts' ] as $type ) {
+				if ( ! is_array( $vars[ $type ] ?? null ) ) {
+					continue;
+				}
+				foreach ( $vars[ $type ] as $id => $v ) {
+					if ( is_array( $v ) ) {
+						$ids[ $id ] = [
+							'type'  => $type,
+							'label' => $v['label'] ?? $id,
+							'value' => $v['value'] ?? '',
+						];
+					}
+				}
+			}
+		}
+
+		return $ids;
 	}
 
 	/**
@@ -4571,46 +4910,177 @@ class DiviOps_Agent {
 
 	/**
 	 * Delete a variable by ID. Auto-detects storage location from ID prefix.
+	 *
+	 * Reference-safety: by default, refuses to delete when live references
+	 * exist (returns HTTP 409 with the reference locations). Pass `force=true`
+	 * to delete anyway — callers that do so are responsible for orphan cleanup
+	 * (run `variables_scan_orphans` afterwards). This prevents the silent-orphan
+	 * class of bug where a delete leaves dangling `$variable(...)$` tokens in
+	 * page/preset content that render as invalid CSS on the frontend.
 	 */
 	public static function delete_variable( $request ) {
-		$id = sanitize_text_field( $request->get_param( 'id' ) );
+		$id    = sanitize_text_field( $request->get_param( 'id' ) );
+		$force = rest_sanitize_boolean( $request->get_param( 'force' ) ?? false );
 
-		// Colors: gcid-* prefix.
-		if ( 0 === strpos( $id, 'gcid-' ) ) {
+		// Customizer-bound defaults (gcid-primary-color / gcid-link-color / etc.)
+		// resolve via GlobalData::$customizer_colors and are bound to theme
+		// options — not deletable via this endpoint. Reject with an explicit
+		// 403 rather than letting the downstream 404 misrepresent this as
+		// "variable doesn't exist" (it does; it just isn't under this tool's
+		// jurisdiction).
+		if ( class_exists( '\ET\Builder\Packages\GlobalData\GlobalData' ) ) {
+			$customizer = \ET\Builder\Packages\GlobalData\GlobalData::$customizer_colors ?? [];
+			if ( isset( $customizer[ $id ] ) ) {
+				return new WP_Error(
+					'forbidden',
+					"Variable '$id' is a Divi customizer-bound default and cannot be deleted via this endpoint — it's managed through WP Customizer theme options.",
+					[ 'status' => 403 ]
+				);
+			}
+		}
+
+		// Resolve storage bucket via prefix. Both lookups are O(1) array reads
+		// against already-in-memory options — cheap to do first so a typo'd
+		// id returns 404 without paying for a full-site parse_blocks scan.
+		$is_color = 0 === strpos( $id, 'gcid-' );
+
+		if ( $is_color ) {
 			$raw         = et_get_option( 'et_global_data' );
 			$global_data = ! empty( $raw ) ? maybe_unserialize( $raw ) : [];
-			if ( ! is_array( $global_data ) ) {
-				return new WP_Error( 'not_found', "Variable '$id' not found", [ 'status' => 404 ] );
-			}
-			$colors = is_array( $global_data['global_colors'] ?? null ) ? $global_data['global_colors'] : [];
-
+			$colors      = is_array( $global_data ) && is_array( $global_data['global_colors'] ?? null )
+				? $global_data['global_colors']
+				: [];
 			if ( ! isset( $colors[ $id ] ) ) {
 				return new WP_Error( 'not_found', "Variable '$id' not found", [ 'status' => 404 ] );
 			}
-
-			unset( $colors[ $id ] );
-			$global_data['global_colors'] = $colors;
-			et_update_option( 'et_global_data', $global_data );
-
-			return rest_ensure_response( [ 'success' => true, 'deleted' => $id ] );
-		}
-
-		// Non-color types: gvid-* prefix.
-		$vars = get_option( 'et_divi_global_variables', [] );
-		if ( ! is_array( $vars ) ) {
-			return new WP_Error( 'not_found', "Variable '$id' not found", [ 'status' => 404 ] );
-		}
-
-		$var_types = [ 'numbers', 'strings', 'images', 'links', 'fonts' ];
-		foreach ( $var_types as $type ) {
-			if ( is_array( $vars[ $type ] ?? null ) && isset( $vars[ $type ][ $id ] ) ) {
-				unset( $vars[ $type ][ $id ] );
-				update_option( 'et_divi_global_variables', $vars );
-				return rest_ensure_response( [ 'success' => true, 'deleted' => $id ] );
+		} else {
+			$vars = get_option( 'et_divi_global_variables', [] );
+			if ( ! is_array( $vars ) ) {
+				return new WP_Error( 'not_found', "Variable '$id' not found", [ 'status' => 404 ] );
+			}
+			$found_type = null;
+			foreach ( [ 'numbers', 'strings', 'images', 'links', 'fonts' ] as $type ) {
+				if ( is_array( $vars[ $type ] ?? null ) && isset( $vars[ $type ][ $id ] ) ) {
+					$found_type = $type;
+					break;
+				}
+			}
+			if ( null === $found_type ) {
+				return new WP_Error( 'not_found', "Variable '$id' not found", [ 'status' => 404 ] );
 			}
 		}
 
-		return new WP_Error( 'not_found', "Variable '$id' not found", [ 'status' => 404 ] );
+		// Two-tier ref check to keep the normal-case delete fast:
+		//   1. Cheap SQL LIKE + preset-option substring scan — O(few ms)
+		//      regardless of site size. Negative hit = definitely no refs,
+		//      skip the full scan entirely (the common path for a caller
+		//      who just ran variables_scan_orphans and is cleaning up).
+		//   2. Positive hit falls through to collect_variable_refs() so the
+		//      409 body carries accurate per-location records. The expensive
+		//      scan only runs when we're genuinely blocking a live delete.
+		if ( ! $force && self::variable_id_appears_anywhere( $id ) ) {
+			$refs = self::collect_variable_refs();
+			if ( isset( $refs['all_ids'][ $id ] ) ) {
+				return new WP_Error(
+					'has_references',
+					sprintf(
+						"Variable '%s' has %d live reference(s). Pass force=true to delete anyway; orphans will remain — run variables_scan_orphans to audit them afterwards.",
+						$id,
+						$refs['all_ids'][ $id ]
+					),
+					[
+						'status'    => 409,
+						'id'        => $id,
+						'ref_count' => $refs['all_ids'][ $id ],
+						'locations' => $refs['locations'][ $id ] ?? [],
+					]
+				);
+			}
+		}
+
+		if ( $is_color ) {
+			unset( $colors[ $id ] );
+			$global_data['global_colors'] = $colors;
+			et_update_option( 'et_global_data', $global_data );
+		} else {
+			unset( $vars[ $found_type ][ $id ] );
+			update_option( 'et_divi_global_variables', $vars );
+		}
+
+		return rest_ensure_response( [ 'success' => true, 'deleted' => $id, 'forced' => $force ] );
+	}
+
+	/**
+	 * Scan content surfaces for stale variable references + unused definitions.
+	 *
+	 * Orphans = ids referenced in pages / TB layouts / preset registry with no
+	 * matching entry in the Variable Manager. Render as invalid CSS on the
+	 * frontend (the `$variable()$` resolver falls through with no fallback),
+	 * often only noticed via visual breakage.
+	 *
+	 * Unused = ids defined in the Variable Manager but referenced nowhere —
+	 * deletion candidates; returned alongside orphans so one audit pass
+	 * surfaces both hygiene signals.
+	 *
+	 * Shape mirrors preset_scan_orphans for consistency (orphan_count /
+	 * orphans / per-ref location records).
+	 */
+	public static function variables_scan_orphans( $request ) {
+		unset( $request );
+		$refs    = self::collect_variable_refs();
+		$defined = self::get_defined_variable_ids();
+
+		$orphans          = [];
+		$unused_variables = [];
+
+		foreach ( $refs['all_ids'] as $id => $count ) {
+			if ( isset( $defined[ $id ] ) ) {
+				continue;
+			}
+			$orphans[] = [
+				'id'        => $id,
+				'ref_count' => $count,
+				'locations' => $refs['locations'][ $id ] ?? [],
+			];
+		}
+
+		foreach ( $defined as $id => $info ) {
+			if ( isset( $refs['all_ids'][ $id ] ) ) {
+				continue;
+			}
+			// Customizer-bound colors are defined (they resolve via theme
+			// options) but not deletable via delete_variable, so they aren't
+			// "deletion candidates" — skip them out of unused_variables.
+			if ( 'customizer' === ( $info['source'] ?? '' ) ) {
+				continue;
+			}
+			unset( $info['source'] ); // internal tag, don't leak to the response
+			$unused_variables[] = array_merge( [ 'id' => $id ], $info );
+		}
+
+		$response = [
+			'orphan_count'            => count( $orphans ),
+			'unused_count'            => count( $unused_variables ),
+			'total_unique_referenced' => count( $refs['all_ids'] ),
+			'total_reference_count'   => array_sum( $refs['all_ids'] ),
+			'total_in_registry'       => count( $defined ),
+			'scanned_posts'           => $refs['scanned_posts'],
+			'orphans'                 => $orphans,
+			'unused_variables'        => $unused_variables,
+		];
+
+		// Surface scan-truncation only when it happens — keeps the response
+		// clean on the normal case, and loud when the cap actually bit.
+		if ( $refs['scan_truncated'] ) {
+			$response['scan_truncated']         = true;
+			$response['scan_truncation_limit']  = self::VARIABLES_SCAN_MAX_POSTS;
+			$response['warning']                = sprintf(
+				'Scanned the first %d posts only — site has more Divi content than the safety cap. Orphan list may be incomplete.',
+				self::VARIABLES_SCAN_MAX_POSTS
+			);
+		}
+
+		return rest_ensure_response( $response );
 	}
 
 	// ── Handshake ────────────────────────────────────────────────────

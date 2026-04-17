@@ -1,8 +1,8 @@
 # MCP Tool Reference
 
-46 tools for reading and writing Divi 5 pages, presets, variables, library, canvas, Theme Builder, and WP-CLI.
+47 tools for reading and writing Divi 5 pages, presets, variables, library, canvas, Theme Builder, and WP-CLI.
 
-## Read Tools (25)
+## Read Tools (26)
 
 - `diviops_test_connection` — verify WordPress + plugin connection
 - `diviops_server_info` — DiviOps server identity, version, license type, capabilities
@@ -20,6 +20,7 @@
 - `diviops_list_tb_templates` / `diviops_get_tb_layout` — browse Theme Builder templates and layouts
 - `diviops_list_canvases` / `diviops_get_canvas` — browse and read off-canvas workspaces (popups, modals, menus)
 - `diviops_list_variables` — list design token variables, filter by type (`colors`, `numbers`, etc.) or ID prefix (e.g. `gcid-oa-` for oa design system colors, `gvid-oa-` for numbers)
+- `diviops_variables_scan_orphans` — find `gvid-`/`gcid-` refs with no backing Variable Manager entry (orphans render as invalid CSS when the `$variable()$` resolver falls through) plus variables defined but referenced nowhere (unused — deletion candidates). Scans pages, Theme Builder layouts (`et_header_layout` / `et_body_layout` / `et_footer_layout`), Divi Library items (`et_pb_layout`), canvas pages (`et_pb_canvas`), and the preset registry. Symmetric to `diviops_preset_scan_orphans`
 
 ## Write Tools (20)
 
@@ -41,7 +42,7 @@
 - `diviops_update_canvas` — update canvas content and metadata
 - `diviops_delete_canvas` — remove a canvas
 - `diviops_create_variable` — create a design token variable (colors: `gcid-*` + hex, numbers: `gvid-*` + CSS value)
-- `diviops_delete_variable` — delete a variable by ID (auto-detects storage from prefix)
+- `diviops_delete_variable` — delete a variable by ID (auto-detects storage from prefix). Refuses with HTTP 409 when live references exist unless `force=true`; run `diviops_variables_scan_orphans` to find where they live. Returns HTTP 403 for Divi's customizer-bound defaults (`gcid-primary-color`, `gcid-secondary-color`, `gcid-heading-color`, `gcid-body-color`, `gcid-link-color`) — those are managed via WP Customizer theme options, not this tool
 
 ## Utility Tools (1)
 
