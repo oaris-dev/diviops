@@ -1641,7 +1641,7 @@ server.registerTool(
   "diviops_create_variable",
   {
     description:
-      'Create a design token variable in the Divi Variable Manager. Colors (type "colors") use gcid-* IDs and hex values. Numbers/strings/etc use gvid-* IDs.',
+      'Create a design token variable in the Divi Variable Manager. Colors (type "colors") use gcid-* IDs and hex values. Numbers/strings/etc use gvid-* IDs. For type="numbers" fluid tokens, pass min+max shorthand (anchors default to 320px/1920px) or explicit targets — server generates arithmetically-correct clamp() formulas. Px inputs only in this MVP; rem inputs must be converted to px (1rem=16px) before calling. Mutually exclusive with value.',
     inputSchema: {
       type: z
         .enum(["colors", "numbers", "strings", "images", "links", "fonts"])
@@ -1657,14 +1657,40 @@ server.registerTool(
         .describe("Human-readable label shown in the VB Variable Manager"),
       value: z
         .string()
+        .optional()
         .describe(
-          'Variable value: hex color for colors (e.g. "#3a7a6a"), CSS value for numbers (e.g. "clamp(30px, 8vw, 100px)")',
+          'Variable value (required unless using fluid min/max/targets for type=numbers): hex color for colors (e.g. "#3a7a6a"), CSS value for numbers (e.g. "clamp(30px, 8vw, 100px)" or "2rem")',
+        ),
+      min: z
+        .string()
+        .optional()
+        .describe(
+          'Fluid minimum value in px (e.g. "20px"). Paired with max. Anchors default to 320px/1920px. type="numbers" only. Rem not supported — convert to px (1rem=16px) before calling.',
+        ),
+      max: z
+        .string()
+        .optional()
+        .describe(
+          'Fluid maximum value in px (e.g. "60px"). Paired with min.',
+        ),
+      targets: z
+        .record(z.string(), z.string())
+        .refine((m) => !m || Object.keys(m).length === 2, {
+          message: "targets must contain exactly 2 viewport entries",
+        })
+        .optional()
+        .describe(
+          'Explicit two-anchor fluid spec, px only. Example: {"320px":"20px","1920px":"60px"} → clamp(20px, 12px + 2.5vw, 60px). Exactly 2 entries required. type="numbers" only. Mutually exclusive with min/max.',
         ),
     },
   },
-  async ({ type, id, label, value }) => {
-    const body: Record<string, string> = { type, label, value };
+  async ({ type, id, label, value, min, max, targets }) => {
+    const body: Record<string, unknown> = { type, label };
+    if (value !== undefined) body.value = value;
     if (id) body.id = id;
+    if (min !== undefined) body.min = min;
+    if (max !== undefined) body.max = max;
+    if (targets !== undefined) body.targets = targets;
     const result = await wp.request("/variable/create", {
       method: "POST",
       body,

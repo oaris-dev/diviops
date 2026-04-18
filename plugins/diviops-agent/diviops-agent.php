@@ -3,7 +3,7 @@
  * Plugin Name: DiviOps Agent
  * Plugin URI: https://github.com/oaris-dev/diviops
  * Description: REST API bridge for DiviOps — connects Claude Code to your Divi 5 site for AI-powered page building and design management.
- * Version: 1.0.0-beta.27
+ * Version: 1.0.0-beta.28
  * Author: oaris.de
  * Author URI: https://oaris.de
  * Text Domain: diviops-agent
@@ -800,10 +800,16 @@ class DiviOps_Agent {
 			'callback'            => [ __CLASS__, 'create_variable' ],
 			'permission_callback' => [ __CLASS__, 'check_admin_permission' ],
 			'args'                => [
-				'type'  => [ 'required' => true, 'type' => 'string' ],
-				'id'    => [ 'required' => false, 'type' => 'string' ],
-				'label' => [ 'required' => true, 'type' => 'string' ],
-				'value' => [ 'required' => true, 'type' => 'string' ],
+				'type'    => [ 'required' => true, 'type' => 'string' ],
+				'id'      => [ 'required' => false, 'type' => 'string' ],
+				'label'   => [ 'required' => true, 'type' => 'string' ],
+				// Not required at the route layer — callback validates that
+				// either value OR fluid params (min+max or targets) is present
+				// and returns the richer 400 (fluid_value_conflict / etc).
+				'value'   => [ 'required' => false, 'type' => 'string' ],
+				'min'     => [ 'required' => false, 'type' => 'string' ],
+				'max'     => [ 'required' => false, 'type' => 'string' ],
+				'targets' => [ 'required' => false, 'type' => 'object' ],
 			],
 		] );
 
@@ -4830,23 +4836,160 @@ class DiviOps_Agent {
 	}
 
 	/**
+	 * Parse a positive px value like "20px" → float. Rejects rem/em/% and
+	 * bare numbers to keep the fluid-generator input contract explicit.
+	 * Rem support is intentionally omitted in the MVP because any rem
+	 * emission requires knowing the site's root font-size to stay
+	 * arithmetically correct (see follow-up issue for rem/root support).
+	 */
+	private static function parse_fluid_px( $str ) {
+		if ( ! is_string( $str ) ) {
+			return null;
+		}
+		// Accept leading-dot CSS formats like ".5px" and "-.2px" alongside
+		// the common "20px" / "1.25px" / "-5px" forms.
+		if ( preg_match( '/^(-?\d*\.?\d+)px$/', trim( $str ), $m ) ) {
+			return (float) $m[1];
+		}
+		return null;
+	}
+
+	/**
+	 * Parse a viewport anchor like "320px" → positive float.
+	 */
+	private static function parse_fluid_viewport( $str ) {
+		$n = self::parse_fluid_px( $str );
+		return ( null !== $n && $n > 0 ) ? $n : null;
+	}
+
+	/**
+	 * Build a px clamp() formula from two (viewport, value) anchor points.
+	 * Emits min/max ordered by value (not viewport) so negative slopes work.
+	 * Collapses to a scalar when both values are equal. Up to 3 decimals.
+	 */
+	private static function build_fluid_px_clamp( $w1, $v1, $w2, $v2 ) {
+		if ( abs( $w2 - $w1 ) < 0.01 ) {
+			throw new \InvalidArgumentException( 'Fluid anchors cannot share the same viewport.' );
+		}
+		$fmt = function ( $n ) {
+			$s = rtrim( rtrim( number_format( $n, 3, '.', '' ), '0' ), '.' );
+			if ( '' === $s || '-0' === $s ) {
+				$s = '0';
+			}
+			return $s;
+		};
+		if ( abs( $v2 - $v1 ) < 0.01 ) {
+			return $fmt( $v1 ) . 'px';
+		}
+		$slope_vw = ( $v2 - $v1 ) / ( $w2 - $w1 ) * 100.0;
+		$base_px  = $v1 - ( $slope_vw * $w1 / 100.0 );
+		$min_v    = min( $v1, $v2 );
+		$max_v    = max( $v1, $v2 );
+		$op       = ( $slope_vw >= 0 ) ? '+' : '-';
+		return sprintf(
+			'clamp(%spx, %spx %s %svw, %spx)',
+			$fmt( $min_v ),
+			$fmt( $base_px ),
+			$op,
+			$fmt( abs( $slope_vw ) ),
+			$fmt( $max_v )
+		);
+	}
+
+	/**
+	 * Generate a clamp() from min/max shorthand using default anchors 320px
+	 * and 1920px (industry convention for fluid scales).
+	 */
+	private static function generate_fluid_clamp_from_minmax( $min_str, $max_str ) {
+		$min_px = self::parse_fluid_px( $min_str );
+		$max_px = self::parse_fluid_px( $max_str );
+		if ( null === $min_px ) {
+			throw new \InvalidArgumentException( "Invalid min: '$min_str' — expected px (e.g. '20px'). Rem inputs not supported in this MVP; convert to px (1rem=16px) before calling." );
+		}
+		if ( null === $max_px ) {
+			throw new \InvalidArgumentException( "Invalid max: '$max_str' — expected px (e.g. '60px'). Rem inputs not supported in this MVP; convert to px (1rem=16px) before calling." );
+		}
+		return self::build_fluid_px_clamp( 320.0, $min_px, 1920.0, $max_px );
+	}
+
+	/**
+	 * Generate a clamp() from explicit { viewport => value } targets.
+	 * Requires exactly 2 entries with px values.
+	 */
+	private static function generate_fluid_clamp_from_targets( $targets ) {
+		if ( ! is_array( $targets ) || 2 !== count( $targets ) ) {
+			throw new \InvalidArgumentException( "targets must contain exactly 2 entries keyed by viewport width (e.g. {'320px':'20px','1920px':'60px'})." );
+		}
+		$points = [];
+		foreach ( $targets as $viewport => $value_str ) {
+			$w_px = self::parse_fluid_viewport( (string) $viewport );
+			if ( null === $w_px ) {
+				throw new \InvalidArgumentException( "Invalid viewport key '$viewport' — expected px (e.g. '320px')." );
+			}
+			$v_px = self::parse_fluid_px( (string) $value_str );
+			if ( null === $v_px ) {
+				throw new \InvalidArgumentException( "Invalid target value '$value_str' — expected px (e.g. '20px'). Rem values not supported in this MVP; convert to px (1rem=16px) before calling." );
+			}
+			$points[] = [ 'w' => $w_px, 'v' => $v_px ];
+		}
+		return self::build_fluid_px_clamp( $points[0]['w'], $points[0]['v'], $points[1]['w'], $points[1]['v'] );
+	}
+
+	/**
 	 * Create a single variable in the Variable Manager.
 	 * Type "colors" writes to et_divi.et_global_data.global_colors.
 	 * Other types write to et_divi_global_variables.
+	 *
+	 * Fluid clamp() generation (type=numbers only):
+	 * - `min` + `max` (px strings like "20px") → clamp using default anchors 320px/1920px
+	 * - `targets` object (px keys + px values) → clamp using the two anchors
+	 * - Mutually exclusive with `value`. Px-only in the MVP; rem/root-font-size
+	 *   support is tracked as a follow-up issue.
 	 */
 	public static function create_variable( $request ) {
-		$type  = sanitize_text_field( $request->get_param( 'type' ) );
-		$label = sanitize_text_field( $request->get_param( 'label' ) );
-		$value = $request->get_param( 'value' );
-		if ( ! is_scalar( $value ) ) {
-			return new WP_Error( 'invalid_value', 'value must be a scalar string.', [ 'status' => 400 ] );
-		}
-		$value = (string) $value;
+		$type    = sanitize_text_field( $request->get_param( 'type' ) );
+		$label   = sanitize_text_field( $request->get_param( 'label' ) );
+		$value   = $request->get_param( 'value' );
+		$min     = $request->get_param( 'min' );
+		$max     = $request->get_param( 'max' );
+		$targets = $request->get_param( 'targets' );
 
 		$valid_types = [ 'colors', 'numbers', 'strings', 'images', 'links', 'fonts' ];
 		if ( ! in_array( $type, $valid_types, true ) ) {
 			return new WP_Error( 'invalid_type', 'Type must be one of: ' . implode( ', ', $valid_types ), [ 'status' => 400 ] );
 		}
+
+		$has_shorthand = ( null !== $min || null !== $max );
+		$has_targets   = ( null !== $targets && [] !== $targets );
+		$has_fluid     = $has_shorthand || $has_targets;
+
+		if ( $has_fluid ) {
+			if ( 'numbers' !== $type ) {
+				return new WP_Error( 'invalid_fluid_type', 'Fluid clamp generation (min/max/targets) is only valid for type="numbers".', [ 'status' => 400 ] );
+			}
+			if ( null !== $value && '' !== $value ) {
+				return new WP_Error( 'fluid_value_conflict', 'Cannot pass both value and min/max/targets — use one input mode.', [ 'status' => 400 ] );
+			}
+			if ( $has_shorthand && $has_targets ) {
+				return new WP_Error( 'fluid_input_conflict', 'Cannot pass both min/max shorthand and targets — use one input mode.', [ 'status' => 400 ] );
+			}
+			if ( $has_shorthand && ( null === $min || null === $max ) ) {
+				return new WP_Error( 'fluid_incomplete_shorthand', 'Shorthand requires both min and max.', [ 'status' => 400 ] );
+			}
+
+			try {
+				$value = $has_targets
+					? self::generate_fluid_clamp_from_targets( $targets )
+					: self::generate_fluid_clamp_from_minmax( (string) $min, (string) $max );
+			} catch ( \Exception $e ) {
+				return new WP_Error( 'fluid_generation_failed', $e->getMessage(), [ 'status' => 400 ] );
+			}
+		}
+
+		if ( ! is_scalar( $value ) ) {
+			return new WP_Error( 'invalid_value', 'value must be a scalar string (or supply min/max/targets for type=numbers).', [ 'status' => 400 ] );
+		}
+		$value = (string) $value;
 
 		if ( 'colors' === $type ) {
 			$id = sanitize_text_field( $request->get_param( 'id' ) ?: 'gcid-' . wp_generate_password( 8, false ) );

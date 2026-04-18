@@ -141,7 +141,7 @@ The server connects via standard WordPress REST API and works with any environme
 | `diviops_save_to_library` | Save block markup to Divi Library |
 | `diviops_update_tb_layout` | Update a Theme Builder layout's block markup |
 | `diviops_create_tb_template` | Create Theme Builder template with header/footer and conditions |
-| `diviops_create_variable` | Create a design token variable |
+| `diviops_create_variable` | Create a design token variable. For `type=numbers` fluid tokens, pass `min`+`max` shorthand (anchors default to 320px/1920px) or explicit `targets` like `{"320px":"20px","1920px":"60px"}` — server generates arithmetically-correct `clamp()` instead of hand-written math that silently under-reaches the stated max. Px inputs only in this MVP; rem inputs should be converted to px (1rem=16px) before calling |
 | `diviops_delete_variable` | Delete a variable by ID. Returns HTTP 409 when live references exist unless `force=true` (use `diviops_variables_scan_orphans` to find reference locations). Returns HTTP 403 for Divi's customizer-bound defaults (`gcid-primary-color`, `gcid-secondary-color`, `gcid-heading-color`, `gcid-body-color`, `gcid-link-color` — managed via WP Customizer) |
 | `diviops_create_canvas` | Create a canvas page |
 | `diviops_update_canvas` | Update canvas content |

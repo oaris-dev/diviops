@@ -41,7 +41,7 @@
 - `diviops_create_canvas` — create off-canvas workspace (popups, modals, menus) linked to a page
 - `diviops_update_canvas` — update canvas content and metadata
 - `diviops_delete_canvas` — remove a canvas
-- `diviops_create_variable` — create a design token variable (colors: `gcid-*` + hex, numbers: `gvid-*` + CSS value)
+- `diviops_create_variable` — create a design token variable (colors: `gcid-*` + hex, numbers: `gvid-*` + CSS value). For `type=numbers` fluid tokens, pass `min`+`max` shorthand (anchors default to 320px/1920px) or explicit `targets` like `{"320px":"20px","1920px":"60px"}` — server generates arithmetically-correct `clamp()` instead of hand-written math that silently under-reaches the stated max. Mutually exclusive with `value`. Px inputs only in this MVP; rem inputs should be converted to px (1rem=16px) before calling
 - `diviops_delete_variable` — delete a variable by ID (auto-detects storage from prefix). Refuses with HTTP 409 when live references exist unless `force=true`; run `diviops_variables_scan_orphans` to find where they live. Returns HTTP 403 for Divi's customizer-bound defaults (`gcid-primary-color`, `gcid-secondary-color`, `gcid-heading-color`, `gcid-body-color`, `gcid-link-color`) — those are managed via WP Customizer theme options, not this tool
 
 ## Utility Tools (2)
