@@ -208,6 +208,49 @@ Only list the specific commands you need. Unknown entries are ignored with a war
 
 > **Known limitation — filesystem access**: Validation is prefix-based, not flag-aware. Commands that read from or write to the filesystem (`acf export`/`acf import`, `export`, opt-in `import`/`eval-file`) can target any path reachable by the WP-CLI user. For shared or multi-tenant environments, consider wrapping the MCP server with a stricter proxy or running it under an account with limited filesystem permissions. Flag-level validation is a candidate future enhancement.
 
+## Safety Patterns
+
+High-risk or bulk destructive tools follow one of two conventions to guard against unintended mutation. Both are stateless (no session tokens between calls), but they guard differently: Pattern A is a **stateless gate** — the first call mutates when the safety check passes, refuses with an explanatory error when it fires. Pattern B is **preview-before-commit** — the first call never mutates; an explicit apply step is required. Tools without a gate (e.g., `diviops_preset_delete`, `diviops_update_page_content`) execute their mutation directly — whether to adopt a pattern is a per-tool design decision, not a retrofit requirement.
+
+### Pattern A — `force: false/true` (refuse-with-override)
+
+Tool refuses the operation with an explanatory error when a safety check fails; caller reviews the reason and retries with `force=true` to commit. Single round-trip on the happy path, single retry on the override path.
+
+**Fit criteria:**
+- Operation targets a **single item** (one variable, one preset, one page)
+- Safety check is **binary** (safe / not safe)
+- The reason for blocking is compact enough to fit in the error body (e.g., "3 live references")
+- The caller can decide from the error alone — no full diff needed
+
+**Current tools:**
+| Tool | Guard | Override |
+|------|-------|----------|
+| `diviops_delete_variable` | HTTP 409 when live references exist | `force=true` |
+
+### Pattern B — `mode: "dry-run"/"apply"` (preview-then-commit)
+
+Tool returns a preview of the changes it would make; caller reviews the diff, then re-invokes with the apply flag to commit. Two round-trips by design — the preview itself is the value.
+
+**Fit criteria:**
+- Operation touches **many items** (bulk reassign, bulk cleanup)
+- The *preview is the value* — caller wants the full list of changes before committing
+- Side effects don't fit in a one-line reason (e.g., "142 preset refs across 18 pages rewritten from UUID X to UUID Y")
+- Two round-trips are acceptable because the caller is already in review mode
+
+**Current tools:**
+| Tool | Preview flag | Commit flag |
+|------|--------------|-------------|
+| `diviops_preset_reassign` | `mode: "dry-run"` (default) | `mode: "apply"` |
+| `diviops_preset_cleanup` | `dry_run: true` (default) | `dry_run: false` |
+
+> Both preview-then-commit tools share the same semantic pattern but use different parameter shapes (`mode` enum vs `dry_run` bool). Both predate this convention and stay as-is for caller compatibility. **New bulk tools should use the enum form** (`mode: "dry-run" | "apply"`) — it's more extensible if future modes are needed (`"interactive"`, `"selective"`, etc.) and keeps the interface consistent as the tool set grows.
+
+### Picking a pattern for a new tool
+
+Ask: **single item or many?** If single, Pattern A. If many, Pattern B.
+
+Don't introduce a third pattern (`confirmation_token`, session-based preview, etc.) unless a tool has a genuine need that neither A nor B covers — both patterns above are stateless and flexible enough for most cases.
+
 ## Example Usage
 
 After setup, Claude can:

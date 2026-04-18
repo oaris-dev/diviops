@@ -1779,7 +1779,7 @@ server.registerTool(
         .positive()
         .optional()
         .describe(
-          "Unix timestamp — iterate numeric subdirs with mtime greater than this value, flushing each. Useful for flushing entries touched since a known deployment or mutation batch. Native clearer runs once per matched post.",
+          "Unix timestamp — flush Divi CSS files (et-*.css) with mtime strictly greater than this value. Useful for flushing entries touched since a known deployment or mutation batch. Native backend does a single-pass filesystem sweep covering numeric post dirs AND archive/taxonomy/home/notfound/global subtrees in one walk (Visual Builder -vb-* runtime CSS preserved); fs_fallback iterates numeric post dirs whose latest file mtime > after. `flushed` lists numeric post_ids whose files were actually deleted; `skipped` lists numeric post_ids that exist but had no files pass the filter.",
         ),
     },
   },

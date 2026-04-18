@@ -3,7 +3,7 @@
  * Plugin Name: DiviOps Agent
  * Plugin URI: https://github.com/oaris-dev/diviops
  * Description: REST API bridge for DiviOps — connects Claude Code to your Divi 5 site for AI-powered page building and design management.
- * Version: 1.0.0-beta.28
+ * Version: 1.0.0-beta.29
  * Author: oaris.de
  * Author URI: https://oaris.de
  * Text Domain: diviops-agent
@@ -22,7 +22,7 @@ class DiviOps_Agent {
 	/**
 	 * Plugin version — used for handshake compatibility checks.
 	 */
-	const VERSION = '1.0.0-beta.26';
+	const VERSION = '1.0.0-beta.29';
 
 	/**
 	 * Minimum MCP server version this plugin is compatible with.
@@ -5325,10 +5325,8 @@ class DiviOps_Agent {
 		}
 
 		$cache_root = self::resolve_et_cache_root();
-		$mode       = $has_post_id ? 'post_id' : ( $all ? 'all' : 'after' );
 		$use_native = class_exists( '\ET_Core_PageResource' )
 			&& method_exists( '\ET_Core_PageResource', 'remove_static_resources' );
-		$backend    = $use_native ? 'divi_native' : 'fs_fallback';
 
 		// Writability gate:
 		//   - Native mode: defer to Divi's own can_write_to_filesystem() — it
@@ -5536,6 +5534,126 @@ class DiviOps_Agent {
 			);
 		}
 
+		if ( $use_native ) {
+			// Single-pass WP_Filesystem sweep of the whole et-cache tree,
+			// filtering by file mtime > $after_ts. Replaces the prior
+			// per-matched-post ET_Core_PageResource::remove_static_resources
+			// loop — each of those calls does ~7 glob() scans of the cache
+			// tree (PageResource.php:1268-1285), so runtime grew as
+			// O(#matched × #total_files). The sweep runs in a single
+			// O(#total_files) walk regardless of match count, which is the
+			// behavior the `all` phase-1 path already uses.
+			//
+			// Semantic shift from the prior native path: the previous
+			// implementation filtered at the post-dir granularity — if any
+			// file inside et-cache/{pid}/ had mtime > cutoff, all CSS in
+			// that dir (and related TB CSS across other dirs, via the
+			// native clearer's cross-dir globs) was removed. The sweep
+			// filters at the file granularity — only files strictly newer
+			// than the cutoff are deleted. Older CSS co-located with a
+			// recently-rewritten file survives. For the tool's stated use
+			// case ("flushing entries touched since a known deployment or
+			// mutation batch") this is the more literal semantic.
+			//
+			// `flushed` reports numeric post_ids whose files were actually
+			// deleted (parent-dir membership tracked in the sweep).
+			// `skipped` reports numeric post_ids that exist but had no
+			// files pass the filter — preserved for response-shape parity
+			// with the prior native + current fallback paths.
+			$wpfs = self::init_wp_filesystem();
+			if ( ! $wpfs ) {
+				return new WP_Error(
+					'diviops_flush_fs_init_failed',
+					'Failed to initialize WP_Filesystem for cache clear. The native backend requires it to delete files on hosts where Divi writes via FTP/SSH credentials.',
+					[ 'status' => 500, 'cache_root' => $cache_root ]
+				);
+			}
+			$sweep       = self::sweep_all_divi_css_preserving_vb( $cache_root, $wpfs, $after_ts );
+			$touched_set = array_flip( $sweep['post_ids'] );
+			$skipped     = [];
+			foreach ( self::et_cache_numeric_post_ids( $cache_root ) as $pid ) {
+				if ( ! isset( $touched_set[ $pid ] ) ) {
+					$skipped[] = $pid;
+				}
+			}
+			sort( $skipped );
+
+			// Per-touched-post invalidations — the prior per-match
+			// remove_static_resources call did these inside Divi, and
+			// dropping them leaves page caches / Divi post-meta caches
+			// serving stale HTML even after the CSS file is gone. These
+			// are cheap O(N) operations (no filesystem globs), so doing
+			// them in a post-sweep loop preserves the end-to-end flush
+			// semantic without reintroducing the scaling issue. Guarded
+			// on the same class/function checks `run_divi_site_wide_cache_purges`
+			// uses so stripped builds don't fatal.
+			$has_clear_wp_cache  = function_exists( 'et_core_clear_wp_cache' );
+			$has_meta_cache_clear = class_exists( '\ET_Core_PageResource' )
+				&& method_exists( '\ET_Core_PageResource', 'clear_post_meta_caches' );
+			foreach ( $sweep['post_ids'] as $pid ) {
+				if ( $has_clear_wp_cache ) {
+					et_core_clear_wp_cache( (string) $pid );
+				}
+				if ( $has_meta_cache_clear ) {
+					\ET_Core_PageResource::clear_post_meta_caches( (string) $pid );
+				}
+			}
+
+			// Divi feature caches (module-features, post-features,
+			// Google Fonts, dynamic assets) are site-wide with no
+			// per-post keys — the prior per-match native clearer ran
+			// these N times as part of Divi's post-clear block. Call
+			// once after the sweep to preserve the invalidation scope
+			// without re-introducing the N × glob overhead. Gated on
+			// `anything_flushed` so a no-op `after` call doesn't
+			// force feature regeneration.
+			$anything_flushed = $sweep['files'] > 0;
+			if ( $anything_flushed ) {
+				self::run_divi_feature_cache_purges();
+			}
+
+			// Write the DONOTCACHEPAGE sentinel once when anything was
+			// actually flushed — matches Divi's post-clear behavior
+			// (PageResource.php:1367-1368) so page-cache plugins / CDNs
+			// skip caching the first regenerated request. Gate on
+			// `files > 0` rather than `post_ids` non-empty: the sweep
+			// also covers non-post subtrees (archive/taxonomy/home/
+			// notfound/global), and deleting only those still warrants
+			// the sentinel. Writing `.cache-cleared-at` is still
+			// deliberately avoided — is_file_stale() would invalidate
+			// the preserved `-vb-*` files against it.
+			if ( $anything_flushed && is_dir( $cache_root ) ) {
+				$wpfs->put_contents( $cache_root . '/DONOTCACHEPAGE', '' );
+			}
+
+			$response = [
+				'mode'        => 'after',
+				'backend'     => 'divi_native',
+				'cache_root'  => $cache_root,
+				'after'       => $after_ts,
+				'flushed'     => $sweep['post_ids'],
+				'skipped'     => $skipped,
+				'files_freed' => $sweep['files'],
+				'bytes_freed' => $sweep['bytes'],
+			];
+			// scope_note attaches to any non-empty flush so callers
+			// understand broader side effects (invalidations, sentinel)
+			// even when only non-post subtree files were deleted —
+			// e.g. global/ CSS rewritten after the cutoff on a site
+			// with no matching numeric posts. Same gate as the
+			// sentinel write.
+			if ( $anything_flushed ) {
+				$response['scope_note'] = 'Single-pass WP_Filesystem sweep of et-cache/ deleting Divi CSS files (et-*.css) whose mtime > after, across numeric post dirs AND archive/taxonomy/home/notfound/global subtrees. Visual Builder (-vb-*) runtime CSS preserved to avoid unstyling an open VB session. Filter is per-file (not per-dir): older CSS co-located with a recently-rewritten file is left in place. Post-sweep invalidations: per-touched-post (et_core_clear_wp_cache + ET_Core_PageResource::clear_post_meta_caches, keyed to numeric post_ids) plus site-wide Divi feature-cache purges (ET_Builder_Module_Features / Post_Features / Google_Fonts_Feature / Dynamic_Assets_Feature — these have no per-post keys and were already run N times by the prior per-match native clearer). Non-post subtree deletions contribute to files_freed / bytes_freed but not flushed. DONOTCACHEPAGE sentinel written to cache root so page-cache plugins skip caching the first regenerated request. .cache-cleared-at timestamp deliberately NOT written — is_file_stale() would invalidate the preserved VB files against it.';
+			}
+			return rest_ensure_response( $response );
+		}
+
+		// fs_fallback path — Divi inactive / stripped build. Per-post
+		// iteration is already O(total_files) here because flush_et_cache_dir
+		// uses direct unlink() (no native glob loop), so it doesn't hit the
+		// scaling issue the native path had. Kept as-is to preserve the
+		// prior dir-mtime filter semantic + per-post transient / post_meta
+		// invalidations that flush_et_cache_dir performs.
 		$matched = [];
 		$skipped = [];
 		foreach ( self::et_cache_numeric_post_ids( $cache_root ) as $pid ) {
@@ -5560,30 +5678,19 @@ class DiviOps_Agent {
 			$snap = self::et_cache_dir_snapshot( $cache_root, $pid );
 			$files_freed += $snap['files'];
 			$bytes_freed += $snap['bytes'];
-			if ( $use_native ) {
-				// See post_id branch for preserve_vb_files=true rationale.
-				\ET_Core_PageResource::remove_static_resources(
-					$pid, 'all', false, 'all', true, true
-				);
-			} else {
-				self::flush_et_cache_dir( $cache_root, $pid );
-			}
+			self::flush_et_cache_dir( $cache_root, $pid );
 		}
 
-		$response = [
+		return rest_ensure_response( [
 			'mode'        => 'after',
-			'backend'     => $backend,
+			'backend'     => 'fs_fallback',
 			'cache_root'  => $cache_root,
 			'after'       => $after_ts,
 			'flushed'     => $matched,
 			'skipped'     => $skipped,
 			'files_freed' => $files_freed,
 			'bytes_freed' => $bytes_freed,
-		];
-		if ( $use_native && ! empty( $matched ) ) {
-			$response['scope_note'] = 'Divi native clearer ran once per matched post — scope extends beyond each et-cache/{id}/ to related TB/WP-template CSS. Visual Builder (-vb-*) runtime CSS preserved to avoid unstyling an open VB session. Counts reflect each matched post\'s dir only (lower bound).';
-		}
-		return rest_ensure_response( $response );
+		] );
 	}
 
 	/**
@@ -5839,6 +5946,35 @@ class DiviOps_Agent {
 		if ( function_exists( 'et_core_clear_wp_cache' ) ) {
 			et_core_clear_wp_cache( '' );
 		}
+		self::run_divi_feature_cache_purges();
+		if (
+			class_exists( '\ET_Core_PageResource' )
+			&& method_exists( '\ET_Core_PageResource', 'clear_post_meta_caches' )
+		) {
+			\ET_Core_PageResource::clear_post_meta_caches( '' );
+		}
+	}
+
+	/**
+	 * Divi feature-cache purges — the module/post features, Google
+	 * Fonts, and dynamic-assets caches that Divi maintains site-wide
+	 * (no per-post keys exist for these; purges clear the whole cache
+	 * and Divi lazily rebuilds on the next render).
+	 *
+	 * Split out from `run_divi_site_wide_cache_purges` so the native
+	 * `after` branch can invoke just these without also running the
+	 * post-keyed purges (`et_core_clear_wp_cache('')` /
+	 * `clear_post_meta_caches('')`) — those are already covered
+	 * per-touched-pid in the `after` path, and running them site-wide
+	 * on top would over-invalidate on a partial flush.
+	 *
+	 * The prior per-match `ET_Core_PageResource::remove_static_resources`
+	 * loop in `after` mode was invoking these as part of Divi's own
+	 * post-clear block once per match; collapsing to a single
+	 * site-wide call preserves the same invalidation scope without the
+	 * N × glob overhead that motivated the sweep refactor.
+	 */
+	private static function run_divi_feature_cache_purges() {
 		if ( class_exists( '\ET_Builder_Module_Features' ) ) {
 			\ET_Builder_Module_Features::purge_cache();
 		}
@@ -5850,12 +5986,6 @@ class DiviOps_Agent {
 		}
 		if ( class_exists( '\ET_Builder_Dynamic_Assets_Feature' ) ) {
 			\ET_Builder_Dynamic_Assets_Feature::purge_cache();
-		}
-		if (
-			class_exists( '\ET_Core_PageResource' )
-			&& method_exists( '\ET_Core_PageResource', 'clear_post_meta_caches' )
-		) {
-			\ET_Core_PageResource::clear_post_meta_caches( '' );
 		}
 	}
 
@@ -5881,11 +6011,12 @@ class DiviOps_Agent {
 	 *
 	 * @param string              $cache_root
 	 * @param \WP_Filesystem_Base $wpfs       Initialized WP_Filesystem instance — both deletes and rmdir routes through this so FTP/SSH-credentialed hosts work.
+	 * @param int|null            $min_mtime  When non-null, only files with mtime strictly greater than this unix timestamp are deleted — used by `after` mode to avoid O(N × glob) per-post native calls. Files filtered out are left in place; their parent dirs may still be rmdir'd if unrelated deletions empty them. When null, every matching Divi CSS file is deleted (current `all` mode behavior).
 	 * @return array{files: int, bytes: int, post_ids: int[]}
 	 *   post_ids = numeric per-post dirs whose files were deleted
 	 *   (useful for the `flushed` response field).
 	 */
-	private static function sweep_all_divi_css_preserving_vb( $cache_root, $wpfs ) {
+	private static function sweep_all_divi_css_preserving_vb( $cache_root, $wpfs, $min_mtime = null ) {
 		$result = [ 'files' => 0, 'bytes' => 0, 'post_ids' => [] ];
 		if ( ! is_dir( $cache_root ) ) {
 			return $result;
@@ -5908,25 +6039,43 @@ class DiviOps_Agent {
 				if ( false !== strpos( $basename, '-vb-' ) ) {
 					continue;
 				}
+				// `after` mode: skip files compiled at or before the
+				// cutoff. getMTime() throws on unreadable files — the
+				// surrounding iterator already filtered to readable
+				// entries, but we guard defensively so a permission
+				// race doesn't abort the whole sweep.
+				if ( null !== $min_mtime ) {
+					$mtime = @$info->getMTime();
+					if ( false === $mtime || $mtime <= $min_mtime ) {
+						continue;
+					}
+				}
 				$size = filesize( $path );
 				if ( $wpfs->delete( $path ) ) {
 					$result['files']++;
 					if ( false !== $size ) {
 						$result['bytes'] += $size;
 					}
-					// Track numeric post dirs whose files we touched —
-					// the parent dir basename tells us the post_id if it's
-					// a direct child of cache_root.
-					$parent = dirname( $path );
-					$parent_name = basename( $parent );
-					if ( $parent === $cache_root . '/' . $parent_name && ctype_digit( $parent_name ) ) {
-						$touched_post_ids[ (int) $parent_name ] = true;
+					// Track numeric post dir from the first path segment
+					// under cache_root. Divi can nest per-post files
+					// deeper (e.g. taxonomy/category/name/et-...tb-{id}*
+					// inside et-cache/{id}/), so a direct-parent check
+					// under-reports touched posts. This walks the relative
+					// path and claims the first numeric ancestor.
+					$rel = substr( $path, strlen( $cache_root ) + 1 );
+					$first_sep = strpos( $rel, '/' );
+					$first = false === $first_sep ? '' : substr( $rel, 0, $first_sep );
+					if ( '' !== $first && ctype_digit( $first ) ) {
+						$touched_post_ids[ (int) $first ] = true;
 					}
 				}
 			} elseif ( $info->isDir() ) {
 				// Bottom-up rmdir via WP_Filesystem; $recursive=false
 				// so non-empty dirs are no-ops (matches the @rmdir
-				// behavior we had before).
+				// behavior we had before). In `after` mode the dir
+				// may still hold older untouched CSS — rmdir no-ops
+				// and the dir is preserved, which is the correct
+				// outcome for a filtered sweep.
 				$wpfs->rmdir( $path, false );
 			}
 		}
