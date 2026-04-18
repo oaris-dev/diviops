@@ -84,6 +84,40 @@ et_divi_builder_global_presets_d5 (option)
 - `styleAttrs` — only CSS-generating attributes
 - `renderAttrs` — only HTML-affecting attributes (e.g. headingLevel)
 
+### CSS Emission (Dual-Pass)
+
+Divi renders a preset-affected module's CSS via **two parallel passes** on every render:
+
+| Pass | Selector | Source | Specificity |
+|------|----------|--------|-------------|
+| **A** | `.preset--module--{module}--{uuid}` | `preset.attrs` | low (single class) |
+| **B** | `body #page-container .et_pb_section .et_pb_{module}_N` | `preset.renderAttrs` (merged into instance attrs) | high (parent chain) |
+
+When both passes emit the same declaration, **Pass B wins** due to higher specificity.
+
+#### When does Pass B emit?
+
+Pass B emission is **conditional**, not universal. The full trigger matrix (module type × property type × value type × responsive keys) is not yet characterized — treat it as "verify, don't assume."
+
+**Confirmed emission cases:**
+- `divi/row` with responsive dimensional overrides in `renderAttrs` (e.g. phone-breakpoint gutter `calc()`) — concrete case from the stale-`renderAttrs` bug that motivated the full-mirror fix.
+- `divi/button` with literal dimensional values (width, height) — reference case from upstream Divi investigation.
+
+**Confirmed non-emission cases:**
+- Module presets with CSS-variable values (`var(--space-*)`, `$variable()$` tokens) on layout / flex / padding properties. Observed across 6 adopted presets in a live project: Pass A alone carried, no Pass B rule rendered, no specificity conflict.
+
+#### Full-mirror mitigation (already shipped)
+
+`diviops_preset_create` and `diviops_preset_update` write `attrs = styleAttrs = renderAttrs` on every call, matching VB save semantics. This keeps the two passes in lockstep: the "values disagree" branch that causes stale-Pass-B bugs is eliminated regardless of whether Pass B actually emits for a given combination. **Tools authored against the MCP surface don't need to predict Pass B emission to be correct.**
+
+The scenario where prediction still matters: **external** consumers relying on Pass B for CSS-specificity guarantees (e.g. "this preset should beat a theme stylesheet rule").
+
+#### Guidance for downstream authors
+
+- If you need Pass B specificity to beat a competing rule, **verify emission empirically** before shipping. Save the preset, render a real page that references it, then inspect the generated Divi stylesheet — either the on-disk static-cache file at `wp-content/et-cache/{post_id}/et-*.css` or the linked CSS payload via browser DevTools — and grep for a rule scoped to `.et_pb_{module}_N`. Note: `diviops_render_preview` only returns the rendered HTML; it does not exercise the static-cache CSS pipeline where Pass B rules are emitted, so it can't confirm emission.
+- Don't generalize from the `divi/button` reference case — other module types emit Pass B unpredictably.
+- Report new emission / non-emission cases upstream so the trigger matrix can grow over time.
+
 ## How Presets Are Referenced in Block Markup
 
 ### Attribute-level presets (VB-verified)
