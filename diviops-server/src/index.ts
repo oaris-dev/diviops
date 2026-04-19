@@ -125,7 +125,7 @@ server.registerTool(
     });
     return {
       content: [
-        { type: "text" as const, text: JSON.stringify(result, null, 2) },
+        { type: "text" as const, text: JSON.stringify(result) },
       ],
     };
   },
@@ -144,7 +144,7 @@ server.registerTool(
     const result = await wp.request(`/page/${page_id}`);
     return {
       content: [
-        { type: "text" as const, text: JSON.stringify(result, null, 2) },
+        { type: "text" as const, text: JSON.stringify(result) },
       ],
     };
   },
@@ -172,7 +172,7 @@ server.registerTool(
     });
     return {
       content: [
-        { type: "text" as const, text: JSON.stringify(result, null, 2) },
+        { type: "text" as const, text: JSON.stringify(result) },
       ],
     };
   },
@@ -188,7 +188,7 @@ server.registerTool(
     const result = await wp.request("/modules");
     return {
       content: [
-        { type: "text" as const, text: JSON.stringify(result, null, 2) },
+        { type: "text" as const, text: JSON.stringify(result) },
       ],
     };
   },
@@ -219,7 +219,7 @@ server.registerTool(
     const output = raw ? result : optimizeSchema(result as Record<string, any>);
     return {
       content: [
-        { type: "text" as const, text: JSON.stringify(output, null, 2) },
+        { type: "text" as const, text: JSON.stringify(output) },
       ],
     };
   },
@@ -235,7 +235,7 @@ server.registerTool(
     const result = await wp.request("/settings");
     return {
       content: [
-        { type: "text" as const, text: JSON.stringify(result, null, 2) },
+        { type: "text" as const, text: JSON.stringify(result) },
       ],
     };
   },
@@ -251,7 +251,7 @@ server.registerTool(
     const result = await wp.request("/global-colors");
     return {
       content: [
-        { type: "text" as const, text: JSON.stringify(result, null, 2) },
+        { type: "text" as const, text: JSON.stringify(result) },
       ],
     };
   },
@@ -266,7 +266,7 @@ server.registerTool(
     const result = await wp.request("/global-fonts");
     return {
       content: [
-        { type: "text" as const, text: JSON.stringify(result, null, 2) },
+        { type: "text" as const, text: JSON.stringify(result) },
       ],
     };
   },
@@ -301,7 +301,7 @@ server.registerTool(
     );
     return {
       content: [
-        { type: "text" as const, text: JSON.stringify(result, null, 2) },
+        { type: "text" as const, text: JSON.stringify(result) },
       ],
     };
   },
@@ -330,7 +330,7 @@ server.registerTool(
     });
     return {
       content: [
-        { type: "text" as const, text: JSON.stringify(result, null, 2) },
+        { type: "text" as const, text: JSON.stringify(result) },
       ],
     };
   },
@@ -352,7 +352,7 @@ server.registerTool(
     });
     return {
       content: [
-        { type: "text" as const, text: JSON.stringify(result, null, 2) },
+        { type: "text" as const, text: JSON.stringify(result) },
       ],
     };
   },
@@ -374,7 +374,7 @@ server.registerTool(
     });
     return {
       content: [
-        { type: "text" as const, text: JSON.stringify(result, null, 2) },
+        { type: "text" as const, text: JSON.stringify(result) },
       ],
     };
   },
@@ -406,7 +406,7 @@ server.registerTool(
     });
     return {
       content: [
-        { type: "text" as const, text: JSON.stringify(result, null, 2) },
+        { type: "text" as const, text: JSON.stringify(result) },
       ],
     };
   },
@@ -451,7 +451,7 @@ server.registerTool(
     });
     return {
       content: [
-        { type: "text" as const, text: JSON.stringify(result, null, 2) },
+        { type: "text" as const, text: JSON.stringify(result) },
       ],
     };
   },
@@ -493,7 +493,7 @@ server.registerTool(
     });
     return {
       content: [
-        { type: "text" as const, text: JSON.stringify(result, null, 2) },
+        { type: "text" as const, text: JSON.stringify(result) },
       ],
     };
   },
@@ -533,7 +533,7 @@ server.registerTool(
     const result = await wp.request(`/page/${page_id}/get-section?${qs}`);
     return {
       content: [
-        { type: "text" as const, text: JSON.stringify(result, null, 2) },
+        { type: "text" as const, text: JSON.stringify(result) },
       ],
     };
   },
@@ -588,7 +588,7 @@ server.registerTool(
     });
     return {
       content: [
-        { type: "text" as const, text: JSON.stringify(result, null, 2) },
+        { type: "text" as const, text: JSON.stringify(result) },
       ],
     };
   },
@@ -679,7 +679,7 @@ server.registerTool(
     });
     return {
       content: [
-        { type: "text" as const, text: JSON.stringify(result, null, 2) },
+        { type: "text" as const, text: JSON.stringify(result) },
       ],
     };
   },
@@ -711,7 +711,7 @@ server.registerTool(
     });
     return {
       content: [
-        { type: "text" as const, text: JSON.stringify(result, null, 2) },
+        { type: "text" as const, text: JSON.stringify(result) },
       ],
     };
   },
@@ -729,7 +729,7 @@ server.registerTool(
     const result = await wp.request("/preset-audit");
     return {
       content: [
-        { type: "text" as const, text: JSON.stringify(result, null, 2) },
+        { type: "text" as const, text: JSON.stringify(result) },
       ],
     };
   },
@@ -787,7 +787,7 @@ server.registerTool(
     });
     return {
       content: [
-        { type: "text" as const, text: JSON.stringify(result, null, 2) },
+        { type: "text" as const, text: JSON.stringify(result) },
       ],
     };
   },
@@ -819,7 +819,7 @@ server.registerTool(
     });
     return {
       content: [
-        { type: "text" as const, text: JSON.stringify(result, null, 2) },
+        { type: "text" as const, text: JSON.stringify(result) },
       ],
     };
   },
@@ -841,7 +841,7 @@ server.registerTool(
     });
     return {
       content: [
-        { type: "text" as const, text: JSON.stringify(result, null, 2) },
+        { type: "text" as const, text: JSON.stringify(result) },
       ],
     };
   },
@@ -902,7 +902,7 @@ server.registerTool(
     const result = await wp.request("/preset-create", { method: "POST", body });
     return {
       content: [
-        { type: "text" as const, text: JSON.stringify(result, null, 2) },
+        { type: "text" as const, text: JSON.stringify(result) },
       ],
     };
   },
@@ -953,7 +953,7 @@ server.registerTool(
     });
     return {
       content: [
-        { type: "text" as const, text: JSON.stringify(result, null, 2) },
+        { type: "text" as const, text: JSON.stringify(result) },
       ],
     };
   },
@@ -969,7 +969,7 @@ server.registerTool(
     const result = await wp.request("/preset-scan-orphans");
     return {
       content: [
-        { type: "text" as const, text: JSON.stringify(result, null, 2) },
+        { type: "text" as const, text: JSON.stringify(result) },
       ],
     };
   },
@@ -1008,7 +1008,7 @@ server.registerTool(
     const result = await wp.request("/library", { params });
     return {
       content: [
-        { type: "text" as const, text: JSON.stringify(result, null, 2) },
+        { type: "text" as const, text: JSON.stringify(result) },
       ],
     };
   },
@@ -1027,7 +1027,7 @@ server.registerTool(
     const result = await wp.request(`/library/${item_id}`);
     return {
       content: [
-        { type: "text" as const, text: JSON.stringify(result, null, 2) },
+        { type: "text" as const, text: JSON.stringify(result) },
       ],
     };
   },
@@ -1069,7 +1069,7 @@ server.registerTool(
     });
     return {
       content: [
-        { type: "text" as const, text: JSON.stringify(result, null, 2) },
+        { type: "text" as const, text: JSON.stringify(result) },
       ],
     };
   },
@@ -1099,7 +1099,7 @@ server.registerTool(
     const result = await wp.request("/theme-builder/templates", { params });
     return {
       content: [
-        { type: "text" as const, text: JSON.stringify(result, null, 2) },
+        { type: "text" as const, text: JSON.stringify(result) },
       ],
     };
   },
@@ -1122,7 +1122,7 @@ server.registerTool(
     const result = await wp.request(`/theme-builder/layout/${layout_id}`);
     return {
       content: [
-        { type: "text" as const, text: JSON.stringify(result, null, 2) },
+        { type: "text" as const, text: JSON.stringify(result) },
       ],
     };
   },
@@ -1145,7 +1145,7 @@ server.registerTool(
     });
     return {
       content: [
-        { type: "text" as const, text: JSON.stringify(result, null, 2) },
+        { type: "text" as const, text: JSON.stringify(result) },
       ],
     };
   },
@@ -1186,7 +1186,7 @@ server.registerTool(
     });
     return {
       content: [
-        { type: "text" as const, text: JSON.stringify(result, null, 2) },
+        { type: "text" as const, text: JSON.stringify(result) },
       ],
     };
   },
@@ -1242,7 +1242,7 @@ server.registerTool(
     const result = await wp.request("/canvas/create", { method: "POST", body });
     return {
       content: [
-        { type: "text" as const, text: JSON.stringify(result, null, 2) },
+        { type: "text" as const, text: JSON.stringify(result) },
       ],
     };
   },
@@ -1275,7 +1275,7 @@ server.registerTool(
     const result = await wp.request("/canvases", { params });
     return {
       content: [
-        { type: "text" as const, text: JSON.stringify(result, null, 2) },
+        { type: "text" as const, text: JSON.stringify(result) },
       ],
     };
   },
@@ -1295,7 +1295,7 @@ server.registerTool(
     const result = await wp.request(`/canvas/${canvas_post_id}`);
     return {
       content: [
-        { type: "text" as const, text: JSON.stringify(result, null, 2) },
+        { type: "text" as const, text: JSON.stringify(result) },
       ],
     };
   },
@@ -1332,7 +1332,7 @@ server.registerTool(
     });
     return {
       content: [
-        { type: "text" as const, text: JSON.stringify(result, null, 2) },
+        { type: "text" as const, text: JSON.stringify(result) },
       ],
     };
   },
@@ -1352,7 +1352,7 @@ server.registerTool(
     });
     return {
       content: [
-        { type: "text" as const, text: JSON.stringify(result, null, 2) },
+        { type: "text" as const, text: JSON.stringify(result) },
       ],
     };
   },
@@ -1405,7 +1405,7 @@ server.registerTool(
     const result = await wp.testConnection();
     return {
       content: [
-        { type: "text" as const, text: JSON.stringify(result, null, 2) },
+        { type: "text" as const, text: JSON.stringify(result) },
       ],
     };
   },
@@ -1440,7 +1440,7 @@ server.registerTool(
     };
     return {
       content: [
-        { type: "text" as const, text: JSON.stringify(info, null, 2) },
+        { type: "text" as const, text: JSON.stringify(info) },
       ],
     };
   },
@@ -1565,7 +1565,7 @@ server.registerTool(
       requires_css: t.requires_css ?? false,
     }));
     return {
-      content: [{ type: "text" as const, text: JSON.stringify(list, null, 2) }],
+      content: [{ type: "text" as const, text: JSON.stringify(list) }],
     };
   },
 );
@@ -1598,7 +1598,7 @@ server.registerTool(
     }
     return {
       content: [
-        { type: "text" as const, text: JSON.stringify(template, null, 2) },
+        { type: "text" as const, text: JSON.stringify(template) },
       ],
     };
   },
@@ -1631,7 +1631,7 @@ server.registerTool(
     const result = await wp.request("/variables", { params });
     return {
       content: [
-        { type: "text" as const, text: JSON.stringify(result, null, 2) },
+        { type: "text" as const, text: JSON.stringify(result) },
       ],
     };
   },
@@ -1697,7 +1697,7 @@ server.registerTool(
     });
     return {
       content: [
-        { type: "text" as const, text: JSON.stringify(result, null, 2) },
+        { type: "text" as const, text: JSON.stringify(result) },
       ],
     };
   },
@@ -1730,7 +1730,7 @@ server.registerTool(
     });
     return {
       content: [
-        { type: "text" as const, text: JSON.stringify(result, null, 2) },
+        { type: "text" as const, text: JSON.stringify(result) },
       ],
     };
   },
@@ -1746,7 +1746,7 @@ server.registerTool(
     const result = await wp.request("/variables-scan-orphans");
     return {
       content: [
-        { type: "text" as const, text: JSON.stringify(result, null, 2) },
+        { type: "text" as const, text: JSON.stringify(result) },
       ],
     };
   },
@@ -1794,7 +1794,7 @@ server.registerTool(
     });
     return {
       content: [
-        { type: "text" as const, text: JSON.stringify(result, null, 2) },
+        { type: "text" as const, text: JSON.stringify(result) },
       ],
     };
   },
