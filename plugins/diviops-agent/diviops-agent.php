@@ -3,7 +3,7 @@
  * Plugin Name: DiviOps Agent
  * Plugin URI: https://github.com/oaris-dev/diviops
  * Description: REST API bridge for DiviOps — connects Claude Code to your Divi 5 site for AI-powered page building and design management.
- * Version: 1.0.0-beta.29
+ * Version: 1.0.0-beta.30
  * Author: oaris.de
  * Author URI: https://oaris.de
  * Text Domain: diviops-agent
@@ -22,7 +22,7 @@ class DiviOps_Agent {
 	/**
 	 * Plugin version — used for handshake compatibility checks.
 	 */
-	const VERSION = '1.0.0-beta.29';
+	const VERSION = '1.0.0-beta.30';
 
 	/**
 	 * Minimum MCP server version this plugin is compatible with.
@@ -800,16 +800,18 @@ class DiviOps_Agent {
 			'callback'            => [ __CLASS__, 'create_variable' ],
 			'permission_callback' => [ __CLASS__, 'check_admin_permission' ],
 			'args'                => [
-				'type'    => [ 'required' => true, 'type' => 'string' ],
-				'id'      => [ 'required' => false, 'type' => 'string' ],
-				'label'   => [ 'required' => true, 'type' => 'string' ],
+				'type'              => [ 'required' => true, 'type' => 'string' ],
+				'id'                => [ 'required' => false, 'type' => 'string' ],
+				'label'             => [ 'required' => true, 'type' => 'string' ],
 				// Not required at the route layer — callback validates that
 				// either value OR fluid params (min+max or targets) is present
 				// and returns the richer 400 (fluid_value_conflict / etc).
-				'value'   => [ 'required' => false, 'type' => 'string' ],
-				'min'     => [ 'required' => false, 'type' => 'string' ],
-				'max'     => [ 'required' => false, 'type' => 'string' ],
-				'targets' => [ 'required' => false, 'type' => 'object' ],
+				'value'             => [ 'required' => false, 'type' => 'string' ],
+				'min'               => [ 'required' => false, 'type' => 'string' ],
+				'max'               => [ 'required' => false, 'type' => 'string' ],
+				'targets'           => [ 'required' => false, 'type' => 'object' ],
+				'output_unit'       => [ 'required' => false, 'type' => 'string' ],
+				'root_font_size_px' => [ 'required' => false, 'type' => 'number' ],
 			],
 		] );
 
@@ -4836,11 +4838,9 @@ class DiviOps_Agent {
 	}
 
 	/**
-	 * Parse a positive px value like "20px" → float. Rejects rem/em/% and
-	 * bare numbers to keep the fluid-generator input contract explicit.
-	 * Rem support is intentionally omitted in the MVP because any rem
-	 * emission requires knowing the site's root font-size to stay
-	 * arithmetically correct (see follow-up issue for rem/root support).
+	 * Parse a positive px value like "20px" → float. Used for viewport
+	 * anchors (which are always px — a viewport width in rem is ambiguous
+	 * because it depends on root font-size at evaluation time).
 	 */
 	private static function parse_fluid_px( $str ) {
 		if ( ! is_string( $str ) ) {
@@ -4863,23 +4863,70 @@ class DiviOps_Agent {
 	}
 
 	/**
-	 * Build a px clamp() formula from two (viewport, value) anchor points.
-	 * Emits min/max ordered by value (not viewport) so negative slopes work.
-	 * Collapses to a scalar when both values are equal. Up to 3 decimals.
+	 * Parse a size value with its unit (px or rem) into a normalized
+	 * { num, unit } pair. Used for fluid min/max/target values which may
+	 * be either unit. Rem-to-px conversion happens later using the
+	 * caller-declared root_font_size_px so the math remains correct on
+	 * sites with non-16px root font-size.
 	 */
-	private static function build_fluid_px_clamp( $w1, $v1, $w2, $v2 ) {
+	private static function parse_size_with_unit( $str ) {
+		if ( ! is_string( $str ) ) {
+			return null;
+		}
+		if ( preg_match( '/^(-?\d*\.?\d+)(px|rem)$/', trim( $str ), $m ) ) {
+			return [ 'num' => (float) $m[1], 'unit' => $m[2] ];
+		}
+		return null;
+	}
+
+	/**
+	 * Format a numeric value with up to 3 decimals, trailing zeros trimmed,
+	 * and negative-zero normalized to "0". Shared by the size + slope
+	 * formatters to keep decimal-emission consistent.
+	 */
+	private static function format_fluid_decimal( $num ) {
+		$s = rtrim( rtrim( number_format( $num, 3, '.', '' ), '0' ), '.' );
+		if ( '' === $s || '-0' === $s ) {
+			$s = '0';
+		}
+		return $s;
+	}
+
+	/**
+	 * Format a px value in the target output unit. Uses the caller-supplied
+	 * root font-size (defaults to 16, the standard browser default) for
+	 * px→rem conversion so sites with a non-standard `html { font-size }`
+	 * can emit correct rem values.
+	 */
+	private static function format_fluid_size( $num_px, $output_unit, $root_font_size_px = 16.0 ) {
+		$val = ( 'rem' === $output_unit ) ? $num_px / $root_font_size_px : $num_px;
+		return self::format_fluid_decimal( $val ) . $output_unit;
+	}
+
+	/**
+	 * Format a vw slope value — always in vw, independent of output_unit
+	 * (vw is viewport-pixel-rooted, so the slope term does not carry a
+	 * rem↔px conversion).
+	 */
+	private static function format_fluid_slope( $slope_abs ) {
+		return self::format_fluid_decimal( $slope_abs ) . 'vw';
+	}
+
+	/**
+	 * Build a clamp() formula from two (viewport, value) anchor points,
+	 * both in px. Emits min/max ordered by value (not viewport) so negative
+	 * slopes work. Collapses to a scalar when both values are equal. The
+	 * slope term is inherently viewport-pixel-rooted (vw = 1% of viewport
+	 * pixels), so when output_unit is rem the caller's root_font_size_px
+	 * is used to keep the rem values arithmetically consistent with the vw
+	 * slope. All internal math is in px.
+	 */
+	private static function build_fluid_clamp( $w1, $v1, $w2, $v2, $output_unit = 'px', $root_font_size_px = 16.0 ) {
 		if ( abs( $w2 - $w1 ) < 0.01 ) {
 			throw new \InvalidArgumentException( 'Fluid anchors cannot share the same viewport.' );
 		}
-		$fmt = function ( $n ) {
-			$s = rtrim( rtrim( number_format( $n, 3, '.', '' ), '0' ), '.' );
-			if ( '' === $s || '-0' === $s ) {
-				$s = '0';
-			}
-			return $s;
-		};
 		if ( abs( $v2 - $v1 ) < 0.01 ) {
-			return $fmt( $v1 ) . 'px';
+			return self::format_fluid_size( $v1, $output_unit, $root_font_size_px );
 		}
 		$slope_vw = ( $v2 - $v1 ) / ( $w2 - $w1 ) * 100.0;
 		$base_px  = $v1 - ( $slope_vw * $w1 / 100.0 );
@@ -4887,36 +4934,42 @@ class DiviOps_Agent {
 		$max_v    = max( $v1, $v2 );
 		$op       = ( $slope_vw >= 0 ) ? '+' : '-';
 		return sprintf(
-			'clamp(%spx, %spx %s %svw, %spx)',
-			$fmt( $min_v ),
-			$fmt( $base_px ),
+			'clamp(%s, %s %s %s, %s)',
+			self::format_fluid_size( $min_v, $output_unit, $root_font_size_px ),
+			self::format_fluid_size( $base_px, $output_unit, $root_font_size_px ),
 			$op,
-			$fmt( abs( $slope_vw ) ),
-			$fmt( $max_v )
+			self::format_fluid_slope( abs( $slope_vw ) ),
+			self::format_fluid_size( $max_v, $output_unit, $root_font_size_px )
 		);
 	}
 
 	/**
 	 * Generate a clamp() from min/max shorthand using default anchors 320px
-	 * and 1920px (industry convention for fluid scales).
+	 * and 1920px (industry convention for fluid scales). Accepts px or rem
+	 * inputs; rem values are converted to px internally using the caller-
+	 * declared root_font_size_px before the slope math runs.
 	 */
-	private static function generate_fluid_clamp_from_minmax( $min_str, $max_str ) {
-		$min_px = self::parse_fluid_px( $min_str );
-		$max_px = self::parse_fluid_px( $max_str );
-		if ( null === $min_px ) {
-			throw new \InvalidArgumentException( "Invalid min: '$min_str' — expected px (e.g. '20px'). Rem inputs not supported in this MVP; convert to px (1rem=16px) before calling." );
+	private static function generate_fluid_clamp_from_minmax( $min_str, $max_str, $output_unit = 'px', $root_font_size_px = 16.0 ) {
+		$min_p = self::parse_size_with_unit( $min_str );
+		$max_p = self::parse_size_with_unit( $max_str );
+		if ( null === $min_p ) {
+			throw new \InvalidArgumentException( "Invalid min: '$min_str' — expected e.g. '20px' or '1.25rem'." );
 		}
-		if ( null === $max_px ) {
-			throw new \InvalidArgumentException( "Invalid max: '$max_str' — expected px (e.g. '60px'). Rem inputs not supported in this MVP; convert to px (1rem=16px) before calling." );
+		if ( null === $max_p ) {
+			throw new \InvalidArgumentException( "Invalid max: '$max_str' — expected e.g. '60px' or '3.75rem'." );
 		}
-		return self::build_fluid_px_clamp( 320.0, $min_px, 1920.0, $max_px );
+		$min_px = ( 'rem' === $min_p['unit'] ) ? $min_p['num'] * $root_font_size_px : $min_p['num'];
+		$max_px = ( 'rem' === $max_p['unit'] ) ? $max_p['num'] * $root_font_size_px : $max_p['num'];
+		return self::build_fluid_clamp( 320.0, $min_px, 1920.0, $max_px, $output_unit, $root_font_size_px );
 	}
 
 	/**
 	 * Generate a clamp() from explicit { viewport => value } targets.
-	 * Requires exactly 2 entries with px values.
+	 * Requires exactly 2 entries. Viewport keys must be px; values may
+	 * be px or rem. Rem values are converted to px internally using the
+	 * caller-declared root_font_size_px before the slope math runs.
 	 */
-	private static function generate_fluid_clamp_from_targets( $targets ) {
+	private static function generate_fluid_clamp_from_targets( $targets, $output_unit = 'px', $root_font_size_px = 16.0 ) {
 		if ( ! is_array( $targets ) || 2 !== count( $targets ) ) {
 			throw new \InvalidArgumentException( "targets must contain exactly 2 entries keyed by viewport width (e.g. {'320px':'20px','1920px':'60px'})." );
 		}
@@ -4926,13 +4979,47 @@ class DiviOps_Agent {
 			if ( null === $w_px ) {
 				throw new \InvalidArgumentException( "Invalid viewport key '$viewport' — expected px (e.g. '320px')." );
 			}
-			$v_px = self::parse_fluid_px( (string) $value_str );
-			if ( null === $v_px ) {
-				throw new \InvalidArgumentException( "Invalid target value '$value_str' — expected px (e.g. '20px'). Rem values not supported in this MVP; convert to px (1rem=16px) before calling." );
+			$v = self::parse_size_with_unit( (string) $value_str );
+			if ( null === $v ) {
+				throw new \InvalidArgumentException( "Invalid target value '$value_str' — expected e.g. '20px' or '1.25rem'." );
 			}
+			$v_px = ( 'rem' === $v['unit'] ) ? $v['num'] * $root_font_size_px : $v['num'];
 			$points[] = [ 'w' => $w_px, 'v' => $v_px ];
 		}
-		return self::build_fluid_px_clamp( $points[0]['w'], $points[0]['v'], $points[1]['w'], $points[1]['v'] );
+		return self::build_fluid_clamp( $points[0]['w'], $points[0]['v'], $points[1]['w'], $points[1]['v'], $output_unit, $root_font_size_px );
+	}
+
+	/**
+	 * Detect whether a fluid-clamp request involves rem units, either in
+	 * inputs (min/max/targets values) or in an explicit output_unit="rem".
+	 * Any rem emission bakes a root-font-size assumption into the vw slope,
+	 * so we require the caller to explicitly acknowledge that assumption
+	 * via output_unit or root_font_size_px.
+	 */
+	private static function fluid_request_has_rem_involvement( $min, $max, $targets, $output_unit ) {
+		if ( 'rem' === $output_unit ) {
+			return true;
+		}
+		$candidates = [];
+		if ( is_string( $min ) ) {
+			$candidates[] = $min;
+		}
+		if ( is_string( $max ) ) {
+			$candidates[] = $max;
+		}
+		if ( is_array( $targets ) ) {
+			foreach ( $targets as $v ) {
+				if ( is_string( $v ) ) {
+					$candidates[] = $v;
+				}
+			}
+		}
+		foreach ( $candidates as $c ) {
+			if ( false !== stripos( $c, 'rem' ) ) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/**
@@ -4941,18 +5028,24 @@ class DiviOps_Agent {
 	 * Other types write to et_divi_global_variables.
 	 *
 	 * Fluid clamp() generation (type=numbers only):
-	 * - `min` + `max` (px strings like "20px") → clamp using default anchors 320px/1920px
-	 * - `targets` object (px keys + px values) → clamp using the two anchors
-	 * - Mutually exclusive with `value`. Px-only in the MVP; rem/root-font-size
-	 *   support is tracked as a follow-up issue.
+	 * - `min` + `max` (px or rem strings) → clamp using default anchors 320px/1920px
+	 * - `targets` object (px viewport keys, px or rem values) → clamp using the two anchors
+	 * - `output_unit` ("rem" | "px") and `root_font_size_px` (number) are optional overrides.
+	 *   Rem inputs or rem output require explicit opt-in via one of these params: rem emission
+	 *   bakes a root-font-size assumption into the vw slope, so the caller must either accept
+	 *   the 1rem=16px default (pass output_unit="rem") or declare the site's actual root
+	 *   (pass root_font_size_px).
+	 * - Mutually exclusive with `value`.
 	 */
 	public static function create_variable( $request ) {
-		$type    = sanitize_text_field( $request->get_param( 'type' ) );
-		$label   = sanitize_text_field( $request->get_param( 'label' ) );
-		$value   = $request->get_param( 'value' );
-		$min     = $request->get_param( 'min' );
-		$max     = $request->get_param( 'max' );
-		$targets = $request->get_param( 'targets' );
+		$type              = sanitize_text_field( $request->get_param( 'type' ) );
+		$label             = sanitize_text_field( $request->get_param( 'label' ) );
+		$value             = $request->get_param( 'value' );
+		$min               = $request->get_param( 'min' );
+		$max               = $request->get_param( 'max' );
+		$targets           = $request->get_param( 'targets' );
+		$output_unit       = $request->get_param( 'output_unit' );
+		$root_font_size_px = $request->get_param( 'root_font_size_px' );
 
 		$valid_types = [ 'colors', 'numbers', 'strings', 'images', 'links', 'fonts' ];
 		if ( ! in_array( $type, $valid_types, true ) ) {
@@ -4962,6 +5055,28 @@ class DiviOps_Agent {
 		$has_shorthand = ( null !== $min || null !== $max );
 		$has_targets   = ( null !== $targets && [] !== $targets );
 		$has_fluid     = $has_shorthand || $has_targets;
+
+		// output_unit — only meaningful alongside fluid params; validate enum.
+		if ( null !== $output_unit ) {
+			if ( ! $has_fluid ) {
+				return new WP_Error( 'output_unit_without_fluid', 'output_unit is only meaningful alongside min/max/targets. Remove it or add fluid params.', [ 'status' => 400 ] );
+			}
+			if ( 'rem' !== $output_unit && 'px' !== $output_unit ) {
+				return new WP_Error( 'invalid_output_unit', "output_unit must be 'rem' or 'px', got '$output_unit'.", [ 'status' => 400 ] );
+			}
+		}
+
+		// root_font_size_px — caller-declared root font-size for correct
+		// rem↔px conversion when the site deviates from the 16px default.
+		if ( null !== $root_font_size_px ) {
+			if ( ! $has_fluid ) {
+				return new WP_Error( 'root_font_size_px_without_fluid', 'root_font_size_px is only meaningful alongside min/max/targets. Remove it or add fluid params.', [ 'status' => 400 ] );
+			}
+			if ( ! is_numeric( $root_font_size_px ) || (float) $root_font_size_px <= 0 ) {
+				return new WP_Error( 'invalid_root_font_size_px', "root_font_size_px must be a positive number (px), got '$root_font_size_px'.", [ 'status' => 400 ] );
+			}
+			$root_font_size_px = (float) $root_font_size_px;
+		}
 
 		if ( $has_fluid ) {
 			if ( 'numbers' !== $type ) {
@@ -4977,10 +5092,37 @@ class DiviOps_Agent {
 				return new WP_Error( 'fluid_incomplete_shorthand', 'Shorthand requires both min and max.', [ 'status' => 400 ] );
 			}
 
+			// Rem involvement — either rem appears in inputs, or output_unit="rem".
+			// Either form bakes a root-font-size assumption into the vw slope, so
+			// we require the caller to explicitly opt in via output_unit or
+			// root_font_size_px. All-px requests bypass this gate (emission is
+			// px-only, root-agnostic, no ceremony required).
+			$rem_involved = self::fluid_request_has_rem_involvement( $min, $max, $targets, $output_unit );
+			if ( $rem_involved && null === $output_unit && null === $root_font_size_px ) {
+				return new WP_Error(
+					'rem_requires_explicit_opt_in',
+					"rem inputs or rem outputs require explicit opt-in — pass output_unit='rem' to accept the 1rem=16px default, or root_font_size_px:N to declare your site's actual root font-size (e.g. 10 for a 62.5% reset, 20 for a 20px root). rem emission bakes a root-font-size assumption into the vw slope; opt-in makes that assumption auditable.",
+					[ 'status' => 400 ]
+				);
+			}
+
+			// Resolve effective output_unit + root. Four cases:
+			//   (1) all-px inputs, no override → output_unit='px', root=16 (unused)
+			//   (2) explicit output_unit given → honor it (rem or px)
+			//   (3) rem-involved inputs, only root_font_size_px given → implies rem output
+			//   (4) all-px inputs but root_font_size_px given → implies rem output
+			//       (caller declared a root purely to trigger rem emission; matches the
+			//       tool schema's documented "root_font_size_px alone implies rem" contract)
+			$effective_output_unit = $output_unit;
+			if ( null === $effective_output_unit ) {
+				$effective_output_unit = ( $rem_involved || null !== $root_font_size_px ) ? 'rem' : 'px';
+			}
+			$effective_root = ( null === $root_font_size_px ) ? 16.0 : $root_font_size_px;
+
 			try {
 				$value = $has_targets
-					? self::generate_fluid_clamp_from_targets( $targets )
-					: self::generate_fluid_clamp_from_minmax( (string) $min, (string) $max );
+					? self::generate_fluid_clamp_from_targets( $targets, $effective_output_unit, $effective_root )
+					: self::generate_fluid_clamp_from_minmax( (string) $min, (string) $max, $effective_output_unit, $effective_root );
 			} catch ( \Exception $e ) {
 				return new WP_Error( 'fluid_generation_failed', $e->getMessage(), [ 'status' => 400 ] );
 			}

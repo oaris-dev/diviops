@@ -1641,7 +1641,7 @@ server.registerTool(
   "diviops_create_variable",
   {
     description:
-      'Create a design token variable in the Divi Variable Manager. Colors (type "colors") use gcid-* IDs and hex values. Numbers/strings/etc use gvid-* IDs. For type="numbers" fluid tokens, pass min+max shorthand (anchors default to 320px/1920px) or explicit targets — server generates arithmetically-correct clamp() formulas. Px inputs only in this MVP; rem inputs must be converted to px (1rem=16px) before calling. Mutually exclusive with value.',
+      'Create a design token variable in the Divi Variable Manager. Colors (type "colors") use gcid-* IDs and hex values. Numbers/strings/etc use gvid-* IDs. For type="numbers" fluid tokens, pass min+max shorthand (anchors default to 320px/1920px) or explicit targets — server generates arithmetically-correct clamp() formulas. All-px inputs emit px (safe default, root-agnostic). Rem inputs OR rem output require explicit opt-in: pass output_unit="rem" (accepts the 1rem=16px default) or root_font_size_px:N (declares your site\'s actual root font-size for correct rem emission on non-16px-root sites). Mutually exclusive with value.',
     inputSchema: {
       type: z
         .enum(["colors", "numbers", "strings", "images", "links", "fonts"])
@@ -1665,13 +1665,13 @@ server.registerTool(
         .string()
         .optional()
         .describe(
-          'Fluid minimum value in px (e.g. "20px"). Paired with max. Anchors default to 320px/1920px. type="numbers" only. Rem not supported — convert to px (1rem=16px) before calling.',
+          'Fluid minimum value (e.g. "20px" or "1.25rem"). Paired with max. Anchors default to 320px/1920px. Rem inputs require explicit opt-in via output_unit or root_font_size_px. type="numbers" only.',
         ),
       max: z
         .string()
         .optional()
         .describe(
-          'Fluid maximum value in px (e.g. "60px"). Paired with min.',
+          'Fluid maximum value (e.g. "60px" or "3.75rem"). Paired with min.',
         ),
       targets: z
         .record(z.string(), z.string())
@@ -1680,17 +1680,42 @@ server.registerTool(
         })
         .optional()
         .describe(
-          'Explicit two-anchor fluid spec, px only. Example: {"320px":"20px","1920px":"60px"} → clamp(20px, 12px + 2.5vw, 60px). Exactly 2 entries required. type="numbers" only. Mutually exclusive with min/max.',
+          'Explicit two-anchor fluid spec, object keyed by viewport width (px only). Example: {"320px":"20px","1920px":"60px"} → clamp(20px, 12px + 2.5vw, 60px). Exactly 2 entries required. type="numbers" only. Mutually exclusive with min/max. Rem values require explicit opt-in via output_unit or root_font_size_px.',
+        ),
+      output_unit: z
+        .enum(["rem", "px"])
+        .optional()
+        .describe(
+          'Unit for generated clamp formula. Omit for all-px inputs (safe default — emits px, root-agnostic). Pass "rem" to emit rem (accepts the 1rem=16px assumption unless root_font_size_px is also passed); required when inputs include rem unless root_font_size_px is passed. Pass "px" to force px output regardless of input unit.',
+        ),
+      root_font_size_px: z
+        .number()
+        .positive()
+        .optional()
+        .describe(
+          "Site's root font-size in px (positive number), used for correct rem↔px conversion in the generated clamp() formula. Defaults to 16 (standard browser default) when omitted. Pass explicitly for sites that customize `html { font-size }` (e.g. 10 for `html { font-size: 62.5% }`, 20 for `html { font-size: 20px }`). Also counts as an opt-in signal for rem emission — passing it alone (without output_unit) implies rem output. Only applies when min/max/targets is used.",
         ),
     },
   },
-  async ({ type, id, label, value, min, max, targets }) => {
+  async ({
+    type,
+    id,
+    label,
+    value,
+    min,
+    max,
+    targets,
+    output_unit,
+    root_font_size_px,
+  }) => {
     const body: Record<string, unknown> = { type, label };
     if (value !== undefined) body.value = value;
     if (id) body.id = id;
     if (min !== undefined) body.min = min;
     if (max !== undefined) body.max = max;
     if (targets !== undefined) body.targets = targets;
+    if (output_unit !== undefined) body.output_unit = output_unit;
+    if (root_font_size_px !== undefined) body.root_font_size_px = root_font_size_px;
     const result = await wp.request("/variable/create", {
       method: "POST",
       body,
