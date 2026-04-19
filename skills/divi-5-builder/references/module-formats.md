@@ -12,6 +12,7 @@ Structured as a 3-tier classification: universal decoration (Tier 1), shared pat
   - [Default Value Resolution](#default-value-resolution)
   - [Gradient / Video / Pattern / Mask background](#gradient-background)
 - [innerContent Variants](#innercontent-variants) — text vs button vs icon content format
+- [Attribute Tree Layout: Top-Level vs `module.*`](#attribute-tree-layout-top-level-vs-module) — silent-fail guard
 - [Exceptions Quick Reference](#exceptions-quick-reference) — modules that break standard patterns
 - Tier 2 — Pattern Families (Pro) — font families, icon family, container cascade
 - Tier 3 — Module Reference (Pro) — per-module element maps + surprises
@@ -232,6 +233,40 @@ Divi theme CSS (base visual defaults: font-size, color, line-height, margins)
 | Object `{src, id, alt, ...}` | Image, Slide image | `{"src": "https://...", "id": "49", "alt": "Desc"}` |
 | Object `{text, linkUrl}` | Button | `{"text": "Click", "linkUrl": "#"}` |
 | Object `{unicode, type, weight, url}` | Icon | `{"unicode": "&#xf0eb;", "type": "fa", "weight": "900"}` |
+
+## Attribute Tree Layout: Top-Level vs `module.*`
+
+Divi's block `attrs` object splits across two tree levels, and **which level is authoritative is per-group** — there is no uniform rule. Writing to the wrong level causes `diviops_update_module` to return `success`, but Divi reads from the other path, so the write is silently ignored on render. The VB re-render shows the old value; the tool reports no error. If you don't read-back verify, this burns debug time before you notice.
+
+**Known top-level keys** (siblings of `module` — write here, NOT under `module.*`):
+
+| Top-level key | What it configures | Wrong path (silent fail) |
+|---|---|---|
+| `css.{breakpoint}.value.{mainElement,before,after}` | Custom CSS override (per-module selectors) | `module.css.*` |
+| `css.{breakpoint}.value.freeForm` | Module-scoped free-form CSS with `selector` token replacement | `module.css.*` |
+| `content` (or `innerContent` per module) | Module content payload (text/button/icon/etc. — shape varies per module) | `module.content`, `module.innerContent` |
+| `modulePreset` | Preset ID array (stacked presets — array, not single string) | `module.modulePreset` |
+| `groupPreset.{slot}.presetId` | Group-level preset refs (array of preset IDs per slot — stackable, not single string; slot keys are camelCase like `designTitleText`, `designText`, `button`, etc. — each slot also carries a sibling `groupName` value like `"divi/font"` or `"divi/button"` identifying the group type) | `module.groupPreset` |
+| `dynamicOptionGroups` | Composable Settings sub-group tracking (5.1.1+) | `module.dynamicOptionGroups` |
+| `builderVersion` | Auto-migration trigger version | `module.builderVersion` |
+
+**Known nested keys** (write under `module.*` — NOT at top-level):
+
+| Nested key | What it configures | Wrong path (silent fail) |
+|---|---|---|
+| `module.meta.adminLabel.{breakpoint}.value` | VB admin label (layer list) | `meta.adminLabel`, `module.adminLabel` |
+| `module.decoration.*` | All visual styling (border, background, spacing, sizing, layout, overflow, animation, scroll, transform, filters, boxShadow, ...) | `decoration.*` (top-level) |
+| `module.advanced.*` | HTML output + behavior (elementType, htmlBefore/After, link, position, sticky, visibility, transition, order, ...) | `advanced.*` (top-level) |
+
+**Non-module elements** follow the same pattern under their own element name — e.g. `button.decoration.*`, `imageIcon.decoration.sizing`, `fieldItem.advanced.type`. The split is `{element}.*` (nested) vs the small fixed set of top-level siblings listed above.
+
+**Verification pattern** — when in doubt, read back after write:
+
+1. `diviops_update_module` → returns `success`
+2. `diviops_get_page_layout` → fetch the same block
+3. Confirm the value landed at your target path. If it landed at a different path, or isn't present at all, you picked the wrong level.
+
+The module renderer reads from the authoritative location per the tables above. Mismatches fall through to the pre-existing value (or the group default) — which is why the VB still shows the old state even though the tool claimed success.
 
 ## Exceptions Quick Reference
 
