@@ -862,7 +862,7 @@ server.registerTool(
       attrs: z
         .record(z.string(), z.any())
         .describe(
-          "Full module attribute bag (same shape as a module's top-level attrs in block markup). Saved to both attrs and styleAttrs.",
+          "Full module attribute bag (same shape as a module's top-level attrs in block markup). Saved to attrs, styleAttrs, and renderAttrs — matches VB save semantics so render cache stays in sync with edit state.",
         ),
       type: z
         .enum(["module", "group"])
