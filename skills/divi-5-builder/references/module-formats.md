@@ -13,6 +13,7 @@ Structured as a 3-tier classification: universal decoration (Tier 1), shared pat
   - [Gradient / Video / Pattern / Mask background](#gradient-background)
 - [innerContent Variants](#innercontent-variants) — text vs button vs icon content format
 - [Attribute Tree Layout: Top-Level vs `module.*`](#attribute-tree-layout-top-level-vs-module) — silent-fail guard
+- [Design Token References in Attrs](#design-token-references-in-attrs-canonical-variable-only) — canonical `$variable()$` only, ban cross-system `var()`
 - [Exceptions Quick Reference](#exceptions-quick-reference) — modules that break standard patterns
 - Tier 2 — Pattern Families (Pro) — font families, icon family, container cascade
 - Tier 3 — Module Reference (Pro) — per-module element maps + surprises
@@ -267,6 +268,22 @@ Divi's block `attrs` object splits across two tree levels, and **which level is 
 3. Confirm the value landed at your target path. If it landed at a different path, or isn't present at all, you picked the wrong level.
 
 The module renderer reads from the authoritative location per the tables above. Mismatches fall through to the pre-existing value (or the group default) — which is why the VB still shows the old state even though the tool claimed success.
+
+## Design Token References in Attrs: Canonical `$variable()$` Only
+
+Module attrs hold literal CSS values or canonical `$variable({...})$` tokens — nothing else. A hand-authored `var(--arbitrary-alias)` inside an attr value is a cross-system reference: it depends on a CSS variable some external stylesheet must declare. If that declaration is missing, the CSS spec says the property falls through to its initial value (0 for padding, browser default for color). The write succeeds, the renderer emits the ref as-is, and the page silently breaks.
+
+**Isolation rule**: Divi owns the `gcid-*` / `gvid-*` namespace. Variable Manager tokens auto-emit into `:root` on every page. Modules reference them via canonical `$variable({...})$`; the renderer rewrites to `var(--gvid-*)` / `var(--gcid-*)` at emission time with the matching `:root` declaration always present. Child-theme CSS lives on its own track for non-Divi surfaces — neither side `var()`s across the boundary.
+
+| Attr value | Result |
+|---|---|
+| `"80px"`, `"#ff0000"`, `"clamp(2rem, 5vw, 4rem)"` | Literal — emitted as-is. |
+| `$variable({"type":"content","value":{"name":"gvid-oa-space-4","settings":{}}})$` | Canonical — resolves to `var(--gvid-oa-space-4)`; `:root { --gvid-oa-space-4: <value> }` auto-emitted. |
+| `"var(--gcid-oa-primary-500)"` / `"var(--gvid-oa-space-4)"` | Tolerated (Divi-owned prefix, resolves via `:root`) but non-canonical — prefer `$variable({...})$`. |
+| `"var(--space-3)"` or any `var(--<non-gvid-non-gcid>)` | **Banned.** Silent-failure class — falls through to the property's initial value. |
+| `$variable(gvid-xxx)$` (shorthand, bare ID) | **Does not resolve.** The canonical token must wrap a JSON payload; the shorthand emits literally into CSS and the browser drops the declaration. |
+
+Need a semantic name? Register it inside Divi as a `gvid-*` / `gcid-*` in the Variable Manager (e.g. `gvid-oa-space-hero-xl`) and reference via `$variable({...})$`. Don't layer a child-theme alias on top.
 
 ## Exceptions Quick Reference
 
