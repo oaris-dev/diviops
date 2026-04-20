@@ -64,6 +64,23 @@ const DEFAULT_COMMANDS: readonly string[] = [
   'theme list',
   'menu list',
   'site url',
+  // Core (read-only only — destructive core commands stay out)
+  // `core language list` is listed explicitly; the prefix matcher does exact-prefix equality +
+  // space-terminated startsWith, so this does NOT accidentally authorize `core language install`
+  // or any other mutating `core language` subcommand.
+  'core version',
+  'core check-update',
+  'core is-installed',
+  'core verify-checksums',
+  'core language list',
+  // DB (read-only introspection only — `db query` stays out; it's arbitrary SQL with no scoping
+  // and belongs in a higher-risk tier, tracked separately). See dev-repo #361 Chunk B for the
+  // opt-in design discussion.
+  'db columns',
+  'db size',
+  'db tables',
+  'db check',
+  'db search',
 ];
 
 /**
