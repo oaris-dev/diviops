@@ -16,6 +16,11 @@ import { z } from "zod";
 import { WPClient } from "./wp-client.js";
 import { optimizeSchema } from "./schema-optimizer.js";
 import { createWpCli } from "./wp-cli.js";
+import {
+  findForeignVarRefs,
+  scanAttrsForForeignVarRefs,
+  isolationErrorResult,
+} from "./validate-attrs.js";
 import { readFileSync, readdirSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
@@ -324,6 +329,8 @@ server.registerTool(
     },
   },
   async ({ page_id, content }) => {
+    const hits = findForeignVarRefs(content, "content");
+    if (hits.length > 0) return isolationErrorResult("diviops_update_page_content", hits);
     const result = await wp.request(`/page/${page_id}/content`, {
       method: "POST",
       body: { content },
@@ -400,6 +407,8 @@ server.registerTool(
     },
   },
   async ({ page_id, content, position }) => {
+    const hits = findForeignVarRefs(content, "content");
+    if (hits.length > 0) return isolationErrorResult("diviops_append_section", hits);
     const result = await wp.request(`/page/${page_id}/append`, {
       method: "POST",
       body: { content, position: position ?? "end" },
@@ -442,6 +451,8 @@ server.registerTool(
     },
   },
   async ({ page_id, label, match_text, content, occurrence }) => {
+    const hits = findForeignVarRefs(content, "content");
+    if (hits.length > 0) return isolationErrorResult("diviops_replace_section", hits);
     const body: Record<string, any> = { content, occurrence };
     if (label) body.label = label;
     if (match_text) body.match_text = match_text;
@@ -577,6 +588,8 @@ server.registerTool(
     },
   },
   async ({ page_id, label, match_text, auto_index, occurrence, attrs }) => {
+    const hits = scanAttrsForForeignVarRefs(attrs);
+    if (hits.length > 0) return isolationErrorResult("diviops_update_module", hits);
     const body: Record<string, any> = { attrs };
     if (auto_index) body.auto_index = auto_index;
     if (label) body.label = label;
@@ -705,6 +718,10 @@ server.registerTool(
     },
   },
   async ({ title, content, status }) => {
+    if (content) {
+      const hits = findForeignVarRefs(content, "content");
+      if (hits.length > 0) return isolationErrorResult("diviops_create_page", hits);
+    }
     const result = await wp.request("/page/create", {
       method: "POST",
       body: { title, content: content ?? "", status: status ?? "draft" },
