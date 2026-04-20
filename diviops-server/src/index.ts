@@ -1394,12 +1394,12 @@ server.registerTool(
   "diviops_wp_cli",
   {
     description:
-      "Run a WP-CLI command on the WordPress site. Requires WP_PATH env var (LOCAL_SITE_ID auto-detected from Local by Flywheel). Commands validated against a safety allowlist. Default tier covers read ops across options/posts/post-types/taxonomies/users/info, non-destructive writes (post/term create+update, post meta read/write, cache/rewrite/transient flush), ACF schema ops (export/import/list/get field-group), and WXR export. Extended tier (requires DIVIOPS_WP_CLI_ALLOW env var) adds destructive or bulk-modifying ops: option update, post/post meta/term delete, search-replace, import, plugin activate/deactivate, eval-file. Use --format=json for structured output. Full allowlist + tier rationale in the MCP server README.",
+      "Run a WP-CLI command on the WordPress site. Requires WP_PATH env var (LOCAL_SITE_ID auto-detected from Local by Flywheel), or WP_CLI_CMD for containerized wrappers. Commands validated against a safety allowlist. Default tier covers read ops across options/posts/post-types/taxonomies/users/info/core/db, non-destructive writes (post/term create+update, post meta read/write, cache/rewrite/transient flush), ACF schema ops (export/import/list/get field-group), and WXR export. Extended tier (requires DIVIOPS_WP_CLI_ALLOW env var) adds destructive or bulk-modifying ops: option update, post/post meta/term delete, search-replace, import, plugin activate/deactivate, eval-file. Filesystem-touching commands (`wp export`, `acf export/import`) are additionally constrained: path arguments must resolve under a safe root (defaults to `<WP_PATH>/.diviops-tmp/`, overridable via DIVIOPS_WP_CLI_SAFE_FS_ROOT, disable via DIVIOPS_WP_CLI_UNSAFE_FS=1); `wp export` requires an explicit `--dir=<path>` (or `--stdout`). In WP_CLI_CMD wrapper mode, DIVIOPS_WP_CLI_SAFE_FS_ROOT is required for FS-sensitive commands. Use --format=json for structured output. Full allowlist + tier rationale + filesystem semantics in the MCP server README.",
     inputSchema: {
       command: z
         .string()
         .describe(
-          'WP-CLI command without the "wp" prefix. E.g. "option get blogname", "post list --format=json", "db query \\"SELECT COUNT(*) FROM wp_posts\\""',
+          'WP-CLI command without the "wp" prefix. E.g. "option get blogname", "post list --format=json", "export --dir=$DIVIOPS_WP_CLI_SAFE_FS_ROOT --filename_format={site}.{date}.xml"',
         ),
     },
   },

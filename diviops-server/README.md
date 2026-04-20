@@ -69,6 +69,8 @@ claude mcp add diviops-mcp -- env \
 | `WP_CLI_CMD` | No | Custom WP-CLI command prefix for containerized environments, e.g. `ddev wp`, `npx wp-env run cli wp`, `docker exec -u www-data devkinsta_fpm wp --path=/www/kinsta/public/sitename` |
 | `LOCAL_SITE_ID` | No | Override auto-detection of Local by Flywheel site ID |
 | `DIVIOPS_WP_CLI_ALLOW` | No | Comma-separated list of extended WP-CLI commands to enable (see [WP-CLI Security](#wp-cli-security)) |
+| `DIVIOPS_WP_CLI_SAFE_FS_ROOT` | No | Absolute path to constrain filesystem-touching commands (`wp export`, `acf export/import`). Defaults to `<WP_PATH>/.diviops-tmp/` in host mode. **Required** in `WP_CLI_CMD` wrapper mode (must be the container-namespace path, since the host path can't be inferred) |
+| `DIVIOPS_WP_CLI_UNSAFE_FS` | No | Set to `1` to disable filesystem flag validation entirely. For trusted single-user local-dev setups where the `--dir` / positional-path safety checks get in the way |
 
 ### Local Development Environments
 
@@ -206,7 +208,18 @@ Only list the specific commands you need. Unknown entries are ignored with a war
 
 > **Note on `acf import`**: included in the default allowlist because it's an idempotent dev-time schema operation (re-creates field groups from JSON). Bulk content imports use `wp import` instead, which is opt-in.
 
-> **Known limitation — filesystem access**: Validation is prefix-based, not flag-aware. Commands that read from or write to the filesystem (`acf export`/`acf import`, `export`, opt-in `import`/`eval-file`) can target any path reachable by the WP-CLI user. For shared or multi-tenant environments, consider wrapping the MCP server with a stricter proxy or running it under an account with limited filesystem permissions. Flag-level validation is a candidate future enhancement.
+### Filesystem flag validation
+
+The three DEFAULT-tier filesystem commands (`wp export`, `acf export <path>`, `acf import <path>`) are second-pass validated against a safe root so wrong-path arguments can't write WXR to the web root or read ACF configs from arbitrary locations.
+
+- **Safe root**: `<WP_PATH>/.diviops-tmp/` by default (auto-created on first use in host mode). Override with `DIVIOPS_WP_CLI_SAFE_FS_ROOT=/absolute/path`. All path arguments must canonicalize under this directory; symlinks are resolved via `realpath` so a planted symlink inside the safe root pointing outside it is caught.
+- **`wp export` must pass `--dir=<path-under-safe-root>`** (or `--stdout`). Without `--dir`, wp-cli writes to the current working directory; on prod that's typically the web root.
+- **`--filename_format=` must be a filename template**, not a path — separators (`/`, `\`) are rejected so a crafted template can't escape `--dir`'s scope.
+- **`acf export/import`'s positional path** must resolve under the safe root.
+- **Wrapper mode (`WP_CLI_CMD`)**: the host-derived safe root doesn't correspond to the wrapper's filesystem (e.g., container paths like `/www/app`), so `DIVIOPS_WP_CLI_SAFE_FS_ROOT` is **required** and must be set to the container-namespace path. FS-sensitive commands are rejected with a clear error if it's missing.
+- **Escape hatch**: `DIVIOPS_WP_CLI_UNSAFE_FS=1` disables validation entirely. Appropriate for trusted single-user local-dev setups that don't want the guard.
+
+**EXTENDED-tier filesystem commands** (`import`, `eval-file`) are not flag-validated here — opt-in via `DIVIOPS_WP_CLI_ALLOW` signals the caller has accepted the path-scope risk. That constraint is a candidate future enhancement if the MCP server ships in multi-tenant contexts.
 
 ## Safety Patterns
 

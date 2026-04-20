@@ -10,6 +10,13 @@ import { execFile } from 'child_process';
 import { readdirSync, readFileSync, existsSync } from 'fs';
 import { homedir } from 'os';
 import { join } from 'path';
+import {
+  resolveSafeFsRoot,
+  fsValidationDisabled,
+  ensureSafeFsRoot,
+  matchFsSensitiveCommand,
+  validateFilesystemFlags,
+} from './wp-cli-fs-validator.js';
 
 interface WpCliConfig {
   /** Absolute path to the WordPress installation */
@@ -355,6 +362,31 @@ export function createWpCli(config: WpCliConfig) {
       const check = isCommandAllowed(args);
       if (!check.allowed) {
         return { success: false, output: '', error: check.reason };
+      }
+
+      // Second-pass FS validation for commands whose flags/args can read/write
+      // arbitrary paths. Scoped to DEFAULT-tier FS commands only — EXTENDED
+      // (`import`, `eval-file`) are opt-in via DIVIOPS_WP_CLI_ALLOW, so opting
+      // in signals the caller accepts path-scope risk. Skip entirely when the
+      // user explicitly disables via DIVIOPS_WP_CLI_UNSAFE_FS=1.
+      //
+      // Wrapper mode (WP_CLI_CMD set) is gated separately inside
+      // validateFilesystemFlags — host-derived safe roots don't correspond to
+      // the wrapper's filesystem namespace, so the validator requires an
+      // explicit DIVIOPS_WP_CLI_SAFE_FS_ROOT there. We also skip the host-side
+      // mkdir in wrapper mode since the safe root is either container-scoped
+      // (user-managed) or unset (validator rejects).
+      if (!fsValidationDisabled() && matchFsSensitiveCommand(args)) {
+        const safeRoot = resolveSafeFsRoot(config.wpPath);
+        if (!customWpCliCmd) {
+          ensureSafeFsRoot(safeRoot);
+        }
+        const fsCheck = validateFilesystemFlags(args, safeRoot, {
+          isWrapper: !!customWpCliCmd,
+        });
+        if (!fsCheck.allowed) {
+          return { success: false, output: '', error: fsCheck.reason };
+        }
       }
 
       const fullArgs = customWpCliCmd
