@@ -3,7 +3,7 @@
  * Plugin Name: DiviOps Agent
  * Plugin URI: https://github.com/oaris-dev/diviops
  * Description: REST API bridge for DiviOps — connects Claude Code to your Divi 5 site for AI-powered page building and design management.
- * Version: 1.0.0-beta.30
+ * Version: 1.0.0-beta.31
  * Author: oaris.de
  * Author URI: https://oaris.de
  * Text Domain: diviops-agent
@@ -22,7 +22,7 @@ class DiviOps_Agent {
 	/**
 	 * Plugin version — used for handshake compatibility checks.
 	 */
-	const VERSION = '1.0.0-beta.30';
+	const VERSION = '1.0.0-beta.31';
 
 	/**
 	 * Minimum MCP server version this plugin is compatible with.
@@ -403,6 +403,7 @@ class DiviOps_Agent {
 				],
 				'mode'         => [ 'required' => false, 'type' => 'string', 'default' => 'dry-run', 'enum' => [ 'dry-run', 'apply' ] ],
 				'strip_inline' => [ 'required' => false, 'type' => 'boolean', 'default' => true ],
+				'scope'        => [ 'required' => false, 'type' => 'string', 'default' => 'both', 'enum' => [ 'module', 'group', 'both' ] ],
 			],
 		] );
 
@@ -3484,12 +3485,24 @@ class DiviOps_Agent {
 	}
 
 	/**
-	 * Reassign modulePreset UUID references across pages.
+	 * Reassign preset UUID references across pages.
 	 *
-	 * Walks posts/pages, rewrites `"modulePreset":[...]` entries containing old_uuid to new_uuid.
-	 * In apply mode, optionally strips inline attrs that duplicate the new preset's attrs (strip_inline=true) —
-	 * but only when the post-swap modulePreset stack is singular ([new_uuid]); stacked presets keep inline so
-	 * other presets in the stack can't silently override through the freshly-stripped fields.
+	 * Walks posts/pages and rewrites two kinds of references:
+	 *   - `attrs.modulePreset[...]` arrays (stacked module presets) — always, when scope permits.
+	 *   - `attrs.groupPreset.<slot>.presetId` (attribute-level group presets) — when scope permits.
+	 *
+	 * For group-bucket reassignments, also rewrites preset-registry chains:
+	 * `presets.<bucket>.<module>.items.<uuid>.attrs.groupPresets.<slot>.presetId` refs pointing at
+	 * old_uuid are swapped to new_uuid so downstream presets that pull in the old group preset keep rendering.
+	 *
+	 * `scope` controls which refs are considered ("module" | "group" | "both", default "both").
+	 * Default "both" auto-selects based on new_uuid's bucket — the module/group distinction is an
+	 * identity invariant (cross-bucket swaps are rejected), so there's no ambiguity.
+	 *
+	 * In apply mode + module scope, optionally strips inline attrs that duplicate the new preset's attrs
+	 * (strip_inline=true), but only when the post-swap modulePreset stack is singular ([new_uuid]) — stacked
+	 * presets keep inline so other presets in the stack can't silently override through the freshly-stripped fields.
+	 * Slot-scoped inline strip for group scope is not yet implemented; an advisory is emitted in that case.
 	 * Dry-run (default) returns a summary of proposed changes without writing.
 	 */
 	public static function preset_reassign( $request ) {
@@ -3497,6 +3510,7 @@ class DiviOps_Agent {
 		$new_uuid     = sanitize_text_field( $request->get_param( 'new_uuid' ) );
 		$mode         = sanitize_key( $request->get_param( 'mode' ) ?: 'dry-run' );
 		$strip_inline = rest_sanitize_boolean( $request->get_param( 'strip_inline' ) ?? true );
+		$scope        = sanitize_key( $request->get_param( 'scope' ) ?: 'both' );
 		$page_ids     = $request->get_param( 'page_ids' );
 
 		if ( '' === $old_uuid || '' === $new_uuid ) {
@@ -3505,28 +3519,73 @@ class DiviOps_Agent {
 		if ( ! in_array( $mode, [ 'dry-run', 'apply' ], true ) ) {
 			return new WP_Error( 'bad_request', "mode must be 'dry-run' or 'apply'", [ 'status' => 400 ] );
 		}
+		if ( ! in_array( $scope, [ 'module', 'group', 'both' ], true ) ) {
+			return new WP_Error( 'bad_request', "scope must be 'module', 'group', or 'both'", [ 'status' => 400 ] );
+		}
 
-		$d5        = self::get_d5_presets();
-		$new_entry = null;
-		$new_mod   = '';
-		foreach ( [ 'module', 'group' ] as $bucket ) {
-			if ( ! isset( $d5[ $bucket ] ) ) {
-				continue;
-			}
-			foreach ( (array) $d5[ $bucket ] as $mod => $info ) {
-				$info = (array) $info;
-				if ( isset( $info['items'][ $new_uuid ] ) ) {
-					$new_entry = (array) $info['items'][ $new_uuid ];
-					$new_mod   = $mod;
-					break 2;
+		$d5 = self::get_d5_presets();
+
+		// Locate a UUID in the D5 registry and return its bucket + module + entry.
+		// Returns null when the UUID isn't registered (legitimate for old_uuid — may be dangling).
+		$find_bucket = static function ( $uuid ) use ( $d5 ) {
+			foreach ( [ 'module', 'group' ] as $bucket ) {
+				if ( ! isset( $d5[ $bucket ] ) ) {
+					continue;
+				}
+				foreach ( (array) $d5[ $bucket ] as $mod => $info ) {
+					$info = (array) $info;
+					if ( isset( $info['items'][ $uuid ] ) ) {
+						return [ 'bucket' => $bucket, 'module' => $mod, 'entry' => (array) $info['items'][ $uuid ] ];
+					}
 				}
 			}
-		}
-		if ( null === $new_entry ) {
+			return null;
+		};
+
+		$new_hit = $find_bucket( $new_uuid );
+		if ( null === $new_hit ) {
 			return new WP_Error( 'not_found', "new_uuid '{$new_uuid}' does not exist in preset registry", [ 'status' => 404 ] );
 		}
+		$new_bucket = $new_hit['bucket'];
+		$new_mod    = $new_hit['module'];
+		$new_entry  = $new_hit['entry'];
+
+		// old_uuid is allowed to be dangling (not in registry) — preserves the documented
+		// "can be a dangling/orphan UUID" contract for orphan cleanup workflows.
+		$old_hit    = $find_bucket( $old_uuid );
+		$old_bucket = null !== $old_hit ? $old_hit['bucket'] : null;
+
+		// Bucket-type validation: cross-bucket swaps (module preset ↔ group preset) would write
+		// wrong-type UUIDs into modulePreset arrays / groupPreset slots. Always rejected.
+		if ( null !== $old_bucket && $old_bucket !== $new_bucket ) {
+			return new WP_Error(
+				'bucket_mismatch',
+				"Bucket mismatch: old_uuid is a {$old_bucket} preset, new_uuid is a {$new_bucket} preset. Cross-bucket swaps are not supported.",
+				[ 'status' => 400 ]
+			);
+		}
+		if ( 'module' === $scope && 'module' !== $new_bucket ) {
+			return new WP_Error( 'scope_mismatch', "scope='module' requires new_uuid to be a module preset (got {$new_bucket})", [ 'status' => 400 ] );
+		}
+		if ( 'group' === $scope && 'group' !== $new_bucket ) {
+			return new WP_Error( 'scope_mismatch', "scope='group' requires new_uuid to be a group preset (got {$new_bucket})", [ 'status' => 400 ] );
+		}
+
+		// Resolve "both" to the concrete branch determined by new_uuid's bucket — module/group are
+		// disjoint identity spaces, so there's exactly one valid walk for this swap.
+		$effective_scope = ( 'both' === $scope ) ? $new_bucket : $scope;
+
+		// Slot-scoped inline strip for group scope requires Divi's group-metadata registration to
+		// map slot names to inline decoration paths (not derivable from the preset alone). Deferred
+		// to a follow-up; for now we emit an advisory and skip strip on group swaps.
+		$strip_advisory = null;
+		if ( $strip_inline && 'group' === $effective_scope ) {
+			$strip_advisory = 'strip_inline skipped: slot-scoped inline strip for group-bucket presets is not yet implemented. UUID swaps performed; inline attrs unchanged.';
+		}
+
 		// Merge styleAttrs + attrs for the inline-strip comparison bag. VB-created presets sometimes
 		// populate only styleAttrs for CSS-generating fields; attrs wins on conflict (same precedence Divi uses).
+		// Only used in module effective scope.
 		$preset_style_attrs = is_array( $new_entry['styleAttrs'] ?? null ) ? $new_entry['styleAttrs'] : [];
 		$preset_base_attrs  = is_array( $new_entry['attrs'] ?? null ) ? $new_entry['attrs'] : [];
 		$preset_attrs       = self::_deep_merge( $preset_style_attrs, $preset_base_attrs );
@@ -3563,15 +3622,22 @@ class DiviOps_Agent {
 		}
 
 		$summary = [
+			'scope'           => $effective_scope,
 			'pages_scanned'   => count( $posts ),
 			'pages_modified'  => 0,
 			'uuid_swaps'      => 0,
+			'module_swaps'    => 0,
+			'group_swaps'     => 0,
+			'chain_swaps'     => 0,
 			'inline_stripped' => 0,
 			'truncated'       => $truncated,
 			'max_pages'       => $max_pages,
 			'errors'          => [],
 			'details'         => [],
 		];
+		if ( null !== $strip_advisory ) {
+			$summary['strip_advisory'] = $strip_advisory;
+		}
 
 		foreach ( $posts as $p ) {
 			$content = $p->post_content;
@@ -3582,16 +3648,17 @@ class DiviOps_Agent {
 				continue;
 			}
 
-			$swap_hits        = 0;
+			$module_swap_hits = 0;
+			$group_swap_hits  = 0;
 			$strip_hits       = 0;
 			$per_page_details = [];
 
 			// Parse WP blocks to rewrite safely.
-			$blocks = parse_blocks( $content );
-			$rewrite = function ( array $blocks ) use ( &$rewrite, $old_uuid, $new_uuid, $preset_attrs, $strip_inline, &$swap_hits, &$strip_hits, &$per_page_details ) {
+			$blocks  = parse_blocks( $content );
+			$rewrite = function ( array $blocks ) use ( &$rewrite, $old_uuid, $new_uuid, $preset_attrs, $strip_inline, $effective_scope, &$module_swap_hits, &$group_swap_hits, &$strip_hits, &$per_page_details ) {
 				foreach ( $blocks as $i => $block ) {
 					$attrs = is_array( $block['attrs'] ?? null ) ? $block['attrs'] : [];
-					if ( isset( $attrs['modulePreset'] ) && is_array( $attrs['modulePreset'] ) ) {
+					if ( 'module' === $effective_scope && isset( $attrs['modulePreset'] ) && is_array( $attrs['modulePreset'] ) ) {
 						// Replace every occurrence — modulePreset is a stacked-preset array, same UUID may appear multiple times.
 						$block_swaps = 0;
 						foreach ( $attrs['modulePreset'] as $idx => $uuid_value ) {
@@ -3601,10 +3668,11 @@ class DiviOps_Agent {
 							}
 						}
 						if ( $block_swaps > 0 ) {
-							$swap_hits += $block_swaps;
+							$module_swap_hits += $block_swaps;
 							$detail = [
 								'block'       => $block['blockName'] ?? '',
 								'admin_label' => self::get_nested_array_value( $attrs, [ 'meta', 'adminLabel', 'desktop', 'value' ], '' ),
+								'ref_type'    => 'module',
 								'swaps'       => $block_swaps,
 								'action'      => 'swap',
 							];
@@ -3628,6 +3696,44 @@ class DiviOps_Agent {
 							$block['attrs'] = $attrs;
 						}
 					}
+
+					if ( 'group' === $effective_scope && isset( $attrs['groupPreset'] ) && is_array( $attrs['groupPreset'] ) ) {
+						// groupPreset is a slot map: { <slot>: { presetId: <scalar|array>, ... }, ... }.
+						// presetId may be a scalar string or a stacked array — Divi accepts both shapes.
+						$block_group_swaps = 0;
+						foreach ( $attrs['groupPreset'] as $slot_key => $slot ) {
+							if ( ! is_array( $slot ) || ! isset( $slot['presetId'] ) ) {
+								continue;
+							}
+							$ids_is_array = is_array( $slot['presetId'] );
+							$ids          = $ids_is_array ? $slot['presetId'] : [ $slot['presetId'] ];
+							$slot_swaps   = 0;
+							foreach ( $ids as $idx => $uuid_value ) {
+								if ( $old_uuid === $uuid_value ) {
+									$ids[ $idx ] = $new_uuid;
+									$slot_swaps++;
+								}
+							}
+							if ( $slot_swaps > 0 ) {
+								$slot['presetId']                  = $ids_is_array ? $ids : $ids[0];
+								$attrs['groupPreset'][ $slot_key ] = $slot;
+								$group_swap_hits                  += $slot_swaps;
+								$block_group_swaps                += $slot_swaps;
+								$per_page_details[]                = [
+									'block'       => $block['blockName'] ?? '',
+									'admin_label' => self::get_nested_array_value( $attrs, [ 'meta', 'adminLabel', 'desktop', 'value' ], '' ),
+									'ref_type'    => 'group',
+									'slot'        => (string) $slot_key,
+									'swaps'       => $slot_swaps,
+									'action'      => 'swap',
+								];
+							}
+						}
+						if ( $block_group_swaps > 0 ) {
+							$block['attrs'] = $attrs;
+						}
+					}
+
 					if ( ! empty( $block['innerBlocks'] ) && is_array( $block['innerBlocks'] ) ) {
 						$block['innerBlocks'] = $rewrite( $block['innerBlocks'] );
 					}
@@ -3637,16 +3743,21 @@ class DiviOps_Agent {
 			};
 			$new_blocks = $rewrite( $blocks );
 
+			$swap_hits = $module_swap_hits + $group_swap_hits;
 			if ( $swap_hits > 0 ) {
 				$summary['pages_modified']++;
 				$summary['uuid_swaps']      += $swap_hits;
+				$summary['module_swaps']    += $module_swap_hits;
+				$summary['group_swaps']     += $group_swap_hits;
 				$summary['inline_stripped'] += $strip_hits;
 				$page_detail = [
-					'page_id'     => $p->ID,
-					'title'       => $p->post_title,
-					'swaps'       => $swap_hits,
-					'strips'      => $strip_hits,
-					'modules'     => $per_page_details,
+					'page_id'      => $p->ID,
+					'title'        => $p->post_title,
+					'swaps'        => $swap_hits,
+					'module_swaps' => $module_swap_hits,
+					'group_swaps'  => $group_swap_hits,
+					'strips'       => $strip_hits,
+					'modules'      => $per_page_details,
 				];
 
 				if ( 'apply' === $mode ) {
@@ -3693,16 +3804,191 @@ class DiviOps_Agent {
 			}
 		}
 
+		// Registry chain rewrite — runs whenever effective scope is group, including when
+		// old_uuid is dangling (not currently in the registry). A group preset's UUID may be
+		// referenced from OTHER presets' `attrs.groupPresets.<slot>.presetId` chains (module
+		// presets or group presets pulling it in). Those chain refs can persist after the
+		// target preset was deleted — collect_group_chain_refs() treats this case as valid
+		// for audit, so reassign must treat it as rewritable for orphan-cleanup consistency.
+		// Skipping the rewrite when old_uuid is dangling would leave stale chain refs behind
+		// after page-ref swaps, defeating the advertised dangling-old-UUID workflow.
+		//
+		// Apply mode re-reads the registry immediately before the chain rewrite to minimize the
+		// stale-overwrite window: our initial `$d5` was fetched before the page scan, which can
+		// iterate up to REASSIGN_MAX_PAGES posts. A VB session mutating presets during that scan
+		// would otherwise be clobbered. Dry-run uses the original $d5 since it never writes.
+		$chain_details = [];
+		if ( 'group' === $effective_scope ) {
+			$chain_registry = ( 'apply' === $mode ) ? self::get_d5_presets() : $d5;
+			$chain_result   = self::_rewrite_registry_group_chains( $chain_registry, $old_uuid, $new_uuid );
+			$chain_swaps    = (int) $chain_result['swaps'];
+			$chain_details  = $chain_result['details'];
+			$summary['chain_swaps'] = $chain_swaps;
+
+			if ( $chain_swaps > 0 && 'apply' === $mode ) {
+				// Fold the chain-updated registry into the D5 storage. Atomic write — both
+				// storage locations updated together by save_d5_presets().
+				self::save_d5_presets( $chain_result['registry'] );
+			}
+		}
+		if ( ! empty( $chain_details ) ) {
+			$summary['chain_details'] = $chain_details;
+		}
+
 		$success = 'apply' !== $mode || empty( $summary['errors'] );
 		return rest_ensure_response( [
 			'success'      => $success,
 			'mode'         => $mode,
+			'scope'        => $scope,
 			'strip_inline' => $strip_inline,
 			'old_uuid'     => $old_uuid,
 			'new_uuid'     => $new_uuid,
 			'new_module'   => $new_mod,
 			'summary'      => $summary,
 		] );
+	}
+
+	/**
+	 * Walk the D5 preset registry and rewrite `groupPresets.<slot>.presetId` chain refs
+	 * pointing at $old_uuid to $new_uuid.
+	 *
+	 * Applies the swap across all three attribute bags — `attrs`, `styleAttrs`, `renderAttrs` —
+	 * to preserve the dual-pass CSS lockstep that `preset_update()` and `preset_create()` maintain.
+	 * Divi renders preset CSS via Pass A (`.preset--module--{module}--{uuid}` from attrs, low
+	 * specificity) and Pass B (`.et_pb_{module}_N` instance class from renderAttrs, high
+	 * specificity with parent-chain selectors); leaving stale chain refs in styleAttrs or
+	 * renderAttrs would let Pass B follow the old chain while Pass A follows the new one,
+	 * producing split rendering.
+	 *
+	 * User-facing swap count + per-preset details come from the authoritative `attrs` bag only —
+	 * styleAttrs/renderAttrs mirrors are silent (they duplicate the same logical refs under
+	 * lockstep and would otherwise inflate counts 3x). If lockstep was pre-broken (refs only in
+	 * styleAttrs/renderAttrs, not attrs), the lockstep-repair still persists but is invisible
+	 * to the reported count — matches the silent-mirror semantics of preset_update.
+	 *
+	 * Returns the updated registry + swap count + per-preset details. Does NOT write — caller
+	 * decides whether to persist based on mode.
+	 *
+	 * `presetId` may be a scalar string or an array (Divi accepts both via the stacking convention).
+	 * Slot key is preserved; only matching presetId entries are rewritten.
+	 */
+	private static function _rewrite_registry_group_chains( array $d5, string $old_uuid, string $new_uuid ): array {
+		$swaps   = 0;
+		$details = [];
+		foreach ( [ 'module', 'group' ] as $bucket ) {
+			if ( ! isset( $d5[ $bucket ] ) ) {
+				continue;
+			}
+			$bucket_modules = (array) $d5[ $bucket ];
+			foreach ( $bucket_modules as $mod => $info ) {
+				$info  = (array) $info;
+				$items = isset( $info['items'] ) ? (array) $info['items'] : [];
+				foreach ( $items as $preset_uuid => $preset ) {
+					if ( ! is_array( $preset ) && ! is_object( $preset ) ) {
+						continue;
+					}
+					$preset            = (array) $preset;
+					$any_bag_mutated   = false;
+					$attrs_slot_swaps  = [];
+
+					// Apply the same swap loop to each of the three attr bags independently.
+					// Tracking authoritative count + details only from `attrs`; the other two
+					// bags are silent mirrors that keep Pass A / Pass B rendering in lockstep.
+					//
+					// Defensively cast each nested level from array-or-object before reading —
+					// `get_d5_presets()` only normalizes the top level after maybe_unserialize(),
+					// so inner structures (bags, slot maps, individual slots) can land as stdClass
+					// on sites that round-tripped the option through JSON or a custom writer.
+					// Matches the (array)-at-every-level pattern in collect_group_chain_refs().
+					foreach ( [ 'attrs', 'styleAttrs', 'renderAttrs' ] as $bag_key ) {
+						if ( ! isset( $preset[ $bag_key ] ) ) {
+							continue;
+						}
+						if ( ! is_array( $preset[ $bag_key ] ) && ! is_object( $preset[ $bag_key ] ) ) {
+							continue;
+						}
+						$bag = (array) $preset[ $bag_key ];
+						if ( ! isset( $bag['groupPresets'] ) ) {
+							continue;
+						}
+						if ( ! is_array( $bag['groupPresets'] ) && ! is_object( $bag['groupPresets'] ) ) {
+							continue;
+						}
+						$group_presets_map = (array) $bag['groupPresets'];
+						$result            = self::_swap_chain_refs_in_group_presets_map( $group_presets_map, $old_uuid, $new_uuid );
+						if ( $result['swaps'] > 0 ) {
+							$bag['groupPresets']      = $result['map'];
+							$preset[ $bag_key ]       = $bag;
+							$any_bag_mutated          = true;
+							if ( 'attrs' === $bag_key ) {
+								$attrs_slot_swaps = $result['slot_swaps'];
+							}
+						}
+					}
+
+					if ( $any_bag_mutated ) {
+						$items[ $preset_uuid ] = $preset;
+						foreach ( $attrs_slot_swaps as $slot_key => $slot_count ) {
+							$swaps    += $slot_count;
+							$details[] = [
+								'bucket'        => $bucket,
+								'module'        => (string) $mod,
+								'referenced_by' => (string) $preset_uuid,
+								'slot'          => (string) $slot_key,
+								'swaps'         => $slot_count,
+							];
+						}
+					}
+				}
+				if ( isset( $info['items'] ) ) {
+					$info['items']          = $items;
+					$bucket_modules[ $mod ] = $info;
+				}
+			}
+			$d5[ $bucket ] = $bucket_modules;
+		}
+		return [ 'swaps' => $swaps, 'details' => $details, 'registry' => $d5 ];
+	}
+
+	/**
+	 * Swap `presetId` references inside a single `groupPresets` slot map.
+	 *
+	 * Extracted so `_rewrite_registry_group_chains` can apply the same surgical swap to each of
+	 * the three attr bags (attrs / styleAttrs / renderAttrs) without duplicating the scalar-vs-array
+	 * handling. Returns the mutated map + total swap count + per-slot swap counts.
+	 *
+	 * Each slot is cast from array-or-object before reading to match the (array)-at-every-level
+	 * defensive pattern in collect_group_chain_refs() — stdClass slots are a real shape on sites
+	 * where the D5 option round-tripped through JSON or a custom importer.
+	 */
+	private static function _swap_chain_refs_in_group_presets_map( array $group_presets_map, string $old_uuid, string $new_uuid ): array {
+		$swaps      = 0;
+		$slot_swaps = [];
+		foreach ( $group_presets_map as $slot_key => $slot ) {
+			if ( ! is_array( $slot ) && ! is_object( $slot ) ) {
+				continue;
+			}
+			$slot = (array) $slot;
+			if ( ! isset( $slot['presetId'] ) ) {
+				continue;
+			}
+			$ids_is_array    = is_array( $slot['presetId'] );
+			$ids             = $ids_is_array ? $slot['presetId'] : [ $slot['presetId'] ];
+			$this_slot_swaps = 0;
+			foreach ( $ids as $idx => $uuid_value ) {
+				if ( $old_uuid === $uuid_value ) {
+					$ids[ $idx ] = $new_uuid;
+					$this_slot_swaps++;
+				}
+			}
+			if ( $this_slot_swaps > 0 ) {
+				$slot['presetId']                       = $ids_is_array ? $ids : $ids[0];
+				$group_presets_map[ $slot_key ]         = $slot;
+				$swaps                                 += $this_slot_swaps;
+				$slot_swaps[ (string) $slot_key ]       = $this_slot_swaps;
+			}
+		}
+		return [ 'map' => $group_presets_map, 'swaps' => $swaps, 'slot_swaps' => $slot_swaps ];
 	}
 
 	/**

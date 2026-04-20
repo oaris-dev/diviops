@@ -929,7 +929,7 @@ server.registerTool(
   "diviops_preset_reassign",
   {
     description:
-      'Reassign a preset UUID across page content. Walks pages and rewrites modules referencing old_uuid in their modulePreset array to reference new_uuid. Optionally strips inline attrs that duplicate the new preset\'s attrs (otherwise inline wins over preset). Defaults to dry-run — set mode="apply" to actually rewrite. Use this to consolidate repeated inline styling into a reusable preset after creating one with diviops_preset_create.',
+      'Reassign a preset UUID across page content. Covers both module-level refs (`attrs.modulePreset[...]`) and attribute-level group-preset refs (`attrs.groupPreset.<slot>.presetId`), plus — for group presets — registry chain refs in other presets\' `attrs.groupPresets.<slot>.presetId`. The `scope` param controls which ref types are walked (default "both", auto-selects based on new_uuid\'s bucket). Cross-bucket swaps (module ↔ group) are rejected. For module-scope swaps, optionally strips inline attrs that duplicate the new preset\'s attrs (otherwise inline wins over preset); slot-scoped inline strip for group scope is not yet implemented and is skipped with an advisory. Defaults to dry-run — set mode="apply" to actually rewrite. Use this to consolidate repeated inline styling into a reusable preset after creating one with diviops_preset_create.',
     inputSchema: {
       old_uuid: z
         .string()
@@ -950,19 +950,32 @@ server.registerTool(
         .optional()
         .default("dry-run")
         .describe(
-          '"dry-run" (default) returns the diff without writing. "apply" rewrites page content.',
+          '"dry-run" (default) returns the diff without writing. "apply" rewrites page content (and registry chains for group-scope swaps).',
         ),
       strip_inline: z
         .boolean()
         .optional()
         .default(true)
         .describe(
-          "If true (default), strip inline attrs that deep-equal the new preset's attrs so the preset actually takes effect. Set false to swap UUIDs only.",
+          "If true (default), strip inline attrs that deep-equal the new preset's attrs so the preset actually takes effect. Applies to module-scope swaps only; group-scope swaps currently skip strip with an advisory in the summary. Set false to swap UUIDs only.",
+        ),
+      scope: z
+        .enum(["module", "group", "both"])
+        .optional()
+        .default("both")
+        .describe(
+          '"module" walks `attrs.modulePreset[...]` only. "group" walks `attrs.groupPreset.<slot>.presetId` plus registry chain refs (`attrs.groupPresets.<slot>.presetId` in other presets). "both" (default) auto-selects based on new_uuid\'s bucket — module/group identity is disjoint, so there is one valid walk per swap. An explicit "module" or "group" rejects if new_uuid is in the wrong bucket.',
         ),
     },
   },
-  async ({ old_uuid, new_uuid, page_ids, mode, strip_inline }) => {
-    const body: Record<string, any> = { old_uuid, new_uuid, mode, strip_inline };
+  async ({ old_uuid, new_uuid, page_ids, mode, strip_inline, scope }) => {
+    const body: Record<string, any> = {
+      old_uuid,
+      new_uuid,
+      mode,
+      strip_inline,
+      scope,
+    };
     if (page_ids) body.page_ids = page_ids;
     const result = await wp.request("/preset-reassign", {
       method: "POST",
