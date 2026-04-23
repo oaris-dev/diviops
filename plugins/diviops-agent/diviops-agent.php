@@ -3,7 +3,7 @@
  * Plugin Name: DiviOps Agent
  * Plugin URI: https://github.com/oaris-dev/diviops
  * Description: REST API bridge for DiviOps — connects Claude Code to your Divi 5 site for AI-powered page building and design management.
- * Version: 1.0.0-beta.34
+ * Version: 1.0.0-beta.35
  * Author: oaris.de
  * Author URI: https://oaris.de
  * Text Domain: diviops-agent
@@ -22,7 +22,7 @@ class DiviOps_Agent {
 	/**
 	 * Plugin version — used for handshake compatibility checks.
 	 */
-	const VERSION = '1.0.0-beta.34';
+	const VERSION = '1.0.0-beta.35';
 
 	/**
 	 * Minimum MCP server version this plugin is compatible with.
@@ -1546,6 +1546,48 @@ class DiviOps_Agent {
 						'message' => 'Blurb has imageIcon.innerContent.desktop.value.icon but useIcon is not "on" — icon will not render. Icon mode requires useIcon:"on".',
 						'path'    => 'imageIcon.innerContent.desktop.value.useIcon',
 					];
+				}
+			}
+
+			// ── ContactField checks (error) ─────────────────────────
+
+			if ( 'divi/contact-field' === $name ) {
+				// Every value under fieldItem.innerContent.<breakpoint>.<state> must be a STRING
+				// (the label text). Writing it as an object/array (e.g. bundling fieldId,
+				// fieldType, fieldTitle, required under one `value`) crashes Divi's render at
+				// MultiViewUtils::populate_data_content with UnexpectedValueException —
+				// "Expected a string value, but a array value was given". The walker at
+				// MultiViewUtils.php:1220-1253 iterates every breakpoint + state in the
+				// normalized innerContent bag, so a valid desktop.value paired with an object
+				// at tablet.value or desktop.hover still aborts the entire post render (not
+				// just the field).
+				//
+				// Field config (id, type, required, allowedSymbols, minLength, maxLength,
+				// radioOptions, checkboxOptions, selectOptions, booleanCheckboxOptions) lives
+				// at fieldItem.advanced.<key>.desktop.value individually, not bundled under
+				// innerContent.
+				$inner_content = self::get_nested_array_value( $attrs, [ 'fieldItem', 'innerContent' ] );
+				if ( is_array( $inner_content ) ) {
+					foreach ( $inner_content as $breakpoint => $state_values ) {
+						if ( ! is_array( $state_values ) ) {
+							continue;
+						}
+						foreach ( $state_values as $state => $value ) {
+							if ( null !== $value && ! is_string( $value ) ) {
+								$errors[] = [
+									'block'   => $name,
+									'index'   => $index,
+									'code'    => 'field_item_content_object',
+									'message' => sprintf(
+										'ContactField fieldItem.innerContent.%s.%s must be a string (the label text). A non-string value at any breakpoint or state crashes Divi render at MultiViewUtils::populate_data_content. Put field config individually at fieldItem.advanced.{id,type,required,allowedSymbols,minLength,maxLength,radioOptions,checkboxOptions,selectOptions,booleanCheckboxOptions}.desktop.value.',
+										(string) $breakpoint,
+										(string) $state
+									),
+									'path'    => sprintf( 'fieldItem.innerContent.%s.%s', (string) $breakpoint, (string) $state ),
+								];
+							}
+						}
+					}
 				}
 			}
 

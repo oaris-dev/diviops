@@ -2,7 +2,7 @@
 
 Copy-paste-ready Divi 5 block snippets — the **smallest shape that renders correctly**. Each snippet includes every key required for render; omit any listed key and the module silently falls through to a wrong default (empty text, wrong heading level, missing icon, default "Click Me" button, etc.).
 
-These snippets are the defensive pair to the `diviops_validate_blocks` semantic rules (plugin v1.0.0-beta.33+). Each one passes validation clean.
+These snippets are the defensive pair to the `diviops_validate_blocks` semantic rules (plugin v1.0.0-beta.35+). Each one passes validation clean.
 
 Wrap any of these in a `divi/column` → `divi/row` → `divi/section` → `divi/placeholder` tree before saving. Minimal container scaffolding is at the bottom of this file.
 
@@ -179,6 +179,46 @@ Two silent-failure traps — title shape and icon-mode flag.
 
 ---
 
+## `divi/contact-field`
+
+The field-config split is the hard part here: the **label** is a plain string at `fieldItem.innerContent.desktop.value`, while `id`, `type`, `required`, and input constraints each live as **separate** `fieldItem.advanced.<key>.desktop.value` entries. Bundling them into one object at `innerContent` crashes Divi render — see the Gotcha note below.
+
+`divi/contact-field` must live inside a `divi/contact-form`, which must live inside the usual Column → Row → Section → placeholder tree.
+
+```
+<!-- wp:divi/contact-form {"builderVersion":"5.3.2"} -->
+<!-- wp:divi/contact-field {
+  "builderVersion": "5.3.2",
+  "fieldItem": {
+    "innerContent": { "desktop": { "value": "Your Name" } },
+    "advanced": {
+      "id":       { "desktop": { "value": "name" } },
+      "type":     { "desktop": { "value": "input" } },
+      "required": { "desktop": { "value": "on" } }
+    }
+  }
+} /-->
+<!-- wp:divi/contact-field {
+  "builderVersion": "5.3.2",
+  "fieldItem": {
+    "innerContent": { "desktop": { "value": "Your Email" } },
+    "advanced": {
+      "id":       { "desktop": { "value": "email" } },
+      "type":     { "desktop": { "value": "email" } },
+      "required": { "desktop": { "value": "on" } }
+    }
+  }
+} /-->
+<!-- /wp:divi/contact-form -->
+```
+
+- **`fieldItem.innerContent.desktop.value` is a plain string** (the label). Writing it as an object crashes the whole page — `MultiViewUtils::populate_data_content` throws `UnexpectedValueException`. See [SKILL.md → Module Gotchas](../SKILL.md#module-gotchas-silent-failures) → ContactField entry. Validator: `field_item_content_object` (error).
+- **Field config is per-key under `fieldItem.advanced`** — each of `id`, `type`, `required`, `allowedSymbols`, `minLength`, `maxLength`, `radioOptions`, `checkboxOptions`, `selectOptions`, `booleanCheckboxOptions` has its own `.desktop.value`, NOT one `value` object combining them.
+- **`type`** accepts `"input"` (default single-line text), `"email"`, `"text"` (textarea), `"select"`, `"radio"`, `"checkbox"`. Omit for `"input"`.
+- **`id`** is used both as the field `name=` and the form-handler key — should be lowercase-alphanumeric. VB enforces page-wide uniqueness on save.
+
+---
+
 ## Container Scaffolding
 
 Any content module (Heading, Text, Button, Blurb, Icon, Image) must live inside a Column → Row → Section → placeholder tree. Minimum shape:
@@ -275,4 +315,4 @@ A common pattern: 3 cards in a row. **Do not use `flexType: "8_24"` on the blurb
 
 ## Validation
 
-All snippets above pass `diviops_validate_blocks` with `valid: true, errors: [], warnings: []` on plugin v1.0.0-beta.33+. The validator catches the specific silent-failure patterns these snippets avoid — see [SKILL.md → Module Gotchas](../SKILL.md#module-gotchas-silent-failures) for the full list.
+All snippets above pass `diviops_validate_blocks` with `valid: true, errors: [], warnings: []` on plugin v1.0.0-beta.35+. The validator catches the specific silent-failure patterns these snippets avoid — see [SKILL.md → Module Gotchas](../SKILL.md#module-gotchas-silent-failures) for the full list.

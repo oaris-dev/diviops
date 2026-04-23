@@ -156,7 +156,7 @@ Write `.claude/instructions/design-system.md` with brand-specific guidance: aest
 
 ## Module Gotchas (Silent Failures)
 
-Full attribute paths in [module-formats.md](references/module-formats.md) Tier 3 (Pro). **Copy-paste minimum-valid snippets** for each content module: [minimal-snippets.md](references/minimal-snippets.md). Run [`diviops_validate_blocks`](references/tools.md) to catch the top 7 silent-failure patterns before write — each one below maps to a validator rule.
+Full attribute paths in [module-formats.md](references/module-formats.md) Tier 3 (Pro). **Copy-paste minimum-valid snippets** for each content module: [minimal-snippets.md](references/minimal-snippets.md). Run [`diviops_validate_blocks`](references/tools.md) to catch the top 8 silent-failure patterns before write — each one below maps to a validator rule.
 
 **Content-shape traps** (block renders but with wrong/missing content):
 
@@ -167,6 +167,7 @@ Full attribute paths in [module-formats.md](references/module-formats.md) Tier 3
 - **Blurb icon**: when `imageIcon.innerContent.desktop.value.icon` is set, `useIcon: "on"` is required — without it the `.et-pb-icon` span renders empty. Validator: `blurb_icon_missing_use_icon` (error).
 - **Body font path**: `content.decoration.bodyFont.body.font.*` (Font Family A, triple-nested). Writing `bodyFont.bodyFont.*` is a silent failure — no renderer consumer, values fall through to defaults (often black text on a dark background → invisible). Validator: `body_font_double_nested` (error).
 - **flexType only on columns**: `module.decoration.layout.desktop.value.flexType` is a column-layout 24-unit grid attribute — only `divi/column`/`divi/column-inner` inside `divi/row` consume it. On blurbs, groups, text, etc. it's silently dropped, leaving the block with no width constraint. For flex children inside a group use `module.decoration.sizing.desktop.value.width` with per-breakpoint values. Validator: `flextype_on_non_column` (warn).
+- **ContactField `fieldItem` label must be a string**: `fieldItem.innerContent.desktop.value` is a **plain string** (the label text, e.g. `"Your Name"`). Writing it as an object (bundling `fieldId`/`fieldType`/`required`/etc. under one value) is NOT a silent failure — it throws `UnexpectedValueException` in Divi's `MultiViewUtils::populate_data_content` and **crashes the entire post render** (white-screen critical error). Field config lives individually at `fieldItem.advanced.{id, type, required, allowedSymbols, minLength, maxLength, radioOptions, checkboxOptions, selectOptions}.desktop.value`. See [module-formats.md → Contact Field](references/module-formats.md#contact-field) for the full attr split. Validator: `field_item_content_object` (error).
 
 **Attribute-path traps** (module renders but styling lands on the wrong element):
 
