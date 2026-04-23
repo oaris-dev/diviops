@@ -3,7 +3,7 @@
  * Plugin Name: DiviOps Agent
  * Plugin URI: https://github.com/oaris-dev/diviops
  * Description: REST API bridge for DiviOps — connects Claude Code to your Divi 5 site for AI-powered page building and design management.
- * Version: 1.0.0-beta.35
+ * Version: 1.0.0-beta.36
  * Author: oaris.de
  * Author URI: https://oaris.de
  * Text Domain: diviops-agent
@@ -22,7 +22,7 @@ class DiviOps_Agent {
 	/**
 	 * Plugin version — used for handshake compatibility checks.
 	 */
-	const VERSION = '1.0.0-beta.35';
+	const VERSION = '1.0.0-beta.36';
 
 	/**
 	 * Minimum MCP server version this plugin is compatible with.
@@ -3707,10 +3707,16 @@ class DiviOps_Agent {
 	 * Default "both" auto-selects based on new_uuid's bucket — the module/group distinction is an
 	 * identity invariant (cross-bucket swaps are rejected), so there's no ambiguity.
 	 *
-	 * In apply mode + module scope, optionally strips inline attrs that duplicate the new preset's attrs
-	 * (strip_inline=true), but only when the post-swap modulePreset stack is singular ([new_uuid]) — stacked
-	 * presets keep inline so other presets in the stack can't silently override through the freshly-stripped fields.
-	 * Slot-scoped inline strip for group scope is not yet implemented; an advisory is emitted in that case.
+	 * With `strip_inline=true` (default), strips inline attrs that duplicate the new preset's attrs:
+	 *   - Module scope: strips from the block root, guarded by "post-swap modulePreset stack is singular
+	 *     ([new_uuid])" — stacked presets keep inline so other presets in the stack can't silently override
+	 *     through the freshly-stripped fields.
+	 *   - Group scope: strips per-slot using Divi's `GlobalPresetItemGroup` class to resolve the preset's
+	 *     attrs for the target module+slot (handles composite button groups, `-id-classes` suffix, explicit
+	 *     `attrName` component mappings, cross-module name translation). Same singular-stack guard at the
+	 *     slot level. Unmappable slots (missing class, unknown module) skip strip and emit a per-slot
+	 *     advisory at `summary.strip_advisory_per_slot[<module>::<slot>]`; neighbor slots still strip.
+	 *
 	 * Dry-run (default) returns a summary of proposed changes without writing.
 	 */
 	public static function preset_reassign( $request ) {
@@ -3783,14 +3789,6 @@ class DiviOps_Agent {
 		// disjoint identity spaces, so there's exactly one valid walk for this swap.
 		$effective_scope = ( 'both' === $scope ) ? $new_bucket : $scope;
 
-		// Slot-scoped inline strip for group scope requires Divi's group-metadata registration to
-		// map slot names to inline decoration paths (not derivable from the preset alone). Deferred
-		// to a follow-up; for now we emit an advisory and skip strip on group swaps.
-		$strip_advisory = null;
-		if ( $strip_inline && 'group' === $effective_scope ) {
-			$strip_advisory = 'strip_inline skipped: slot-scoped inline strip for group-bucket presets is not yet implemented. UUID swaps performed; inline attrs unchanged.';
-		}
-
 		// Merge styleAttrs + attrs for the inline-strip comparison bag. VB-created presets sometimes
 		// populate only styleAttrs for CSS-generating fields; attrs wins on conflict (same precedence Divi uses).
 		// Only used in module effective scope.
@@ -3843,9 +3841,10 @@ class DiviOps_Agent {
 			'errors'          => [],
 			'details'         => [],
 		];
-		if ( null !== $strip_advisory ) {
-			$summary['strip_advisory'] = $strip_advisory;
-		}
+		// Per-slot advisories — populated during group-scope strip when a slot's target paths can't
+		// be resolved (e.g. Divi's GlobalPresetItemGroup class unavailable, slot not registered).
+		// Unmappable slots skip strip; other slots in the same walk are unaffected.
+		$summary['strip_advisory_per_slot'] = [];
 
 		foreach ( $posts as $p ) {
 			$content = $p->post_content;
@@ -3863,7 +3862,7 @@ class DiviOps_Agent {
 
 			// Parse WP blocks to rewrite safely.
 			$blocks  = parse_blocks( $content );
-			$rewrite = function ( array $blocks ) use ( &$rewrite, $old_uuid, $new_uuid, $preset_attrs, $strip_inline, $effective_scope, &$module_swap_hits, &$group_swap_hits, &$strip_hits, &$per_page_details ) {
+			$rewrite = function ( array $blocks ) use ( &$rewrite, $old_uuid, $new_uuid, $preset_attrs, $new_entry, $strip_inline, $effective_scope, &$module_swap_hits, &$group_swap_hits, &$strip_hits, &$per_page_details, &$summary ) {
 				foreach ( $blocks as $i => $block ) {
 					$attrs = is_array( $block['attrs'] ?? null ) ? $block['attrs'] : [];
 					if ( 'module' === $effective_scope && isset( $attrs['modulePreset'] ) && is_array( $attrs['modulePreset'] ) ) {
@@ -3909,6 +3908,7 @@ class DiviOps_Agent {
 						// groupPreset is a slot map: { <slot>: { presetId: <scalar|array>, ... }, ... }.
 						// presetId may be a scalar string or a stacked array — Divi accepts both shapes.
 						$block_group_swaps = 0;
+						$target_module     = (string) ( $block['blockName'] ?? '' );
 						foreach ( $attrs['groupPreset'] as $slot_key => $slot ) {
 							if ( ! is_array( $slot ) || ! isset( $slot['presetId'] ) ) {
 								continue;
@@ -3927,7 +3927,8 @@ class DiviOps_Agent {
 								$attrs['groupPreset'][ $slot_key ] = $slot;
 								$group_swap_hits                  += $slot_swaps;
 								$block_group_swaps                += $slot_swaps;
-								$per_page_details[]                = [
+
+								$detail = [
 									'block'       => $block['blockName'] ?? '',
 									'admin_label' => self::get_nested_array_value( $attrs, [ 'meta', 'adminLabel', 'desktop', 'value' ], '' ),
 									'ref_type'    => 'group',
@@ -3935,6 +3936,45 @@ class DiviOps_Agent {
 									'swaps'       => $slot_swaps,
 									'action'      => 'swap',
 								];
+
+								// Safe-strip guard: same singular-stack rule as module scope —
+								// stacked presets on a slot may intentionally override the swapped preset's
+								// values, so we only strip inline when the slot's presetId resolves to a
+								// single unique UUID equal to new_uuid post-swap.
+								$post_swap_ids = array_values( array_unique( $ids ) );
+								$is_singular   = ( 1 === count( $post_swap_ids ) && $new_uuid === $post_swap_ids[0] );
+
+								if ( $strip_inline && $is_singular && '' !== $target_module ) {
+									// Resolve the preset's attrs as they'd apply to THIS module + slot — Divi's
+									// own class handles slot→path mapping (composite button groups, -id-classes
+									// suffix, cross-module name translation, explicit attrName component mappings).
+									$resolved_preset_attrs = self::_resolve_group_preset_attrs_for_target(
+										$new_entry,
+										$target_module,
+										(string) $slot_key
+									);
+
+									if ( null === $resolved_preset_attrs ) {
+										// Mappable slots strip; unmappable slots skip and log — don't let one unknown
+										// slot block strips for neighbor slots on the same module.
+										$detail['strip_skipped'] = 'slot_unresolvable';
+										$advisory_key            = $target_module . '::' . (string) $slot_key;
+										if ( ! isset( $summary['strip_advisory_per_slot'][ $advisory_key ] ) ) {
+											$summary['strip_advisory_per_slot'][ $advisory_key ] = 'GlobalPresetItemGroup returned no attrs for this module+slot — preset may be unregistered, class unavailable, or slot not exposed on target module. Swap applied; inline attrs unchanged for this slot.';
+										}
+									} else {
+										$before_hash = md5( wp_json_encode( $attrs ) );
+										$attrs       = self::_strip_redundant_inline_attrs( $attrs, $resolved_preset_attrs );
+										if ( md5( wp_json_encode( $attrs ) ) !== $before_hash ) {
+											$strip_hits++;
+											$detail['action'] = 'swap+strip';
+										}
+									}
+								} elseif ( $strip_inline && ! $is_singular ) {
+									$detail['strip_skipped'] = 'stacked_presets_present';
+								}
+
+								$per_page_details[] = $detail;
 							}
 						}
 						if ( $block_group_swaps > 0 ) {
@@ -4257,6 +4297,121 @@ class DiviOps_Agent {
 			}
 		}
 		return $base;
+	}
+
+	/**
+	 * Resolve a group preset's attrs as they would apply to a target module + slot.
+	 *
+	 * Delegates slot→target-path mapping to Divi's own `GlobalPresetItemGroup` class, which already
+	 * handles every edge case we care about: composite button groups, `-id-classes` suffix, explicit
+	 * `attrName` component mappings (FormField / checkbox / radio), cross-module attr-name translation,
+	 * and dynamic option-group subtrees. Reimplementing would only invite drift — this call returns
+	 * attrs in the exact shape they'd merge onto the target module's inline attrs at render time.
+	 *
+	 * Parity with Divi's render path — matches `GlobalPreset::get_selected_group_presets()` +
+	 * `GlobalPreset::get_merged_attrs()`:
+	 *   - Runs runtime preset migration via `_maybe_runtime_migrate_preset_data` before constructing
+	 *     the item (Divi does this at both `GlobalPreset.php:2485` and `:2518`). Older-shape presets
+	 *     get migrated to canonical paths so strip compares against the actual rendered tree.
+	 *   - Merges all three bags — `styleAttrs + attrs + renderAttrs` — because `get_merged_attrs()`
+	 *     at `GlobalPreset.php:3179` merges group presets' renderAttrs into the final bag alongside
+	 *     attrs; fields stored only in renderAttrs still override module inline and must be stripped.
+	 *
+	 * Results are cached per-request keyed by preset UUID + target module + slot — the resolver is
+	 * pure within a single page scan, and `preset_reassign` may hit the same (module, slot, preset)
+	 * tuple across many blocks on one page.
+	 *
+	 * Returns null when Divi's class isn't loaded or the resolver returns empty (unknown module,
+	 * slot not registered, etc.) — callers should emit a per-slot advisory in that case and skip
+	 * strip for the unmappable slot only.
+	 *
+	 * @param array  $new_entry          Full preset registry entry (includes `attrs`, `styleAttrs`,
+	 *                                   `renderAttrs`, `groupName`, `groupId`, `moduleName`, etc.)
+	 * @param string $target_module_name The block's module name (e.g. "divi/heading") — where the
+	 *                                   preset is being applied, may differ from the preset's source module.
+	 * @param string $slot_id            The slot path from `attrs.groupPreset.<slot>` on the target module.
+	 * @return array|null Resolved preset attrs deep-merged (styleAttrs then attrs then renderAttrs), or null on failure.
+	 */
+	private static function _resolve_group_preset_attrs_for_target( array $new_entry, string $target_module_name, string $slot_id ) {
+		static $cache = [];
+
+		$item_class    = '\ET\Builder\Packages\GlobalData\GlobalPresetItemGroup';
+		$preset_class  = '\ET\Builder\Packages\GlobalData\GlobalPreset';
+		if ( ! class_exists( $item_class ) || ! class_exists( $preset_class ) ) {
+			return null;
+		}
+
+		$preset_id = isset( $new_entry['id'] ) && is_string( $new_entry['id'] ) ? $new_entry['id'] : '';
+		$cache_key = $preset_id . '|' . $target_module_name . '|' . $slot_id;
+		if ( '' !== $preset_id && array_key_exists( $cache_key, $cache ) ) {
+			return $cache[ $cache_key ];
+		}
+
+		try {
+			// Parity step 1 — runtime migration. Divi always runs this before constructing the item
+			// (see GlobalPreset.php:2485 and :2518). Skipping it would compare against stale paths on
+			// sites carrying pre-5.3.0 preset shapes (FocusFields, ComposibleOptions, PresetStack).
+			$migrated = $new_entry;
+			try {
+				$method = new \ReflectionMethod( $preset_class, '_maybe_runtime_migrate_preset_data' );
+				$method->setAccessible( true );
+				$migrated = $method->invoke( null, $new_entry, $target_module_name );
+				if ( ! is_array( $migrated ) ) {
+					$migrated = $new_entry;
+				}
+			} catch ( \Throwable $migrate_e ) {
+				// If reflection/migration fails (unexpected), fall through with the unmigrated entry.
+				// Worst case: stale paths for legacy preset shapes — same as pre-fix behavior for that
+				// subset, while fully-migrated sites still benefit.
+				$migrated = $new_entry;
+			}
+
+			$item = new $item_class( [
+				'data'       => $migrated,
+				'isExist'    => true,
+				'moduleName' => $target_module_name,
+				'groupId'    => $slot_id,
+			] );
+
+			$resolved_attrs        = $item->get_data_attrs();
+			$resolved_style_attrs  = $item->get_data_style_attrs();
+			$resolved_render_attrs = $item->get_data_render_attrs();
+		} catch ( \Throwable $e ) {
+			if ( '' !== $preset_id ) {
+				$cache[ $cache_key ] = null;
+			}
+			return null;
+		}
+
+		if ( ! is_array( $resolved_attrs ) ) {
+			$resolved_attrs = [];
+		}
+		if ( ! is_array( $resolved_style_attrs ) ) {
+			$resolved_style_attrs = [];
+		}
+		if ( ! is_array( $resolved_render_attrs ) ) {
+			$resolved_render_attrs = [];
+		}
+
+		if ( empty( $resolved_attrs ) && empty( $resolved_style_attrs ) && empty( $resolved_render_attrs ) ) {
+			if ( '' !== $preset_id ) {
+				$cache[ $cache_key ] = null;
+			}
+			return null;
+		}
+
+		// Parity step 2 — merge all three bags. `GlobalPreset::get_merged_attrs()` at line 3179 does
+		// `array_replace_recursive( $module_presets_attrs, $group_presets_attrs, $group_presets_render_attrs, $module_attrs )`
+		// — group-preset renderAttrs merge into the final bag alongside attrs. Strip must see the
+		// same union or fields stored only in renderAttrs silently survive strip_inline=true.
+		$merged = self::_deep_merge( $resolved_style_attrs, $resolved_attrs );
+		$merged = self::_deep_merge( $merged, $resolved_render_attrs );
+
+		if ( '' !== $preset_id ) {
+			$cache[ $cache_key ] = $merged;
+		}
+
+		return $merged;
 	}
 
 	/**

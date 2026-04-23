@@ -929,7 +929,7 @@ server.registerTool(
   "diviops_preset_reassign",
   {
     description:
-      'Reassign a preset UUID across page content. Covers both module-level refs (`attrs.modulePreset[...]`) and attribute-level group-preset refs (`attrs.groupPreset.<slot>.presetId`), plus — for group presets — registry chain refs: module-bucket presets via top-level `groupPresets.<slot>.presetId`, group-bucket presets via `attrs.groupPreset.<slot>.presetId`. The `scope` param controls which ref types are walked (default "both", auto-selects based on new_uuid\'s bucket). Cross-bucket swaps (module ↔ group) are rejected. For module-scope swaps, optionally strips inline attrs that duplicate the new preset\'s attrs (otherwise inline wins over preset); slot-scoped inline strip for group scope is not yet implemented and is skipped with an advisory. Defaults to dry-run — set mode="apply" to actually rewrite. Use this to consolidate repeated inline styling into a reusable preset after creating one with diviops_preset_create.',
+      'Reassign a preset UUID across page content. Covers both module-level refs (`attrs.modulePreset[...]`) and attribute-level group-preset refs (`attrs.groupPreset.<slot>.presetId`), plus — for group presets — registry chain refs: module-bucket presets via top-level `groupPresets.<slot>.presetId`, group-bucket presets via `attrs.groupPreset.<slot>.presetId`. The `scope` param controls which ref types are walked (default "both", auto-selects based on new_uuid\'s bucket). Cross-bucket swaps (module ↔ group) are rejected. When `strip_inline=true` (default), strips inline attrs that duplicate the new preset\'s attrs (otherwise inline wins over preset): for module scope, strips from block root; for group scope, strips per-slot using Divi\'s own slot→target-path resolver (handles composite button groups, `-id-classes` suffix, FormField/checkbox/radio `attrName` mappings, cross-module translation). Both scopes enforce a singular-stack guard (skip strip when slot holds multiple presets). Unmappable group slots skip strip and emit a per-slot advisory at `summary.strip_advisory_per_slot[<module>::<slot>]`; neighbor slots are unaffected. Defaults to dry-run — set mode="apply" to actually rewrite. Use this to consolidate repeated inline styling into a reusable preset after creating one with diviops_preset_create.',
     inputSchema: {
       old_uuid: z
         .string()
@@ -957,7 +957,7 @@ server.registerTool(
         .optional()
         .default(true)
         .describe(
-          "If true (default), strip inline attrs that deep-equal the new preset's attrs so the preset actually takes effect. Applies to module-scope swaps only; group-scope swaps currently skip strip with an advisory in the summary. Set false to swap UUIDs only.",
+          "If true (default), strip inline attrs that deep-equal the new preset's attrs so the preset actually takes effect. Applies to both module-scope (block-root strip) and group-scope (per-slot strip via Divi's target-path resolver). Singular-stack guard enforced at both scopes — strip is skipped when the modulePreset stack or a groupPreset slot holds multiple presets. Unmappable group slots skip strip with a per-slot advisory. Set false to swap UUIDs only.",
         ),
       scope: z
         .enum(["module", "group", "both"])
