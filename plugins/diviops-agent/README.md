@@ -32,6 +32,7 @@ Base: `/wp-json/diviops/v1/`
 ### Read
 | Endpoint | Method | Description |
 |----------|--------|-------------|
+| `/handshake` | POST | Version + capabilities handshake for MCP server pairing (plugin version, Divi version, registered capabilities). POST because it takes a required `mcp_server_version` body param |
 | `/pages` | GET | List pages with Divi status |
 | `/page/{id}` | GET | Get page details + raw content |
 | `/page/{id}/layout` | GET | Parsed block tree with auto-index, text preview, admin labels |
@@ -44,6 +45,11 @@ Base: `/wp-json/diviops/v1/`
 | `/icons/search?q=&type=&limit=` | GET | Search 1,989 icons by keyword |
 | `/presets` | GET | All presets (D5 + legacy) |
 | `/preset-audit` | GET | Preset analysis with referenced/unreferenced breakdown |
+| `/preset-scan-orphans` | GET | List preset UUIDs referenced in pages but missing from the D5 registry (dangling vs D4-legacy) |
+| `/variables` | GET | List design token variables (filter by type, prefix) |
+| `/variables-scan-orphans` | GET | List variable IDs referenced in pages but not defined in the registry |
+| `/canvases` | GET | List canvas items (reusable block containers) |
+| `/canvas/{id}` | GET | Get canvas content |
 | `/library` | GET | List Divi Library items (filter by type, scope) |
 | `/library/{id}` | GET | Get library item content |
 | `/render` | POST | Render block markup to HTML (read-only, no state change) |
@@ -64,15 +70,20 @@ Base: `/wp-json/diviops/v1/`
 | `/page/{id}/meta` | POST | Set page template/meta |
 | `/global-colors` | POST | Update global color palette |
 | `/theme-options` | POST | Update theme customizer options |
+| `/preset-create` | POST | Create a module or group preset in the D5 registry |
+| `/preset-reassign` | POST | Rewrite preset UUID refs across page content + (for group-bucket swaps) registry chains. Supports `scope: "module" \| "group" \| "both"` (default `"both"`); dry-run default with explicit `mode: "apply"` to commit |
 | `/preset-cleanup` | POST | Remove spam/duplicate presets, bulk rename |
 | `/preset-update` | POST | Update a single preset (name, attrs) |
 | `/preset-delete` | POST | Delete a preset by ID |
-| `/variables` | GET | List design token variables (filter by type, prefix) |
 | `/variable/create` | POST | Create a design token variable (colors or numbers/strings/etc) |
 | `/variable/delete` | POST | Delete a variable by ID |
+| `/canvas/create` | POST | Create a new canvas item |
+| `/canvas/{id}` | POST | Update canvas content |
+| `/canvas/{id}` | DELETE | Delete a canvas |
 | `/library/save` | POST | Save block markup to Divi Library |
 | `/theme-builder/layout/{id}` | PUT | Update Theme Builder layout content |
 | `/theme-builder/template` | POST | Create Theme Builder template with conditions |
+| `/flush-static-cache` | POST | Flush Divi's compiled CSS cache at `wp-content/et-cache/` after preset / variable / module mutations (required because `wp cache flush` doesn't invalidate this on-disk cache) |
 
 ### Authentication & Permissions
 

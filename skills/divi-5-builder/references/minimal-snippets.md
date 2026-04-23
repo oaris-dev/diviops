@@ -1,0 +1,278 @@
+# Minimal Valid Snippets
+
+Copy-paste-ready Divi 5 block snippets — the **smallest shape that renders correctly**. Each snippet includes every key required for render; omit any listed key and the module silently falls through to a wrong default (empty text, wrong heading level, missing icon, default "Click Me" button, etc.).
+
+These snippets are the defensive pair to the `diviops_validate_blocks` semantic rules (plugin v1.0.0-beta.33+). Each one passes validation clean.
+
+Wrap any of these in a `divi/column` → `divi/row` → `divi/section` → `divi/placeholder` tree before saving. Minimal container scaffolding is at the bottom of this file.
+
+---
+
+## `divi/heading`
+
+Explicit `headingLevel` is required — without it the heading renders as `<h2>` regardless of semantic intent.
+
+```
+<!-- wp:divi/heading {
+  "builderVersion": "5.1.1",
+  "title": {
+    "innerContent": { "desktop": { "value": "My Heading" } },
+    "decoration": {
+      "font": {
+        "font": {
+          "desktop": { "value": { "headingLevel": "h1" } }
+        }
+      }
+    }
+  }
+} /-->
+```
+
+- **`headingLevel`** lives at `title.decoration.font.font.desktop.value.headingLevel`. Note the **double `font` nesting** (Font Family B pattern) — this isn't a typo.
+- Allowed: `"h1"` through `"h6"`.
+- `title.innerContent.desktop.value` is a **plain string** on Heading (different from Blurb, which uses `{text}` object).
+
+---
+
+## `divi/text`
+
+Font color uses the triple-nested `bodyFont.body.font.*` shape (Font Family A). Writing `bodyFont.bodyFont.*` is a silent failure — the renderer has no consumer for that path, so color/size fall through to defaults.
+
+```
+<!-- wp:divi/text {
+  "builderVersion": "5.1.1",
+  "content": {
+    "innerContent": { "desktop": { "value": "\u003cp\u003eBody copy goes here.\u003c/p\u003e" } },
+    "decoration": {
+      "bodyFont": {
+        "body": {
+          "font": {
+            "desktop": { "value": { "color": "#1f2937", "size": "16px" } }
+          }
+        }
+      }
+    }
+  }
+} /-->
+```
+
+- **`bodyFont.body.font.desktop.value.*`** — use `body.font`, not `bodyFont.bodyFont`.
+- `innerContent` is an HTML string (supports `<p>`, `<ul>`, `<strong>`, etc.).
+- `divi/text` with no `innerContent` renders as an invisible empty block — include the value even for placeholder text.
+
+---
+
+## `divi/button`
+
+Three silent-failure traps; all three must be avoided for the button to render correctly.
+
+```
+<!-- wp:divi/button {
+  "builderVersion": "5.1.1",
+  "button": {
+    "innerContent": {
+      "desktop": { "value": { "text": "Get Started", "linkUrl": "#target" } }
+    },
+    "decoration": {
+      "button": {
+        "desktop": {
+          "value": { "enable": "on", "icon": { "enable": "off" } }
+        }
+      }
+    }
+  }
+} /-->
+```
+
+- **Content lives on `button.innerContent.*`**, NOT `content.innerContent.*`. Wrong bucket → button shows default "Click Me" label with empty href.
+- **`innerContent.desktop.value` is an object** `{text, linkUrl}`, NOT a plain string. Plain string → empty button.
+- **`button.decoration.button.desktop.value.enable: "on"` is required** for any custom border/bg/font/boxShadow to render. Without it, custom styling is partially or entirely ignored.
+- **`icon.enable: "off"`** suppresses the default hover arrow. Omit and Divi shows an arrow icon on hover.
+
+When styling with custom border/background/font, they go on `button.decoration.{border,background,font}` (NOT `module.decoration`). Spacing (padding/margin) stays on `module.decoration.spacing`.
+
+---
+
+## `divi/blurb`
+
+Two silent-failure traps — title shape and icon-mode flag.
+
+```
+<!-- wp:divi/blurb {
+  "builderVersion": "5.1.1",
+  "title": {
+    "innerContent": {
+      "desktop": { "value": { "text": "Feature Name" } }
+    }
+  },
+  "content": {
+    "innerContent": { "desktop": { "value": "\u003cp\u003eShort description of the feature.\u003c/p\u003e" } }
+  },
+  "imageIcon": {
+    "innerContent": {
+      "desktop": {
+        "value": {
+          "useIcon": "on",
+          "icon": { "unicode": "\uf0e7", "type": "fa", "weight": "900" }
+        }
+      }
+    }
+  }
+} /-->
+```
+
+- **Title is an object** `{text}`, NOT a plain string. Plain string → title silently absent from rendered HTML.
+- **`useIcon: "on"` is required** when `icon` is set. Without it, the `.et-pb-icon` span renders empty — icon absent.
+- Default title tag is `<h4>`. Override via `title.decoration.font.font.desktop.value.headingLevel` (same double-`font` shape as Heading).
+- Icon `unicode` is a raw unicode character (e.g. `"\uf0e7"` for FontAwesome bolt, `""` for Divi built-in). Get live icon codes from `diviops_find_icon`.
+- Swap to image mode: omit `useIcon` and set `imageIcon.innerContent.desktop.value` to `{src, id, alt, titleText}`.
+
+---
+
+## `divi/icon`
+
+```
+<!-- wp:divi/icon {
+  "builderVersion": "5.1.1",
+  "icon": {
+    "innerContent": {
+      "desktop": {
+        "value": { "unicode": "\uf0e7", "type": "fa", "weight": "900" }
+      }
+    },
+    "advanced": {
+      "color": { "desktop": { "value": "#6366f1" } },
+      "size": { "desktop": { "value": "48px" } }
+    }
+  }
+} /-->
+```
+
+- Icon metadata: `unicode` + `type` (`"fa"` for FontAwesome, `"divi"` for Divi built-in) + `weight` (FA: `"400"` regular, `"900"` solid).
+- Border/background go on `module.decoration` (NOT `icon.decoration.border/background` — that creates a non-VB-editable inner ring).
+
+---
+
+## `divi/image`
+
+```
+<!-- wp:divi/image {
+  "builderVersion": "5.1.1",
+  "image": {
+    "innerContent": {
+      "desktop": {
+        "value": {
+          "src": "https://example.com/image.jpg",
+          "alt": "Descriptive alt text",
+          "titleText": "Image title",
+          "id": 0
+        }
+      }
+    }
+  }
+} /-->
+```
+
+- **Exception**: `divi/image` uses `module.advanced` for sizing/spacing (NOT `module.decoration`). Most other modules use `module.decoration`.
+- `src` is required for render. `alt` + `titleText` are recommended for a11y.
+- `id` is the WordPress attachment ID. Use `0` for external URLs.
+
+---
+
+## Container Scaffolding
+
+Any content module (Heading, Text, Button, Blurb, Icon, Image) must live inside a Column → Row → Section → placeholder tree. Minimum shape:
+
+```
+<!-- wp:divi/placeholder -->
+<!-- wp:divi/section {
+  "builderVersion": "5.1.1",
+  "module": {
+    "decoration": {
+      "layout": { "desktop": { "value": { "display": "block" } } }
+    }
+  }
+} -->
+<!-- wp:divi/row {
+  "builderVersion": "5.1.1",
+  "module": {
+    "decoration": {
+      "layout": { "desktop": { "value": { "display": "block" } } }
+    }
+  }
+} -->
+<!-- wp:divi/column {
+  "builderVersion": "5.1.1",
+  "module": {
+    "decoration": {
+      "layout": { "desktop": { "value": { "display": "flex", "flexDirection": "column" } } }
+    }
+  }
+} -->
+
+<!-- YOUR CONTENT MODULES HERE -->
+
+<!-- /wp:divi/column -->
+<!-- /wp:divi/row -->
+<!-- /wp:divi/section -->
+<!-- /wp:divi/placeholder -->
+```
+
+- **Section / Row / Column / Group containers require a `layout.display` value** — either `"block"` or a flex value. Omitting `display` on a container is a validator warning (containers without layout display are a silent a11y/render surprise).
+- Content modules (Heading, Text, Button, Blurb, Icon, Image) do NOT require `layout.display` — they render fine without it.
+
+---
+
+## Multi-Card Flex Row (Blurb/Group children)
+
+A common pattern: 3 cards in a row. **Do not use `flexType: "8_24"` on the blurbs** — that's a column-layout grid attribute and is silently ignored on non-column modules. Use `module.decoration.sizing.desktop.value.width` instead:
+
+```
+<!-- wp:divi/group {
+  "builderVersion": "5.1.1",
+  "module": {
+    "decoration": {
+      "layout": {
+        "desktop": {
+          "value": {
+            "display": "flex",
+            "flexDirection": "row",
+            "columnGap": "32px",
+            "flexWrap": "wrap",
+            "justifyContent": "center"
+          }
+        }
+      }
+    }
+  }
+} -->
+<!-- wp:divi/blurb {
+  "builderVersion": "5.1.1",
+  "title": { "innerContent": { "desktop": { "value": { "text": "Card A" } } } },
+  "content": { "innerContent": { "desktop": { "value": "\u003cp\u003eDescription.\u003c/p\u003e" } } },
+  "imageIcon": {
+    "innerContent": { "desktop": { "value": { "useIcon": "on", "icon": { "unicode": "\uf0e7", "type": "fa", "weight": "900" } } } }
+  },
+  "module": {
+    "decoration": {
+      "sizing": {
+        "desktop": { "value": { "width": "calc(33.333% - 22px)" } },
+        "tablet":  { "value": { "width": "calc(50% - 16px)" } },
+        "phone":   { "value": { "width": "100%" } }
+      }
+    }
+  }
+} /-->
+<!-- Repeat for Card B and Card C -->
+<!-- /wp:divi/group -->
+```
+
+- **Desktop 3-up, tablet 2-up, phone stacked** via per-breakpoint `sizing.width` values.
+- `calc(33.333% - 22px)` accounts for two 32px gaps distributed across three items: `2 × 32 / 3 ≈ 22`.
+- Group parent needs `flexWrap: "wrap"` so tablet/phone breakpoints can rewrap.
+
+---
+
+## Validation
+
+All snippets above pass `diviops_validate_blocks` with `valid: true, errors: [], warnings: []` on plugin v1.0.0-beta.33+. The validator catches the specific silent-failure patterns these snippets avoid — see [SKILL.md → Module Gotchas](../SKILL.md#module-gotchas-silent-failures) for the full list.

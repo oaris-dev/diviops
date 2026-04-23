@@ -20,6 +20,7 @@ Read the right file for the task at hand — don't load everything.
 |------|-----------|
 | Using MCP tools & targeting | [tools.md](references/tools.md) |
 | Creating/editing pages | [design-guide.md](references/design-guide.md) → [module-formats.md](references/module-formats.md) |
+| Copy-paste minimum-valid block snippets | [minimal-snippets.md](references/minimal-snippets.md) (Heading, Text, Button, Blurb, Icon, Image) |
 | Module attribute paths | [module-formats.md](references/module-formats.md) (Tier 1 free — Tier 2 patterns + Tier 3 per-module are Pro) |
 | Adding CSS classes to modules | [design-effects.md](references/design-effects.md) — uses `module.decoration.attributes`, NOT `className` |
 | CSS effects & WebGL shaders | [design-effects.md](references/design-effects.md) |
@@ -155,16 +156,28 @@ Write `.claude/instructions/design-system.md` with brand-specific guidance: aest
 
 ## Module Gotchas (Silent Failures)
 
-Full attribute paths in [module-formats.md](references/module-formats.md) Tier 3 (Pro). These are the traps:
+Full attribute paths in [module-formats.md](references/module-formats.md) Tier 3 (Pro). **Copy-paste minimum-valid snippets** for each content module: [minimal-snippets.md](references/minimal-snippets.md). Run [`diviops_validate_blocks`](references/tools.md) to catch the top 7 silent-failure patterns before write — each one below maps to a validator rule.
 
-- **Button**: border/bg/font on `button.decoration` (NOT `module.decoration`). Sizing + alignment on `button.decoration.sizing` (5.1.1+, alignment inside sizing object)
-- **Icon**: border/bg on `module.decoration` only — `icon.decoration.border/background` creates non-VB-editable inner ring
-- **Image**: spacing/sizing on `module.advanced` (NOT `module.decoration`)
-- **Blurb**: icon size at `imageIcon.decoration.sizing.desktop.value.iconFontSize` (5.1.1+, was `imageIcon.advanced.width`). Full decoration now on `imageIcon.decoration.{background,border,animation,...}`
-- **Group**: gap is `columnGap` + `rowGap` (NOT single `gap`); column sizing via `flexType` 24-unit grid (NOT `flexGrow`/`flexBasis`)
-- **Contact Form**: all fonts use double `font.font` nesting; field labels use `fieldItem.innerContent` (NOT `title.innerContent`)
-- **CSS classes**: via `module.decoration.attributes.desktop.value.attributes[]` array
-- **freeForm CSS**: top-level `css.desktop.value.freeForm` — sibling of `module`, NOT inside it
+**Content-shape traps** (block renders but with wrong/missing content):
+
+- **Heading**: explicit `headingLevel` required — omit and Divi renders `<h2>` regardless of semantic intent. Lives at `title.decoration.font.font.desktop.value.headingLevel` (double-`font` nesting, Font Family B). Allowed `"h1"`–`"h6"`. Validator: `heading_missing_level` (warn).
+- **Button content**: lives on `button.innerContent.desktop.value`, NOT `content.innerContent.*`. Must be an **object** `{text, linkUrl}`, not a plain string. Either wrong bucket or string shape → button renders as default "Click Me" with empty href. Validators: `button_content_wrong_bucket` (error), `button_innercontent_string` (error).
+- **Button styling**: `button.decoration.button.desktop.value.enable: "on"` required for ANY custom border/background/font/boxShadow to render fully. Without it, custom styling is silently partial. Pair with `icon.enable: "off"` to suppress the default hover arrow. Validators: `button_missing_enable` (warn), `button_missing_icon_enable` (warn).
+- **Blurb title**: `title.innerContent.desktop.value` is an **object** `{text}`, NOT a plain string. Plain string → title silently absent from rendered HTML. Validator: `blurb_title_string` (error).
+- **Blurb icon**: when `imageIcon.innerContent.desktop.value.icon` is set, `useIcon: "on"` is required — without it the `.et-pb-icon` span renders empty. Validator: `blurb_icon_missing_use_icon` (error).
+- **Body font path**: `content.decoration.bodyFont.body.font.*` (Font Family A, triple-nested). Writing `bodyFont.bodyFont.*` is a silent failure — no renderer consumer, values fall through to defaults (often black text on a dark background → invisible). Validator: `body_font_double_nested` (error).
+- **flexType only on columns**: `module.decoration.layout.desktop.value.flexType` is a column-layout 24-unit grid attribute — only `divi/column`/`divi/column-inner` inside `divi/row` consume it. On blurbs, groups, text, etc. it's silently dropped, leaving the block with no width constraint. For flex children inside a group use `module.decoration.sizing.desktop.value.width` with per-breakpoint values. Validator: `flextype_on_non_column` (warn).
+
+**Attribute-path traps** (module renders but styling lands on the wrong element):
+
+- **Button styling paths**: border/bg/font on `button.decoration` (NOT `module.decoration`). Sizing + alignment on `button.decoration.sizing` (5.1.1+, alignment inside sizing object). Padding/margin stay on `module.decoration.spacing`.
+- **Icon**: border/bg on `module.decoration` only — `icon.decoration.border/background` creates a non-VB-editable inner ring.
+- **Image**: spacing/sizing on `module.advanced` (NOT `module.decoration`) — exception among content modules.
+- **Blurb icon size**: `imageIcon.decoration.sizing.desktop.value.iconFontSize` (5.1.1+, was `imageIcon.advanced.width`). Full decoration now on `imageIcon.decoration.{background,border,animation,...}`.
+- **Group**: gap is `columnGap` + `rowGap` (NOT single `gap`); column sizing via `flexType` 24-unit grid ONLY on column modules (see flexType trap above).
+- **Contact Form**: all fonts use double `font.font` nesting; field labels use `fieldItem.innerContent` (NOT `title.innerContent`).
+- **CSS classes**: via `module.decoration.attributes.desktop.value.attributes[]` array.
+- **freeForm CSS**: top-level `css.desktop.value.freeForm` — sibling of `module`, NOT inside it.
 
 ## VB-Safe Rules
 

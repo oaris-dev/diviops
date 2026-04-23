@@ -291,10 +291,17 @@ Need a semantic name? Register it inside Divi as a `gvid-*` / `gcid-*` in the Va
 
 | Module | What's different | Correct path | Wrong pattern (silent fail) |
 |--------|-----------------|--------------|--------------------------|
+| **Heading** | Explicit heading level required | `title.decoration.font.font.desktop.value.headingLevel: "h1"` | omitting → renders as `<h2>` |
+| **Button** | Content bucket & shape | `button.innerContent.desktop.value: {text, linkUrl}` | `content.innerContent.*` OR plain string → default "Click Me" |
+| **Button** | Custom styling needs enable flag | `button.decoration.button.desktop.value.enable: "on"` | omitting → custom border/bg/font partially ignored |
 | **Button** | Border/bg/font on button root | `button.decoration.{border,background,font}` | `module.decoration.border` |
 | **Button** | Sizing on button element (5.1.1+) | `button.decoration.sizing` | `module.decoration.sizing` |
 | **Button** | Alignment inside sizing (5.1.1+) | `button.decoration.sizing.desktop.value.alignment` | `module.advanced.alignment` (schema only, not saved) |
-| **Button** | Icon enable required | `button.decoration.button.desktop.value.icon.enable: "off"` | omitting `icon.enable` |
+| **Button** | Icon enable required | `button.decoration.button.desktop.value.icon.enable: "off"` | omitting `icon.enable` → hover arrow icon |
+| **Blurb** | Title shape is an object | `title.innerContent.desktop.value: {text: "..."}` | plain string → title silently absent from rendered HTML |
+| **Blurb** | Icon requires useIcon flag | `imageIcon.innerContent.desktop.value.useIcon: "on"` | setting `icon` without `useIcon: "on"` → empty `<span>` |
+| **Text/Blurb** | Body font triple-nesting | `content.decoration.bodyFont.body.font.desktop.value.*` | `bodyFont.bodyFont.*` → color/size silently ignored |
+| **Columns only** | `flexType` 24-unit grid | only on `divi/column` / `divi/column-inner` inside `divi/row` | on blurb/group/text → attr silently dropped, no width constraint. Use `module.decoration.sizing.width` for flex children |
 | **Image** | Spacing/sizing on advanced | `module.advanced.{spacing,sizing}` | `module.decoration.{spacing,sizing}` |
 | **Image** | Border on image element | `image.decoration.border` | `module.decoration.border` |
 | **Icon** | Border/bg on module only | `module.decoration.{border,background}` | `icon.decoration.{border,background}` |

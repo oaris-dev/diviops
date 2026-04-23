@@ -3,7 +3,7 @@
  * Plugin Name: DiviOps Agent
  * Plugin URI: https://github.com/oaris-dev/diviops
  * Description: REST API bridge for DiviOps — connects Claude Code to your Divi 5 site for AI-powered page building and design management.
- * Version: 1.0.0-beta.31
+ * Version: 1.0.0-beta.34
  * Author: oaris.de
  * Author URI: https://oaris.de
  * Text Domain: diviops-agent
@@ -22,7 +22,7 @@ class DiviOps_Agent {
 	/**
 	 * Plugin version — used for handshake compatibility checks.
 	 */
-	const VERSION = '1.0.0-beta.31';
+	const VERSION = '1.0.0-beta.34';
 
 	/**
 	 * Minimum MCP server version this plugin is compatible with.
@@ -1449,6 +1449,21 @@ class DiviOps_Agent {
 							'path'    => 'button.decoration.button.desktop.value.icon.enable',
 						];
 					}
+				} else {
+					// Custom border/bg/font styling on button requires enable:"on" to render fully.
+					$button_deco = self::get_nested_array_value( $attrs, [ 'button', 'decoration' ], [] );
+					$button_deco = is_array( $button_deco ) ? $button_deco : [];
+					$has_custom_styling = isset( $button_deco['border'] ) || isset( $button_deco['background'] )
+						|| isset( $button_deco['font'] ) || isset( $button_deco['boxShadow'] );
+					if ( $has_custom_styling ) {
+						$warnings[] = [
+							'block'   => $name,
+							'index'   => $index,
+							'code'    => 'button_missing_enable',
+							'message' => 'Button has custom border/background/font/boxShadow but button.decoration.button.desktop.value.enable is not "on" — custom styling may not render fully',
+							'path'    => 'button.decoration.button.desktop.value.enable',
+						];
+					}
 				}
 
 				// Padding on wrong path.
@@ -1472,6 +1487,96 @@ class DiviOps_Agent {
 						'code'    => 'button_innercontent_string',
 						'message' => 'Button innerContent.desktop.value must be an object {"text": "..."}, not a plain string. Plain strings render as empty buttons.',
 						'path'    => 'button.innerContent.desktop.value',
+					];
+				}
+
+				// Content on wrong bucket (content.innerContent instead of button.innerContent).
+				$wrong_bucket_content = self::get_nested_array_value( $attrs, [ 'content', 'innerContent', 'desktop', 'value' ] );
+				if ( null !== $wrong_bucket_content && null === $btn_content ) {
+					$errors[] = [
+						'block'   => $name,
+						'index'   => $index,
+						'code'    => 'button_content_wrong_bucket',
+						'message' => 'Button content is on content.innerContent.* but Button renders from button.innerContent.*. Without the correct bucket the button shows the default "Click Me" label and empty href.',
+						'path'    => 'content.innerContent.desktop.value → button.innerContent.desktop.value',
+					];
+				}
+			}
+
+			// ── Heading checks (warnings) ───────────────────────────
+
+			if ( 'divi/heading' === $name ) {
+				$heading_level = self::get_nested_array_value( $attrs, [ 'title', 'decoration', 'font', 'font', 'desktop', 'value', 'headingLevel' ] );
+				if ( null === $heading_level ) {
+					$warnings[] = [
+						'block'   => $name,
+						'index'   => $index,
+						'code'    => 'heading_missing_level',
+						'message' => 'Heading has no headingLevel set — renders as h2 by default. Explicitly set "h1"–"h6" to match intent.',
+						'path'    => 'title.decoration.font.font.desktop.value.headingLevel',
+					];
+				}
+			}
+
+			// ── Blurb checks (errors) ───────────────────────────────
+
+			if ( 'divi/blurb' === $name ) {
+				// Title must be a {text} object, not a plain string.
+				$blurb_title = self::get_nested_array_value( $attrs, [ 'title', 'innerContent', 'desktop', 'value' ] );
+				if ( null !== $blurb_title && is_string( $blurb_title ) ) {
+					$errors[] = [
+						'block'   => $name,
+						'index'   => $index,
+						'code'    => 'blurb_title_string',
+						'message' => 'Blurb title.innerContent.desktop.value must be an object {"text": "..."}, not a plain string. Plain strings render as an empty title.',
+						'path'    => 'title.innerContent.desktop.value',
+					];
+				}
+
+				// Icon requires useIcon:"on" for the icon to render.
+				$blurb_image_icon = self::get_nested_array_value( $attrs, [ 'imageIcon', 'innerContent', 'desktop', 'value' ], [] );
+				$blurb_image_icon = is_array( $blurb_image_icon ) ? $blurb_image_icon : [];
+				$has_icon_field   = isset( $blurb_image_icon['icon'] );
+				$use_icon_flag    = $blurb_image_icon['useIcon'] ?? null;
+				if ( $has_icon_field && 'on' !== $use_icon_flag ) {
+					$errors[] = [
+						'block'   => $name,
+						'index'   => $index,
+						'code'    => 'blurb_icon_missing_use_icon',
+						'message' => 'Blurb has imageIcon.innerContent.desktop.value.icon but useIcon is not "on" — icon will not render. Icon mode requires useIcon:"on".',
+						'path'    => 'imageIcon.innerContent.desktop.value.useIcon',
+					];
+				}
+			}
+
+			// ── bodyFont double-nested path (error, any module) ─────
+			// Canonical: content.decoration.bodyFont.body.font.desktop.value.*
+			// Wrong:     content.decoration.bodyFont.bodyFont.desktop.value.* — silently ignored by renderer.
+			if ( $is_divi_block ) {
+				$body_font_wrong = self::get_nested_array_value( $attrs, [ 'content', 'decoration', 'bodyFont', 'bodyFont' ] );
+				if ( null !== $body_font_wrong ) {
+					$errors[] = [
+						'block'   => $name,
+						'index'   => $index,
+						'code'    => 'body_font_double_nested',
+						'message' => 'content.decoration.bodyFont.bodyFont.* is a non-canonical double-nested path with no renderer consumer. Use content.decoration.bodyFont.body.font.* — values under bodyFont.bodyFont are silently ignored, so colors and fonts fall through to defaults.',
+						'path'    => 'content.decoration.bodyFont.bodyFont → content.decoration.bodyFont.body.font',
+					];
+				}
+			}
+
+			// ── flexType on non-column modules (warning) ────────────
+			// flexType is a column-layout attr (24-unit grid) — generates et_pb_X_Y classes only on divi/column inside divi/row.
+			// On other modules (blurb, group, text, etc.) the attr is silently dropped — no size is applied.
+			if ( $is_divi_block && 'divi/column' !== $name && 'divi/column-inner' !== $name ) {
+				$flex_type = self::get_nested_array_value( $attrs, [ 'module', 'decoration', 'layout', 'desktop', 'value', 'flexType' ] );
+				if ( null !== $flex_type ) {
+					$warnings[] = [
+						'block'   => $name,
+						'index'   => $index,
+						'code'    => 'flextype_on_non_column',
+						'message' => 'flexType on module.decoration.layout is a column-layout grid attribute and only works on divi/column inside divi/row. On other modules it is silently ignored — the block ends up with no width constraint. For flex children inside a group use module.decoration.sizing.desktop.value.width instead.',
+						'path'    => 'module.decoration.layout.desktop.value.flexType → module.decoration.sizing.desktop.value.width',
 					];
 				}
 			}
@@ -2541,16 +2646,25 @@ class DiviOps_Agent {
 	}
 
 	/**
-	 * Collect group-preset UUIDs referenced via the in-registry groupPresets chain.
+	 * Collect group-preset UUIDs referenced via the in-registry chain.
 	 *
-	 * Walks every preset's `attrs.groupPresets.<slot>.presetId` and records who
-	 * wires what. Without this, every chain-only group preset (font, border,
-	 * box-shadow, spacing, button, etc.) reports `ref_count: 0` and gets flagged
-	 * as orphaned by audit + cleanup workflows — even though deleting them
-	 * silently breaks the module presets that pull them in. See issue #302.
+	 * Divi 5.3.0+ stores chain refs in two distinct shapes depending on the bucket:
+	 * - Module-bucket presets: TOP-LEVEL `preset.groupPresets.<slot>.presetId` (plural).
+	 *   Matches the REST schema at `GlobalPresetController.php:309` (declared as sibling of
+	 *   `attrs`/`renderAttrs`/`styleAttrs`) and the reader path in `GlobalPreset.php:1486, 2274`.
+	 *   The VB bundle's `generateNewPreset` assigns `m.groupPresets = i` at the preset root.
+	 * - Group-bucket presets: NESTED `preset.attrs.groupPreset.<slot>.presetId` (singular).
+	 *   Matches the reader at `GlobalPreset.php:1510, 2394` and the VB bundle's
+	 *   `extractGroupPresetsFromAttrs` which reads `e?.groupPreset` off the attrs bag.
 	 *
-	 * `presetId` in the registry is sometimes a single string and sometimes an
-	 * array (Divi accepts both via the stacking convention) — handle both shapes.
+	 * Without walking both shapes, every chain-only group preset (font, border, box-shadow,
+	 * spacing, button, etc.) reports `ref_count: 0` and gets flagged as orphaned by audit +
+	 * cleanup workflows — even though deleting them silently breaks the module presets that
+	 * pull them in. See issues #302 (5.2.1 version of this, pre-singular split) and #368
+	 * (5.3.0+ dual-shape reconfirmation).
+	 *
+	 * `presetId` in either shape is sometimes a single string and sometimes an array (Divi
+	 * accepts both via the stacking convention) — handle both.
 	 */
 	private static function collect_group_chain_refs( $d5 ) {
 		$counts        = [];
@@ -2567,9 +2681,7 @@ class DiviOps_Agent {
 				$info  = (array) $info;
 				$items = isset( $info['items'] ) ? (array) $info['items'] : [];
 				foreach ( $items as $referencing_uuid => $preset ) {
-					$preset = (array) $preset;
-					$attrs  = isset( $preset['attrs'] ) ? (array) $preset['attrs'] : [];
-					$slots  = isset( $attrs['groupPresets'] ) ? (array) $attrs['groupPresets'] : [];
+					$slots = self::_extract_chain_slot_map( $preset, $type );
 					foreach ( $slots as $slot ) {
 						$slot = (array) $slot;
 						if ( ! isset( $slot['presetId'] ) ) {
@@ -2591,6 +2703,58 @@ class DiviOps_Agent {
 			$referenced_by[ $gid ] = array_keys( $set );
 		}
 		return [ 'counts' => $counts, 'referenced_by' => $referenced_by ];
+	}
+
+	/**
+	 * Read a preset item's chain-ref slot map at the bucket's canonical location.
+	 *
+	 * Returned shape is the `{ <slot>: { presetId: <scalar|array>, groupName: <string> } }` map.
+	 * Returns `[]` when no chain refs are present.
+	 *
+	 * Defensively casts each nested level from array-or-object — the D5 option can round-trip
+	 * through JSON or a custom importer and land with stdClass at any depth.
+	 */
+	private static function _extract_chain_slot_map( $preset, string $bucket ): array {
+		if ( ! is_array( $preset ) && ! is_object( $preset ) ) {
+			return [];
+		}
+		$preset = (array) $preset;
+		if ( 'module' === $bucket ) {
+			if ( ! isset( $preset['groupPresets'] ) ) {
+				return [];
+			}
+			if ( ! is_array( $preset['groupPresets'] ) && ! is_object( $preset['groupPresets'] ) ) {
+				return [];
+			}
+			return (array) $preset['groupPresets'];
+		}
+		if ( 'group' === $bucket ) {
+			$attrs = isset( $preset['attrs'] ) ? (array) $preset['attrs'] : [];
+			if ( ! isset( $attrs['groupPreset'] ) ) {
+				return [];
+			}
+			if ( ! is_array( $attrs['groupPreset'] ) && ! is_object( $attrs['groupPreset'] ) ) {
+				return [];
+			}
+			return (array) $attrs['groupPreset'];
+		}
+		return [];
+	}
+
+	/**
+	 * Write a preset item's chain-ref slot map back to its canonical location.
+	 *
+	 * Module-bucket only — the chain ref lives at top-level `groupPresets` and is not mirrored
+	 * anywhere else. The group-bucket write is deliberately not handled here because the
+	 * rewriter needs per-bag surgical control across attrs / styleAttrs / renderAttrs to
+	 * preserve the dual-pass CSS lockstep (`preset_update` mirrors attrs → all three bags).
+	 * See `_rewrite_registry_group_chains` for the group-bucket write path.
+	 */
+	private static function _write_chain_slot_map( array $preset, string $bucket, array $slot_map ): array {
+		if ( 'module' === $bucket ) {
+			$preset['groupPresets'] = $slot_map;
+		}
+		return $preset;
 	}
 
 	/**
@@ -3491,9 +3655,11 @@ class DiviOps_Agent {
 	 *   - `attrs.modulePreset[...]` arrays (stacked module presets) — always, when scope permits.
 	 *   - `attrs.groupPreset.<slot>.presetId` (attribute-level group presets) — when scope permits.
 	 *
-	 * For group-bucket reassignments, also rewrites preset-registry chains:
-	 * `presets.<bucket>.<module>.items.<uuid>.attrs.groupPresets.<slot>.presetId` refs pointing at
-	 * old_uuid are swapped to new_uuid so downstream presets that pull in the old group preset keep rendering.
+	 * For group-bucket reassignments, also rewrites preset-registry chains at their canonical
+	 * locations per bucket (see `_extract_chain_slot_map` for paths):
+	 *   - Module-bucket presets:  top-level `groupPresets.<slot>.presetId`
+	 *   - Group-bucket presets:   `attrs.groupPreset.<slot>.presetId` (singular)
+	 * so downstream presets that pull in the old group preset keep rendering.
 	 *
 	 * `scope` controls which refs are considered ("module" | "group" | "both", default "both").
 	 * Default "both" auto-selects based on new_uuid's bucket — the module/group distinction is an
@@ -3806,12 +3972,13 @@ class DiviOps_Agent {
 
 		// Registry chain rewrite — runs whenever effective scope is group, including when
 		// old_uuid is dangling (not currently in the registry). A group preset's UUID may be
-		// referenced from OTHER presets' `attrs.groupPresets.<slot>.presetId` chains (module
-		// presets or group presets pulling it in). Those chain refs can persist after the
-		// target preset was deleted — collect_group_chain_refs() treats this case as valid
-		// for audit, so reassign must treat it as rewritable for orphan-cleanup consistency.
-		// Skipping the rewrite when old_uuid is dangling would leave stale chain refs behind
-		// after page-ref swaps, defeating the advertised dangling-old-UUID workflow.
+		// referenced from OTHER presets' chain slots — module presets via top-level
+		// `groupPresets.<slot>.presetId`, or other group presets via `attrs.groupPreset.<slot>.presetId`.
+		// Those chain refs can persist after the target preset was deleted —
+		// collect_group_chain_refs() treats this case as valid for audit, so reassign must treat it
+		// as rewritable for orphan-cleanup consistency. Skipping the rewrite when old_uuid is
+		// dangling would leave stale chain refs behind after page-ref swaps, defeating the
+		// advertised dangling-old-UUID workflow.
 		//
 		// Apply mode re-reads the registry immediately before the chain rewrite to minimize the
 		// stale-overwrite window: our initial `$d5` was fetched before the page scan, which can
@@ -3849,22 +4016,24 @@ class DiviOps_Agent {
 	}
 
 	/**
-	 * Walk the D5 preset registry and rewrite `groupPresets.<slot>.presetId` chain refs
-	 * pointing at $old_uuid to $new_uuid.
+	 * Walk the D5 preset registry and rewrite chain refs pointing at $old_uuid to $new_uuid.
 	 *
-	 * Applies the swap across all three attribute bags — `attrs`, `styleAttrs`, `renderAttrs` —
-	 * to preserve the dual-pass CSS lockstep that `preset_update()` and `preset_create()` maintain.
-	 * Divi renders preset CSS via Pass A (`.preset--module--{module}--{uuid}` from attrs, low
-	 * specificity) and Pass B (`.et_pb_{module}_N` instance class from renderAttrs, high
-	 * specificity with parent-chain selectors); leaving stale chain refs in styleAttrs or
-	 * renderAttrs would let Pass B follow the old chain while Pass A follows the new one,
-	 * producing split rendering.
+	 * Walks the canonical location per bucket:
+	 * - Module-bucket presets: top-level `groupPresets.<slot>.presetId`. Divi's VB bundle
+	 *   `generateNewPreset` places `groupPresets` at the preset root and never mirrors it
+	 *   into the attrs bags, so a single read/write at the root is sufficient.
+	 * - Group-bucket presets: `<bag>.groupPreset.<slot>.presetId` (singular) across all three
+	 *   attribute bags (attrs / styleAttrs / renderAttrs). The plugin's own `preset_update`
+	 *   mirrors the full attrs bag into styleAttrs + renderAttrs to maintain the dual-pass
+	 *   CSS lockstep (Pass A from attrs, Pass B from renderAttrs). Post-5.3.2 both `attrs`
+	 *   AND `renderAttrs` are merged into the render pipeline (`ModuleRegistration.php:352-372`),
+	 *   so a stale UUID in any bag would actively render. Each bag is rewritten surgically
+	 *   and only if it already carries the ref — no blind-mirror, so pre-broken lockstep
+	 *   (refs in some bags but not others) isn't silently clobbered.
 	 *
-	 * User-facing swap count + per-preset details come from the authoritative `attrs` bag only —
-	 * styleAttrs/renderAttrs mirrors are silent (they duplicate the same logical refs under
-	 * lockstep and would otherwise inflate counts 3x). If lockstep was pre-broken (refs only in
-	 * styleAttrs/renderAttrs, not attrs), the lockstep-repair still persists but is invisible
-	 * to the reported count — matches the silent-mirror semantics of preset_update.
+	 * User-facing swap count + per-preset details come from the authoritative `attrs` bag only
+	 * for group presets (or the root slot for module presets); mirrored rewrites in
+	 * styleAttrs / renderAttrs are silent so counts don't inflate 3x when lockstep holds.
 	 *
 	 * Returns the updated registry + swap count + per-preset details. Does NOT write — caller
 	 * decides whether to persist based on mode.
@@ -3887,19 +4056,37 @@ class DiviOps_Agent {
 					if ( ! is_array( $preset ) && ! is_object( $preset ) ) {
 						continue;
 					}
-					$preset            = (array) $preset;
-					$any_bag_mutated   = false;
-					$attrs_slot_swaps  = [];
+					$preset = (array) $preset;
 
-					// Apply the same swap loop to each of the three attr bags independently.
-					// Tracking authoritative count + details only from `attrs`; the other two
-					// bags are silent mirrors that keep Pass A / Pass B rendering in lockstep.
-					//
-					// Defensively cast each nested level from array-or-object before reading —
-					// `get_d5_presets()` only normalizes the top level after maybe_unserialize(),
-					// so inner structures (bags, slot maps, individual slots) can land as stdClass
-					// on sites that round-tripped the option through JSON or a custom writer.
-					// Matches the (array)-at-every-level pattern in collect_group_chain_refs().
+					if ( 'module' === $bucket ) {
+						// Single-location rewrite at the preset root.
+						$slot_map = self::_extract_chain_slot_map( $preset, $bucket );
+						if ( empty( $slot_map ) ) {
+							continue;
+						}
+						$result = self::_swap_chain_refs_in_group_presets_map( $slot_map, $old_uuid, $new_uuid );
+						if ( 0 === $result['swaps'] ) {
+							continue;
+						}
+						$preset                = self::_write_chain_slot_map( $preset, $bucket, $result['map'] );
+						$items[ $preset_uuid ] = $preset;
+						foreach ( $result['slot_swaps'] as $slot_key => $slot_count ) {
+							$swaps    += $slot_count;
+							$details[] = [
+								'bucket'        => $bucket,
+								'module'        => (string) $mod,
+								'referenced_by' => (string) $preset_uuid,
+								'slot'          => (string) $slot_key,
+								'swaps'         => $slot_count,
+							];
+						}
+						continue;
+					}
+
+					// Group bucket — rewrite per-bag so the attrs / styleAttrs / renderAttrs
+					// mirrors stay in lockstep with the Pass A / Pass B CSS emission.
+					$any_mutated      = false;
+					$attrs_slot_swaps = [];
 					foreach ( [ 'attrs', 'styleAttrs', 'renderAttrs' ] as $bag_key ) {
 						if ( ! isset( $preset[ $bag_key ] ) ) {
 							continue;
@@ -3908,25 +4095,25 @@ class DiviOps_Agent {
 							continue;
 						}
 						$bag = (array) $preset[ $bag_key ];
-						if ( ! isset( $bag['groupPresets'] ) ) {
+						if ( ! isset( $bag['groupPreset'] ) ) {
 							continue;
 						}
-						if ( ! is_array( $bag['groupPresets'] ) && ! is_object( $bag['groupPresets'] ) ) {
+						if ( ! is_array( $bag['groupPreset'] ) && ! is_object( $bag['groupPreset'] ) ) {
 							continue;
 						}
-						$group_presets_map = (array) $bag['groupPresets'];
-						$result            = self::_swap_chain_refs_in_group_presets_map( $group_presets_map, $old_uuid, $new_uuid );
+						$slot_map = (array) $bag['groupPreset'];
+						$result   = self::_swap_chain_refs_in_group_presets_map( $slot_map, $old_uuid, $new_uuid );
 						if ( $result['swaps'] > 0 ) {
-							$bag['groupPresets']      = $result['map'];
-							$preset[ $bag_key ]       = $bag;
-							$any_bag_mutated          = true;
+							$bag['groupPreset'] = $result['map'];
+							$preset[ $bag_key ] = $bag;
+							$any_mutated        = true;
 							if ( 'attrs' === $bag_key ) {
 								$attrs_slot_swaps = $result['slot_swaps'];
 							}
 						}
 					}
 
-					if ( $any_bag_mutated ) {
+					if ( $any_mutated ) {
 						$items[ $preset_uuid ] = $preset;
 						foreach ( $attrs_slot_swaps as $slot_key => $slot_count ) {
 							$swaps    += $slot_count;
@@ -3951,15 +4138,15 @@ class DiviOps_Agent {
 	}
 
 	/**
-	 * Swap `presetId` references inside a single `groupPresets` slot map.
+	 * Swap `presetId` references inside a single chain-ref slot map.
 	 *
-	 * Extracted so `_rewrite_registry_group_chains` can apply the same surgical swap to each of
-	 * the three attr bags (attrs / styleAttrs / renderAttrs) without duplicating the scalar-vs-array
-	 * handling. Returns the mutated map + total swap count + per-slot swap counts.
+	 * Consumed by `_rewrite_registry_group_chains` — accepts the slot map extracted from either
+	 * canonical location (top-level `groupPresets` on module presets, `attrs.groupPreset` on
+	 * group presets — see `_extract_chain_slot_map`). Returns the mutated map + total swap count
+	 * + per-slot swap counts. Callers write the mutated map back via `_write_chain_slot_map`.
 	 *
-	 * Each slot is cast from array-or-object before reading to match the (array)-at-every-level
-	 * defensive pattern in collect_group_chain_refs() — stdClass slots are a real shape on sites
-	 * where the D5 option round-tripped through JSON or a custom importer.
+	 * Each slot is cast from array-or-object before reading — stdClass slots are a real shape on
+	 * sites where the D5 option round-tripped through JSON or a custom importer.
 	 */
 	private static function _swap_chain_refs_in_group_presets_map( array $group_presets_map, string $old_uuid, string $new_uuid ): array {
 		$swaps      = 0;
