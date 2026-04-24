@@ -9,7 +9,8 @@ Claude Code <-> MCP Server (stdio) <-> WordPress REST API <-> Divi MCP Plugin
 ## Requirements
 
 - **Node.js** >= 18.0.0
-- **WordPress** >= 5.6 (Application Passwords support)
+- **PHP** >= 7.4
+- **WordPress** >= 6.5
 - **Divi 5** theme active
 - **DiviOps Agent** WordPress plugin installed and active
 
@@ -175,6 +176,8 @@ Read-only commands plus non-destructive writes needed for core MCP functionality
 | Cache | `cache flush`, `transient delete`, `rewrite flush` |
 | Export | `export` (WXR data export to file) |
 | Info | `cron event list`, `plugin list`, `theme list`, `menu list`, `site url` |
+| Core (read-only) | `core version`, `core check-update`, `core is-installed`, `core verify-checksums`, `core language list` |
+| DB (introspection) | `db columns`, `db size`, `db tables`, `db check`, `db search` |
 
 ### Extended commands (opt-in)
 

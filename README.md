@@ -332,9 +332,9 @@ The Free distribution (this repo) and the Pro distribution share the same plugin
 | Skill: **Tier 2** — shared pattern families (font, icon, container cascade, module link) | — | ✓ |
 | Skill: **Tier 3** — per-module element maps for 20+ verified modules | — | ✓ |
 | Skill: Advanced attributes (boxShadow, filters, transform, sticky, transition, scroll, animation) | — | ✓ |
-| Skill: Global Color Variables, Loop & Dynamic Content, Interactions reference | — | ✓ |
+| Skill: `$variable()$` per-module binding examples (loop content, global color tokens) and Interactions reference | — | ✓ |
 
-**Practical difference.** The Free skill is enough to generate pages using universal decoration patterns plus runtime lookups via `diviops_get_module_schema`. Pro adds verified per-module maps, which cuts schema-lookup round-trips and reduces silent-fail risk on module-specific quirks (e.g., Button `innerContent` is an object not a string; Blurb icons need `useIcon: "on"`).
+**Practical difference.** The Free skill is enough to generate pages using universal decoration patterns plus runtime lookups via `diviops_get_module_schema`. Pro adds verified per-module maps, which cuts schema-lookup round-trips and reduces silent-fail risk on quirks only documented in the full maps — e.g., Toggle's `closedTitle.decoration.font.*` (closed-state title styling; without it you'd target the open state only) or Video's `overlay.decoration.background` (the correct background target — not `module.decoration.background`).
 
 No feature gating in the MCP server or the WordPress plugin — all 48 tools are available in both distributions.
 
