@@ -6,7 +6,8 @@ Get from zero to generating Divi 5 pages with Claude Code in ~15 minutes.
 
 ## Prerequisites
 
-- **WordPress** 6.0+ with **Divi 5** theme (5.1.0+)
+- **WordPress** 6.5+ with **Divi 5** theme (5.1.0+)
+- **PHP** 7.4+
 - **Node.js** 18+ (for the MCP server)
 - **Claude Code** CLI installed
 - A local or remote WordPress site (Local by Flywheel recommended for local dev)
