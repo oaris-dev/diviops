@@ -318,6 +318,28 @@ Claude will use the `divi-5-builder` skill to generate the page. Check the resul
 | **Skill** | `claude plugin install oaris-dev/diviops` | VB-verified attr paths, design patterns, block-format rules |
 | **Design Library** | `diviops-design-library.zip` (in this repo) | CSS animations, glass effects, Three.js WebGL (optional) |
 
+## Free vs Pro
+
+The Free distribution (this repo) and the Pro distribution share the same plugins, MCP server, and most of the skill. The only difference is the depth of per-module attribute reference in the skill.
+
+| | Free | Pro |
+|---|---|---|
+| `diviops-agent` WordPress plugin | ✓ | ✓ (same binary) |
+| `diviops-design-library` plugin | ✓ | ✓ (same binary) |
+| `@diviops/mcp-server` on npm — all 48 tools | ✓ | ✓ (same package) |
+| Skill: SKILL.md, design patterns, tools reference, preset system, design-effects, mega-menu, minimal snippets, SaaS landing | ✓ | ✓ |
+| Skill: **Tier 1** attribute reference — universal decoration, innerContent variants, attribute tree layout, design tokens, exceptions quick reference | ✓ | ✓ |
+| Skill: **Tier 2** — shared pattern families (font, icon, container cascade, module link) | — | ✓ |
+| Skill: **Tier 3** — per-module element maps for 20+ verified modules | — | ✓ |
+| Skill: Advanced attributes (boxShadow, filters, transform, sticky, transition, scroll, animation) | — | ✓ |
+| Skill: Global Color Variables, Loop & Dynamic Content, Interactions reference | — | ✓ |
+
+**Practical difference.** The Free skill is enough to generate pages using universal decoration patterns plus runtime lookups via `diviops_get_module_schema`. Pro adds verified per-module maps, which cuts schema-lookup round-trips and reduces silent-fail risk on module-specific quirks (e.g., Button `innerContent` is an object not a string; Blurb icons need `useIcon: "on"`).
+
+No feature gating in the MCP server or the WordPress plugin — all 48 tools are available in both distributions.
+
+Upgrade: <https://diviops.com>
+
 ## Available Tools (48)
 
 ### Read (26)
