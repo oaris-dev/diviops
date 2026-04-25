@@ -46,6 +46,28 @@ Variables are stored in the Divi Variable Manager. 6 native types:
 - **The trailing `$` is required** — without it, the token silently fails to resolve
 - Resolved at render time: colors → HSL transform, numbers/fonts → `var(--name)`
 
+**Storage byte forms (Divi 5.3.x).** Inside block-attrs JSON the inner quotes of `$variable({...})$` payloads can be stored as `\"` (2-byte VB-canonical) or `"` (6-byte JSON unicode escape). Both decode identically through Divi's outer block-attrs parse. Two over-escaped forms are pathological and silently break renders on certain attr paths (`module.decoration.background.color`, `spacing.margin`, `border.styles.color`, `layout.columnGap` — leaks literal `0022` into CSS):
+- `\\u0022` (7 bytes) — extra backslash; produced when a caller passes the 6-byte form through an extra JSON encoding layer
+- `\u005cu0022` (11 bytes) — backslash itself unicode-encoded; the form observed in the wild on Divi 5.3.x mass-corruption events
+
+**MCP write tools normalize both pathological forms inside `$variable(...)$` token regions** (`diviops-server/src/wp-client.ts`) — a `diviops_get_section → diviops_replace_section` round-trip on legacy broken bytes self-heals. Bytes outside token regions are preserved (so a string-variable value or a code sample documenting the broken form round-trips unchanged). For non-MCP-touched content (e.g., direct DB writes or custom PHP that bypasses the MCP), recover with a two-target `str_replace` that handles both pathological forms:
+
+```php
+$new = str_replace(
+  ['\u005cu0022', '\\\\u0022'],   // 11-byte and 7-byte broken forms
+  '\"',                          // canonical 2-byte
+  $post->post_content
+);
+$wpdb->update($wpdb->posts,
+  ['post_content' => $new],
+  ['ID' => $id], ['%s'], ['%d']);
+clean_post_cache($id);
+```
+
+**`wp_update_post` hazard (custom PHP / eval-files / non-MCP REST endpoints).** WP's `wp_insert_post` / `wp_update_post` runs `wp_unslash()` on `post_content`, stripping one level of backslashes from ALL `\uXXXX` escapes — not just variable-token quotes: `"` (variable expression `"`), `<` / `>` (HTML `<` / `>` in `content.innerContent`), `&` (HTML `&`), `/` (`/`). All become `u0022` / `u003c` / etc. (no leading backslash) — variable expressions silently fail to resolve and HTML tags render as literal text (e.g. `<p>` becomes the visible string `u003cpu003e`). Damage is irreversible without a pre-`wp_update_post` revision. **When writing variable-token-bearing markup from PHP, bypass `wp_update_post` — write directly via `$wpdb->update($wpdb->posts, ['post_content' => $new], ['ID' => $id], ['%s'], ['%d'])` followed by `clean_post_cache($id)`.** The diviops-agent plugin uses `wp_slash()` to compensate at REST endpoints; that path is safe. Recovery regex for stripped-backslash damage (run on storage): `preg_replace('/(?<!\\\\)u0022/', '\\u0022', $content)` — the negative lookbehind avoids double-prefixing already-correct tokens.
+
+**VB round-trip pitfall (Divi 5.3.x).** When a user opens a section in the Visual Builder and saves, Divi may double-escape `"` inner quotes inside `$variable(...)$` payloads on certain attr paths (heading/text background, border, spacing) — `"` becomes `"` (over-escaped) in storage. Resolved variable expression then reads `$variable({"type":...})$` which fails Divi's inner JSON parse and renders empty / leaks literal `0022` into CSS. Symptom: variable token loses its background/border/margin and falls through to defaults after a VB save. Recovery: rewrite the section via `diviops_replace_section` (the MCP normalizer fixes it on write), or hand-fix the attrs option in VB. No reliable workaround at user-edit time — the VB save itself is the corrupting layer.
+
 ### Preset Types
 
 **Module-level presets** (`type: "module"`) — stored under `module.*` in `et_divi_builder_global_presets_d5`. Apply to a specific module type. Referenced in block markup via `modulePreset`.

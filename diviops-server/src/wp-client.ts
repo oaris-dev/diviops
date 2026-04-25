@@ -11,6 +11,51 @@ import {
   type HandshakeResult,
 } from './compatibility.js';
 
+/**
+ * Normalize over-escaped variable-token quote sequences inside `$variable(...)$`
+ * token regions only.
+ *
+ * Divi block-attrs JSON uses `\"` (2-byte) for inner quotes inside Divi variable
+ * tokens. Two over-escaped forms can leak in via callers that round-trip
+ * pre-existing broken bytes:
+ *   - `\u0022` (11 bytes literal) — the mass-corruption form (backslash
+ *     itself unicode-escaped, observed in the wild on Divi 5.3.x sites)
+ *   - `\\u0022`     (7 bytes literal) — produced when a caller passes the
+ *     6-byte `"` form through an extra JSON-encoding layer
+ *
+ * Both decode to the same value after Divi's resolver, but cause render asymmetry
+ * across attr paths (`background.color`, `spacing.margin`, `border.color`,
+ * `layout.columnGap` silently fail to resolve). We normalize defensively so any
+ * write — clean or pre-broken — settles on canonical bytes.
+ *
+ * Scope is intentionally narrow: rewrites only happen inside `$variable(...)$`
+ * regions (Divi's actual resolver boundary). Bytes outside those regions —
+ * arbitrary user text, code samples, string-variable values that happen to
+ * contain `\u0022` — are left untouched.
+ */
+function normalizeQuoteEscapes(s: string): string {
+  return s.replace(/\$variable\([^$]*?\)\$/g, (token) =>
+    token.replace(/(?:\\u005cu0022|\\\\u0022)/g, '\\"')
+  );
+}
+
+function normalizeBody(value: unknown): unknown {
+  if (typeof value === 'string') return normalizeQuoteEscapes(value);
+  if (Array.isArray(value)) return value.map(normalizeBody);
+  // Restrict recursion to plain objects so Date / RegExp / class instances
+  // with custom `toJSON` keep their canonical serialization.
+  if (
+    value &&
+    typeof value === 'object' &&
+    Object.getPrototypeOf(value) === Object.prototype
+  ) {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value)) out[k] = normalizeBody(v);
+    return out;
+  }
+  return value;
+}
+
 export interface WPClientConfig {
   siteUrl: string;
   username: string;
@@ -62,7 +107,7 @@ export class WPClient {
     };
 
     if (body && method !== 'GET') {
-      fetchOptions.body = JSON.stringify(body);
+      fetchOptions.body = JSON.stringify(normalizeBody(body));
     }
 
     const response = await fetch(url, fetchOptions);
