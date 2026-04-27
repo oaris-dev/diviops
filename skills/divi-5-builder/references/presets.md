@@ -377,7 +377,7 @@ The general pattern of buttons-as-`groupPreset.button` is fine — the bug is sp
 
 - `divi/blurb` `imageIcon.advanced.useIcon` toggle paired with a sibling spacing group preset
 - `divi/icon` border-on-icon toggle paired with a sibling border group preset
-- `divi/image` border-radius via group preset paired with sizing chain
+- `divi/image` border-radius via group preset paired with sizing chain (related but distinct from the verified rendering quirk: `divi/image` border-radius supplied by a preset alone — module preset OR Attribute-level preset — does not render unless reinforced inline; see the Image entry in [module-formats.md Exceptions Quick Reference](module-formats.md#exceptions-quick-reference))
 - Per-module submit/CTA buttons with embedded icon controls (`post-nav`, `blog` read-more, `signup` submit)
 
 When discovered, add to this list with the gate's source-file:line. Until verified, treat the analogous chain (toggle in one group, render-path-affected attr in a sibling group) as suspect.
@@ -492,6 +492,17 @@ The guidance below applies once you've bootstrapped the `oa` system on a site (v
 - One-off values that don't fit the design system
 - Content-specific styling (animation delays, specific positioning)
 - You haven't bootstrapped the design system yet (this is the default for new sites — all patterns in design-guide.md work with hardcoded values)
+
+### Inline tokens as fallback, not duplication
+
+When a module consumes a preset, **trust the preset to supply the values it covers — don't duplicate preset values inline.**
+
+Inline `$variable()$` tokens are appropriate only when:
+- **The preset doesn't cover that property** (e.g. preset sets background but you need a per-instance border color)
+- **The renderer requires inline reinforcement** (e.g. image border-radius — the preset value alone doesn't render; see the Image entry in [module-formats.md Exceptions Quick Reference](module-formats.md#exceptions-quick-reference))
+- **One-off override** for a specific instance that intentionally diverges from the preset
+
+Why this matters: duplicating a preset's value inline doesn't break rendering, but it **fragments the source of truth**. A future preset edit (e.g. swapping `gcid-oa-neutral-950` for a new background token across the design system) won't propagate to instances that have inline overrides — you have to hunt them down in page markup. Keep the preset as the single source for any property it covers; reach for inline tokens only on the three exceptions above.
 
 ## Design System Manifest Schema
 

@@ -304,6 +304,7 @@ Need a semantic name? Register it inside Divi as a `gvid-*` / `gcid-*` in the Va
 | **Columns only** | `flexType` 24-unit grid | only on `divi/column` / `divi/column-inner` inside `divi/row` | on blurb/group/text → attr silently dropped, no width constraint. Use `module.decoration.sizing.width` for flex children |
 | **Image** | Spacing/sizing on advanced | `module.advanced.{spacing,sizing}` | `module.decoration.{spacing,sizing}` |
 | **Image** | Border on image element | `image.decoration.border` | `module.decoration.border` |
+| **Image** | Border-radius from preset alone doesn't render | reinforce inline on `image.decoration.border.desktop.value.radius` (same path as preset) | preset only → square corners on frontend (image-specific quirk) |
 | **Icon** | Border/bg on module only | `module.decoration.{border,background}` | `icon.decoration.{border,background}` |
 | **Video** | No module background | `overlay.decoration.background` | `module.decoration.background` |
 
