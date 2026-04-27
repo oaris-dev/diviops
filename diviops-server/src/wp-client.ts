@@ -12,36 +12,80 @@ import {
 } from './compatibility.js';
 
 /**
- * Normalize over-escaped variable-token quote sequences inside `$variable(...)$`
- * token regions only.
+ * Normalize quote-escape pathologies inside `$variable(...)$` token regions only.
  *
- * Divi block-attrs JSON uses `\"` (2-byte) for inner quotes inside Divi variable
- * tokens. Two over-escaped forms can leak in via callers that round-trip
- * pre-existing broken bytes:
- *   - `\u0022` (11 bytes literal) — the mass-corruption form (backslash
- *     itself unicode-escaped, observed in the wild on Divi 5.3.x sites)
- *   - `\\u0022`     (7 bytes literal) — produced when a caller passes the
- *     6-byte `"` form through an extra JSON-encoding layer
+ * Divi block-attrs JSON uses `\"` (2-byte: backslash + quote) for inner quotes
+ * inside variable token payloads. Three pathological forms can leak in through
+ * callers and silently break the WP block parser at write time.
  *
- * Both decode to the same value after Divi's resolver, but cause render asymmetry
- * across attr paths (`background.color`, `spacing.margin`, `border.color`,
- * `layout.columnGap` silently fail to resolve). We normalize defensively so any
- * write — clean or pre-broken — settles on canonical bytes.
+ * Over-escape (existing #395/#396 fix). Two forms produced when callers
+ * round-trip pre-existing broken bytes:
+ *   - `\u005cu0022` (11 bytes literal) — the
+ *     mass-corruption form (backslash itself unicode-escaped, observed in the
+ *     wild on Divi 5.3.x sites)
+ *   - `\\u0022`     (7 bytes literal: 2 backslashes + `u0022`) — produced when
+ *     a caller passes the 6-byte unicode-escape form through an extra
+ *     JSON-encoding layer
+ *   These cause render-only failure: the resolver can't decode the token, and
+ *   attr paths like `background.color`, `spacing.margin`, `border.color`,
+ *   `layout.columnGap` silently fall through to defaults (or leak literal
+ *   `0022` into emitted CSS).
+ *
+ * Under-escape (#409 fix). One form produced when an agent transcribes
+ * `get_section` markup (which emits inner quotes as `&quot;` HTML entities) and
+ * a layer in the agent → MCP → WP pipeline strips one level of escaping:
+ *   - bare `"` (1 byte) — the inner quote loses its `\` prefix and prematurely
+ *     terminates the OUTER block-attrs string at parse time. The WP block
+ *     parser then silently drops ALL attrs from the affected module. Section
+ *     appears to save (`success: true`) but renders empty / broken.
+ *
+ * We normalize defensively so any write — clean, pre-broken, or
+ * agent-transcribed — settles on canonical 2-byte `\"`.
+ *
+ * Order matters: collapse over-escapes first, then escape under-escapes. The
+ * negative lookbehind on the under-escape rule skips `\"` produced by the
+ * over-escape pass (and any already-canonical input). Idempotent.
  *
  * Scope is intentionally narrow: rewrites only happen inside `$variable(...)$`
  * regions (Divi's actual resolver boundary). Bytes outside those regions —
  * arbitrary user text, code samples, string-variable values that happen to
- * contain `\u0022` — are left untouched.
+ * contain `\u005cu0022`, `\\u0022`, or bare `"` — are left untouched.
  */
 function normalizeQuoteEscapes(s: string): string {
-  return s.replace(/\$variable\([^$]*?\)\$/g, (token) =>
-    token.replace(/(?:\\u005cu0022|\\\\u0022)/g, '\\"')
-  );
+  return s.replace(/\$variable\([^$]*?\)\$/g, (token) => {
+    // Pass 1: collapse over-escaped forms (#395/#396) to canonical \"
+    let normalized = token.replace(/(?:\\u005cu0022|\\\\u0022)/g, '\\"');
+    // Pass 2: escape any bare " (#409) to canonical \" — negative lookbehind
+    // skips properly-escaped quotes produced by Pass 1 or already canonical.
+    normalized = normalized.replace(/(?<!\\)"/g, '\\"');
+    return normalized;
+  });
 }
 
-function normalizeBody(value: unknown): unknown {
-  if (typeof value === 'string') return normalizeQuoteEscapes(value);
-  if (Array.isArray(value)) return value.map(normalizeBody);
+/**
+ * Body keys whose values (and descendants) carry Divi block markup or block
+ * attribute trees, where `$variable(...)$` token-region normalization is the
+ * intended behavior. Strings reachable only through other top-level keys
+ * — variable values, labels, match-text predicates, descriptions, etc.
+ * — are passed through verbatim so a literal `$variable({"x":"y"})$`
+ * docs example in a `string_variable_value` is preserved (#409 review:
+ * Codex-flagged regression — without this scoping, the bare-quote pass would
+ * silently rewrite literal token-shaped substrings in user-prose fields).
+ */
+const BLOCK_CONTENT_KEYS = new Set([
+  'content',         // update_page_content, render_preview, validate_blocks,
+                     // append_section, replace_section, update_tb_layout,
+                     // save_to_library, create_page
+  'attrs',           // update_module — attr values embedded in block JSON
+  'header_content',  // create_tb_template
+  'footer_content',  // create_tb_template
+]);
+
+function normalizeBody(value: unknown, withinBlockTree = false): unknown {
+  if (typeof value === 'string') {
+    return withinBlockTree ? normalizeQuoteEscapes(value) : value;
+  }
+  if (Array.isArray(value)) return value.map((v) => normalizeBody(v, withinBlockTree));
   // Restrict recursion to plain objects so Date / RegExp / class instances
   // with custom `toJSON` keep their canonical serialization.
   if (
@@ -50,7 +94,9 @@ function normalizeBody(value: unknown): unknown {
     Object.getPrototypeOf(value) === Object.prototype
   ) {
     const out: Record<string, unknown> = {};
-    for (const [k, v] of Object.entries(value)) out[k] = normalizeBody(v);
+    for (const [k, v] of Object.entries(value)) {
+      out[k] = normalizeBody(v, withinBlockTree || BLOCK_CONTENT_KEYS.has(k));
+    }
     return out;
   }
   return value;
