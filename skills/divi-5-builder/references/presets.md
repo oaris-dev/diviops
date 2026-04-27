@@ -332,6 +332,56 @@ These are **color modifiers** — stack with a size preset when content is on a 
 
 All button presets include `button.decoration.button.desktop.value.enable: "on"` (required to activate custom styling).
 
+**Icon-off + chained spacing group: Divi 5.3.x hover-padding gate (Divi bug, narrow scope).** Group presets for buttons (the `divi/button` / `groupId: button` pattern used by the oa Button presets above) remain the recommended convention. There is **one specific chained-preset configuration** to avoid:
+
+> A `divi/button` group preset that sets `button.decoration.button.desktop.value.icon.enable: "off"` (suppress the default arrow), **chained alongside** a separate `divi/spacing` group preset that supplies the padding.
+
+That combination trips a hover-padding fallback at `Packages/Module/Options/Button/Style/StyleDeclarations.php:158-160` (`spacing_icon_hover_style_declaration`). The gate emits `:hover{padding:0.3em 1em !important}` against the group-preset selector and clobbers the spacing on hover. Source trace: gate reads `$args['attr']['desktop']['value']['padding']` per the hover-specific merge at `ButtonStyle.php:357-361` (the parallel non-hover merge at lines 322-326 feeds `spacing_icon_style_declaration`, which doesn't gate on padding), fed from `$button_affecting_attrs` rebuilt at `ButtonModule.php:633-644, 650-658` from `attrs.button.decoration.spacing` only — `attrs.module.decoration.spacing` (the spacing chained from a sibling group preset) is invisible at this pass.
+
+The general pattern of buttons-as-`groupPreset.button` is fine — the bug is specifically about **where padding lives** when icon is disabled, not about group-vs-module bucket.
+
+**Three workable patterns when icon is disabled** (any one avoids the gate):
+
+1. **Padding inline on the instance** — set `attrs.module.decoration.spacing.padding` on each button instance. The per-instance render pass merges it correctly. Empirically verified clean on Divi 5.3.3.
+2. **Padding inside the button group preset itself** (preferred for consolidation) — write `button.decoration.button.desktop.value.padding` directly on the `divi/button` group preset rather than chaining a separate `divi/spacing` preset. See the MCP recipe below for the exact attrs (Divi's VB does not currently draw a Spacing sub-panel under "Design → Button" even though the Composable Settings registry flags it, so this attr is reachable only via MCP). Any single corner is sufficient to make `$has_desktop_padding` true and bypass the gate at line 158 (the check OR's top/right/bottom/left at lines 153-156) — the 162-170 branch only fires on cross-breakpoint partials (empty desktop padding + non-empty current-breakpoint padding), not single-breakpoint partials. Populate all four corners anyway for consistent rendering:
+
+```json
+{
+  "button": {
+    "decoration": {
+      "button": {
+        "desktop": {
+          "value": {
+            "icon": {"onHover": "on", "enable": "off"},
+            "padding": {
+              "top": "$variable({\"type\":\"content\",\"value\":{\"name\":\"gvid-oa-space-2\",\"settings\":{}}})$",
+              "bottom": "$variable({\"type\":\"content\",\"value\":{\"name\":\"gvid-oa-space-2\",\"settings\":{}}})$",
+              "left": "$variable({\"type\":\"content\",\"value\":{\"name\":\"gvid-oa-space-4\",\"settings\":{}}})$",
+              "right": "$variable({\"type\":\"content\",\"value\":{\"name\":\"gvid-oa-space-4\",\"settings\":{}}})$",
+              "syncVertical": "on",
+              "syncHorizontal": "on"
+            }
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+   The alternative path `button.decoration.spacing.desktop.value.padding` also satisfies the gate, but emits a duplicate padding rule via the spacing styleProp pass — prefer the `button.decoration.button.*` form to keep one source of truth. Pair with `diviops_flush_static_cache` for any pages referencing the preset; the gate's `!important` rule lives in the per-post compiled CSS at `wp-content/et-cache/{post_id}/`, not in the preset JSON.
+
+3. **Fold to a module preset** — when an entire button "look" is unique to one design context and won't be reused as a `groupPreset.button`, save it as a `divi/button` module preset (single inline-attrs bag, referenced via `modulePreset` not `groupPreset`). The module-preset render pass merges all scopes correctly and the gate never trips. Heavier than patterns 1 or 2; reach for it only when group-preset reuse isn't a goal.
+
+**Where else to watch (unverified — audit candidates).** The narrow shape of this bug — a per-module declarator gates on cross-scope state, and the per-group CSS pass renders that group in isolation — could exist on other modules whose decoration tree has an enable/disable toggle. Verified so far: only the button-icon path. Suspected candidates pending audit:
+
+- `divi/blurb` `imageIcon.advanced.useIcon` toggle paired with a sibling spacing group preset
+- `divi/icon` border-on-icon toggle paired with a sibling border group preset
+- `divi/image` border-radius via group preset paired with sizing chain
+- Per-module submit/CTA buttons with embedded icon controls (`post-nav`, `blog` read-more, `signup` submit)
+
+When discovered, add to this list with the gate's source-file:line. Until verified, treat the analogous chain (toggle in one group, render-path-affected attr in a sibling group) as suspect.
+
 ### Module-Level Component Presets
 
 | Preset | Role key | Module | Key styling |
