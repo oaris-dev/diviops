@@ -41,23 +41,25 @@ The MCP server runs via `npx @diviops/mcp-server` — no clone, no build step.
 ### Minimal (REST API only — works with any WordPress host)
 
 ```bash
-claude mcp add diviops-mysite -- env \
-  WP_URL=http://your-site.local \
-  WP_USER=your-username \
-  WP_APP_PASSWORD=xxxxXXXXxxxxXXXXxxxxXXXX \
-  npx @diviops/mcp-server
+claude mcp add diviops-mysite \
+  --env WP_URL=http://your-site.local \
+  --env WP_USER=your-username \
+  --env WP_APP_PASSWORD=xxxxXXXXxxxxXXXXxxxxXXXX \
+  -- npx @diviops/mcp-server
 ```
 
 ### With WP-CLI (Local by Flywheel — enables the `diviops_wp_cli` tool)
 
 ```bash
-claude mcp add diviops-mysite -- env \
-  WP_URL=http://your-site.local \
-  WP_USER=your-username \
-  WP_APP_PASSWORD=xxxxXXXXxxxxXXXXxxxxXXXX \
-  WP_PATH="/Users/you/Local Sites/your-site/app/public" \
-  npx @diviops/mcp-server
+claude mcp add diviops-mysite \
+  --env WP_URL=http://your-site.local \
+  --env WP_USER=your-username \
+  --env WP_APP_PASSWORD=xxxxXXXXxxxxXXXXxxxxXXXX \
+  --env "WP_PATH=/Users/you/Local Sites/your-site/app/public" \
+  -- npx @diviops/mcp-server
 ```
+
+> **Use `--env` flags, not the `env` command.** Claude Code's native `--env KEY=VALUE` flags survive copy-paste; the older `-- env KEY=VALUE` form (piping through unix `env`) breaks silently when any value contains a space. Quote any value with spaces using regular double quotes — no backslash escaping needed inside quotes.
 
 > `LOCAL_SITE_ID` is auto-detected from `WP_PATH` — no need to find it manually.
 
@@ -97,7 +99,7 @@ DiviOps connects via standard WordPress REST API and works with any host that ex
 - **Strip spaces from the app password** — covered above; this is the #1 setup snag
 - **Use absolute paths** for `WP_PATH` — relative paths break when Claude Code runs from a different directory
 - **Unique MCP name** — don't reuse a name from another project
-- **Paths with spaces** — directories like `Local Sites/my site` work as long as they're quoted
+- **Paths with spaces** — wrap the entire `KEY=VALUE` argument in double quotes (e.g. `--env "WP_PATH=/path with spaces/"`). Same goes for any custom server script path passed after `--`
 - **MCP not appearing after registration** — run `claude mcp list` to verify. If it's not there, `claude mcp remove` and re-add. Fully restart Claude Code (not just the window) after adding.
 
 ## Step 4: Verify Registration
@@ -110,7 +112,7 @@ You should see your MCP server listed with the correct env vars. If anything loo
 
 ```bash
 claude mcp remove diviops-mysite
-claude mcp add diviops-mysite -- env ...
+claude mcp add diviops-mysite --env KEY=VALUE ... -- npx @diviops/mcp-server
 ```
 
 ## Step 5: Test Connection
@@ -383,13 +385,13 @@ The `diviops_wp_cli` tool validates every command against a safety allowlist. De
 To enable extended commands:
 
 ```bash
-claude mcp add diviops-mysite -- env \
-  WP_URL=http://your-site.local \
-  WP_USER=admin \
-  WP_APP_PASSWORD=xxxxXXXXxxxxXXXXxxxxXXXX \
-  WP_PATH="/path/to/wordpress" \
-  DIVIOPS_WP_CLI_ALLOW="option update,post delete,search-replace" \
-  npx @diviops/mcp-server
+claude mcp add diviops-mysite \
+  --env WP_URL=http://your-site.local \
+  --env WP_USER=admin \
+  --env WP_APP_PASSWORD=xxxxXXXXxxxxXXXXxxxxXXXX \
+  --env "WP_PATH=/Users/you/Local Sites/your-site/app/public" \
+  --env "DIVIOPS_WP_CLI_ALLOW=option update,post delete,search-replace" \
+  -- npx @diviops/mcp-server
 ```
 
 Only list the specific commands you need. Unknown entries are ignored with a warning.
@@ -411,16 +413,18 @@ The MCP server is a Node.js process that connects to any WordPress site via HTTP
 
 ```bash
 # Production site
-claude mcp add diviops-main -- env \
-  WP_URL=http://main-site.local \
-  WP_USER=admin WP_APP_PASSWORD="xxxx" \
-  npx @diviops/mcp-server
+claude mcp add diviops-main \
+  --env WP_URL=http://main-site.local \
+  --env WP_USER=admin \
+  --env WP_APP_PASSWORD=xxxx \
+  -- npx @diviops/mcp-server
 
 # Test site (same MCP package, different credentials)
-claude mcp add diviops-test -- env \
-  WP_URL=http://test-site.local \
-  WP_USER=admin WP_APP_PASSWORD="yyyy" \
-  npx @diviops/mcp-server
+claude mcp add diviops-test \
+  --env WP_URL=http://test-site.local \
+  --env WP_USER=admin \
+  --env WP_APP_PASSWORD=yyyy \
+  -- npx @diviops/mcp-server
 ```
 
 Each registration is independent — different site, different credentials, different MCP name.

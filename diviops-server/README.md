@@ -32,31 +32,33 @@ Go to **WP Admin -> Users -> Your Profile -> Application Passwords**:
 ### 3. Configure Claude Code
 
 ```bash
-claude mcp add diviops-mcp -- env \
-  WP_URL=http://your-site.local \
-  WP_USER=your-wp-username \
-  WP_APP_PASSWORD=xxxxXXXXxxxxXXXXxxxxXXXX \
-  npx @diviops/mcp-server
+claude mcp add diviops-mcp \
+  --env WP_URL=http://your-site.local \
+  --env WP_USER=your-wp-username \
+  --env WP_APP_PASSWORD=xxxxXXXXxxxxXXXXxxxxXXXX \
+  -- npx @diviops/mcp-server
 ```
+
+> **Use `--env` flags, not the `env` command.** Claude Code's native `--env KEY=VALUE` flags survive copy-paste; the older `-- env KEY=VALUE` form (piping through unix `env`) breaks silently when any value contains a space. Quote any value with spaces (e.g. `--env "WP_PATH=/Users/you/Local Sites/site/app/public"`) — no backslash escaping needed inside quotes.
 
 **With WP-CLI** (optional — enables `diviops_wp_cli` tool):
 ```bash
-claude mcp add diviops-mcp -- env \
-  WP_URL=http://your-site.local \
-  WP_USER=your-wp-username \
-  WP_APP_PASSWORD=xxxxXXXXxxxxXXXXxxxxXXXX \
-  WP_PATH="/path/to/wordpress" \
-  npx @diviops/mcp-server
+claude mcp add diviops-mcp \
+  --env WP_URL=http://your-site.local \
+  --env WP_USER=your-wp-username \
+  --env WP_APP_PASSWORD=xxxxXXXXxxxxXXXXxxxxXXXX \
+  --env "WP_PATH=/path/to/wordpress" \
+  -- npx @diviops/mcp-server
 ```
 
 **With Docker-based WP-CLI** (optional — uses a custom command prefix):
 ```bash
-claude mcp add diviops-mcp -- env \
-  WP_URL=https://site-name.ddev.site \
-  WP_USER=your-wp-username \
-  WP_APP_PASSWORD=xxxxXXXXxxxxXXXXxxxxXXXX \
-  WP_CLI_CMD="ddev wp" \
-  npx @diviops/mcp-server
+claude mcp add diviops-mcp \
+  --env WP_URL=https://site-name.ddev.site \
+  --env WP_USER=your-wp-username \
+  --env WP_APP_PASSWORD=xxxxXXXXxxxxXXXXxxxxXXXX \
+  --env "WP_CLI_CMD=ddev wp" \
+  -- npx @diviops/mcp-server
 ```
 
 ### Environment Variables
@@ -198,13 +200,13 @@ These commands carry higher risk and require explicit opt-in via the `DIVIOPS_WP
 To enable extended commands, add `DIVIOPS_WP_CLI_ALLOW` to your MCP registration:
 
 ```bash
-claude mcp add diviops-mcp -- env \
-  WP_URL=http://your-site.local \
-  WP_USER=admin \
-  WP_APP_PASSWORD=xxxx \
-  WP_PATH="/path/to/wordpress" \
-  DIVIOPS_WP_CLI_ALLOW="option update,post delete,search-replace" \
-  npx @diviops/mcp-server
+claude mcp add diviops-mcp \
+  --env WP_URL=http://your-site.local \
+  --env WP_USER=admin \
+  --env WP_APP_PASSWORD=xxxx \
+  --env "WP_PATH=/path/to/wordpress" \
+  --env "DIVIOPS_WP_CLI_ALLOW=option update,post delete,search-replace" \
+  -- npx @diviops/mcp-server
 ```
 
 Only list the specific commands you need. Unknown entries are ignored with a warning.
