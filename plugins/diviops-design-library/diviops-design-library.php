@@ -238,11 +238,20 @@ class DiviOps_Design_Library {
 			.ddl-marquee-scroll {
 				display: inline-flex !important;
 				flex-wrap: nowrap !important;
+				gap: 0 !important;
 				animation: ddl-marquee var(--ddl-marquee-speed, 30s) linear infinite;
 			}
 			.ddl-marquee-scroll > * {
 				flex-shrink: 0;
 				white-space: nowrap;
+			}
+			.ddl-marquee-scroll:hover,
+			.ddl-marquee-scroll:focus-within {
+				animation-play-state: paused;
+			}
+			@media (prefers-reduced-motion: reduce) {
+				.ddl-marquee-track { overflow-x: auto; }
+				.ddl-marquee-scroll { animation: none; }
 			}
 
 			/* ===== Gradient Text ===== */

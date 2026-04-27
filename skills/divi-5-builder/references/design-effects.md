@@ -64,7 +64,46 @@ Each attribute entry needs: `id` (unique), `name` ("class"), `value` (space-sepa
 | Class | Where | Purpose |
 |-------|-------|---------|
 | `ddl-marquee-track` | Outer container | Sets overflow hidden |
-| `ddl-marquee-scroll` | Inner wrapper | Applies scroll animation |
+| `ddl-marquee-scroll` | Inner wrapper | Applies scroll animation (`translateX(0) → -50%`) |
+
+#### Marquee composition rules
+
+These apply to any seamless marquee built on a 2× duplicated track scrolled with `translateX(-50%)` — whether using the `ddl-marquee-*` classes above, hand-rolled CSS, or any other variant of the same loop math.
+
+**1. Track `column-gap` / `row-gap` must be `0`.** Divi 5 Groups with `flexDirection: row` inherit a default 30px `column-gap` even when not explicitly set. The `ddl-marquee-scroll` class clears this automatically (`gap: 0 !important`); hand-rolled implementations must set it explicitly. Any non-zero gap on the track produces a `0.5 × gap` snap-back at every loop wrap because the placement of inter-item gaps is asymmetric (3 internal gaps in half 1, 3 internal gaps in half 2, 1 gap between the halves, 0 gap at the wrap point). Spacing between items must come from item-level padding/margin, not from the parent's `gap`. For hand-rolled cases: either set `module.decoration.layout.desktop.value.columnGap: "0px"` on the Group track or add `gap: 0 !important` to the freeForm CSS.
+
+**2. The two halves must be visually identical, not just equal in width.** Width parity keeps the loop math correct, but every rendered visual property must mirror across halves: opacity, color, font weight, letter-spacing, transforms, hover styles. If you change a property on `Item 1` you must also change it on `Item 1 (dup)` — otherwise the rendered output cycles between two visual states at every wrap.
+
+**3. Responsive overrides mirror across halves.** Any breakpoint override (tablet/phone font-size, padding, icon-size) must be applied to BOTH the original and the `(dup)`. Asymmetric breakpoint values break the loop only at that viewport width, which is easy to miss without explicit breakpoint testing.
+
+**4. Motion controls (WCAG 2.2.2 + 2.3.3) — pause, reduce-motion, AND content-reachability.** The motion behavior is one half of the a11y picture; content reachability is the other. A track with `overflow: hidden` that's wider than the viewport hides unique items behind the clip edge — and freezing the animation under `prefers-reduced-motion` would leave those items permanently unreachable unless a fallback exposes them.
+
+The `ddl-marquee-*` helper covers all three:
+- `animation-play-state: paused` on `:hover` / `:focus-within` (interactive pause)
+- `animation: none` on the inner scroll wrapper under `prefers-reduced-motion: reduce` (motion gone)
+- `overflow-x: auto` on the outer track under `prefers-reduced-motion: reduce` (the critical fallback — users can horizontally scroll to reach every unique item, even when content exceeds viewport width)
+
+Hand-rolled marquees must include the equivalent CSS:
+
+```css
+.ddl-marquee-scroll:hover,
+.ddl-marquee-scroll:focus-within { animation-play-state: paused; }
+@media (prefers-reduced-motion: reduce) {
+  .ddl-marquee-track  { overflow-x: auto; }   /* without this, unique items past viewport are unreachable */
+  .ddl-marquee-scroll { animation: none; }
+}
+```
+
+Replace `.ddl-marquee-track` and `.ddl-marquee-scroll` with whatever classes your hand-rolled wrapper uses.
+
+Plus screen-reader hygiene via `module.decoration.attributes.desktop.value.attributes[]` (helper class does NOT add these — apply them manually in both cases):
+- All `(dup)` text/icon modules → `aria-hidden="true"` (prevents SR reading the same phrase twice)
+- All decorative icons → `aria-hidden="true"`
+- Half-1 originals → leave readable, no attribute change
+
+Skip: `role="marquee"` (deprecated), `aria-live="off"` (default, noise), `role="presentation"` on the track (would strip semantics from half-1 children).
+
+**5. Oversized typography → set `line-height ≥ 1.3em`.** When marquees use very large type (e.g. 100px+) inside an `overflow: hidden` track, glyph ascenders can clip at the padding-box edge. A generous `line-height` on text items bakes vertical breathing room into each item without changing track structure.
 
 ### VB Safety
 `ddl-animate` starts elements at `opacity: 0` — invisible in the Visual Builder where IntersectionObserver may not fire. The plugin includes a VB override that resets `opacity: 1 !important` and `animation: none !important` inside VB contexts (`#et-fb-app`, `.et-fb`, `body.et-fb`). Intentional transforms are NOT reset — only visibility and animation playback.
