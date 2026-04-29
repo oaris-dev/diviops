@@ -188,6 +188,7 @@ These commands carry higher risk and require explicit opt-in via the `DIVIOPS_WP
 | Command | Risk | Why opt-in |
 |---------|------|------------|
 | `option update` | High | Can change site URL, admin email, or security settings |
+| `option delete` | High | Permanently removes a WP option (no undo) |
 | `post delete` | Medium | Permanently removes content |
 | `post meta delete` | Medium | Removes metadata |
 | `term delete` | Medium | Permanently removes taxonomy terms |
@@ -210,6 +211,18 @@ claude mcp add diviops-mcp \
 ```
 
 Only list the specific commands you need. Unknown entries are ignored with a warning.
+
+#### Wildcard / "god-mode" (local dev only)
+
+For trusted local-dev environments where you don't want to re-list every extended command per site, the values `*` and `all` grant the full extended set:
+
+```bash
+--env "DIVIOPS_WP_CLI_ALLOW=*"
+```
+
+The sentinel grants exactly the extended set above — it does NOT unlock anything beyond it (notably: `db query` stays out by design). The server emits a startup warning to stderr whenever the wildcard is active, so the broad grant is never silent. Auto-adopts new extended commands on future versions.
+
+> **Don't use this in shared or production environments.** Pin the specific commands you need with the comma-separated form instead.
 
 > **Note on `acf import`**: included in the default allowlist because it's an idempotent dev-time schema operation (re-creates field groups from JSON). Bulk content imports use `wp import` instead, which is opt-in.
 

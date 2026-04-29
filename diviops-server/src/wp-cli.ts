@@ -108,6 +108,7 @@ const DEFAULT_COMMANDS: readonly string[] = [
  */
 const EXTENDED_COMMANDS: readonly string[] = [
   'option update',       // Can change site URL, admin email, active plugins
+  'option delete',       // Destructive — permanently removes a WP option
   'post delete',         // Destructive — permanently removes content
   'post meta delete',    // Destructive — removes metadata
   'term delete',         // Destructive — removes taxonomy terms
@@ -122,6 +123,17 @@ const EXTENDED_COMMANDS: readonly string[] = [
 function buildAllowlist(): readonly string[] {
   const extra = process.env.DIVIOPS_WP_CLI_ALLOW?.trim();
   if (!extra) return DEFAULT_COMMANDS;
+
+  // Wildcard sentinel — convenience for trusted local-dev environments. Grants
+  // every entry in EXTENDED_COMMANDS but does NOT unlock anything beyond it
+  // (notably: `db query` stays out — see #361 Chunk B). Always emits a startup
+  // warning so the broad grant is never silent.
+  if (extra === '*' || extra === 'all') {
+    console.warn(
+      `[diviops] DIVIOPS_WP_CLI_ALLOW="${extra}" — granting ALL ${EXTENDED_COMMANDS.length} extended commands. Intended for trusted local-dev only.`,
+    );
+    return [...DEFAULT_COMMANDS, ...EXTENDED_COMMANDS];
+  }
 
   const requested = extra.split(',').map((s) => s.trim()).filter(Boolean);
   const granted = new Set<string>(DEFAULT_COMMANDS);
