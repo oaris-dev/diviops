@@ -3,7 +3,7 @@
  * Plugin Name: DiviOps Agent
  * Plugin URI: https://github.com/oaris-dev/diviops
  * Description: REST API bridge for DiviOps — connects Claude Code to your Divi 5 site for AI-powered page building and design management.
- * Version: 1.0.0-beta.36
+ * Version: 1.0.0-beta.38
  * Author: oaris.de
  * Author URI: https://oaris.de
  * Text Domain: diviops-agent
@@ -22,7 +22,7 @@ class DiviOps_Agent {
 	/**
 	 * Plugin version — used for handshake compatibility checks.
 	 */
-	const VERSION = '1.0.0-beta.36';
+	const VERSION = '1.0.0-beta.38';
 
 	/**
 	 * Minimum MCP server version this plugin is compatible with.
@@ -307,6 +307,16 @@ class DiviOps_Agent {
 			],
 		] );
 
+		register_rest_route( self::REST_NAMESPACE, '/global-color-delete', [
+			'methods'             => 'POST',
+			'callback'            => [ __CLASS__, 'delete_global_color' ],
+			'permission_callback' => [ __CLASS__, 'check_admin_permission' ],
+			'args'                => [
+				'gcid'  => [ 'required' => true,  'type' => 'string' ],
+				'force' => [ 'required' => false, 'type' => 'boolean', 'default' => false ],
+			],
+		] );
+
 		register_rest_route( self::REST_NAMESPACE, '/theme-options', [
 			'methods'             => 'POST',
 			'callback'            => [ __CLASS__, 'update_theme_options' ],
@@ -348,6 +358,7 @@ class DiviOps_Agent {
 				'preset_id' => [ 'required' => true, 'type' => 'string' ],
 				'name'      => [ 'required' => false, 'type' => 'string' ],
 				'attrs'     => [ 'required' => false, 'type' => 'object' ],
+				'priority'  => [ 'required' => false, 'type' => 'integer' ],
 			],
 		] );
 
@@ -372,6 +383,8 @@ class DiviOps_Agent {
 				'group_name'        => [ 'required' => false, 'type' => 'string' ],
 				'group_id'          => [ 'required' => false, 'type' => 'string' ],
 				'primary_attr_name' => [ 'required' => false, 'type' => 'string' ],
+				'make_default'      => [ 'required' => false, 'type' => 'boolean', 'default' => false ],
+				'priority'          => [ 'required' => false, 'type' => 'integer' ],
 			],
 		] );
 
@@ -412,6 +425,16 @@ class DiviOps_Agent {
 			'callback'            => [ __CLASS__, 'preset_scan_orphans' ],
 			// Admin-only: response includes page IDs + titles correlated to preset refs — inventory-leak risk.
 			'permission_callback' => [ __CLASS__, 'check_admin_permission' ],
+		] );
+
+		register_rest_route( self::REST_NAMESPACE, '/preset-set-default', [
+			'methods'             => 'POST',
+			'callback'            => [ __CLASS__, 'preset_set_default' ],
+			'permission_callback' => [ __CLASS__, 'check_admin_permission' ],
+			'args'                => [
+				'preset_id' => [ 'required' => true,  'type' => 'string' ],
+				'unset'     => [ 'required' => false, 'type' => 'boolean', 'default' => false ],
+			],
 		] );
 
 		// ── Library Operations ───────────────────────────────────────
@@ -696,6 +719,66 @@ class DiviOps_Agent {
 					'type'        => 'string',
 					'description' => 'Where to place the source relative to the target: "before" or "after"',
 					'enum'        => [ 'before', 'after' ],
+				],
+			],
+		] );
+
+		// Module state: lock / unlock / clone. Targeting follows the same
+		// label/match_text/auto_index pattern as update_module so callers reuse
+		// the same mental model.
+		register_rest_route( self::REST_NAMESPACE, '/page/(?P<id>\d+)/lock-module', [
+			'methods'             => 'POST',
+			'callback'            => [ __CLASS__, 'lock_module' ],
+			'permission_callback' => [ __CLASS__, 'check_write_permission' ],
+			'args'                => [
+				'id'         => [ 'required' => true ],
+				'label'      => [ 'type' => 'string' ],
+				'match_text' => [ 'type' => 'string' ],
+				'auto_index' => [ 'type' => 'string' ],
+				'occurrence' => [
+					'default'           => 1,
+					'type'              => 'integer',
+					'sanitize_callback' => 'absint',
+				],
+			],
+		] );
+
+		register_rest_route( self::REST_NAMESPACE, '/page/(?P<id>\d+)/unlock-module', [
+			'methods'             => 'POST',
+			'callback'            => [ __CLASS__, 'unlock_module' ],
+			'permission_callback' => [ __CLASS__, 'check_write_permission' ],
+			'args'                => [
+				'id'         => [ 'required' => true ],
+				'label'      => [ 'type' => 'string' ],
+				'match_text' => [ 'type' => 'string' ],
+				'auto_index' => [ 'type' => 'string' ],
+				'occurrence' => [
+					'default'           => 1,
+					'type'              => 'integer',
+					'sanitize_callback' => 'absint',
+				],
+			],
+		] );
+
+		register_rest_route( self::REST_NAMESPACE, '/page/(?P<id>\d+)/clone-module', [
+			'methods'             => 'POST',
+			'callback'            => [ __CLASS__, 'clone_module' ],
+			'permission_callback' => [ __CLASS__, 'check_write_permission' ],
+			'args'                => [
+				'id'         => [ 'required' => true ],
+				'label'      => [ 'type' => 'string' ],
+				'match_text' => [ 'type' => 'string' ],
+				'auto_index' => [ 'type' => 'string' ],
+				'occurrence' => [
+					'default'           => 1,
+					'type'              => 'integer',
+					'sanitize_callback' => 'absint',
+				],
+				'position'   => [
+					'default'     => 'after',
+					'type'        => 'string',
+					'enum'        => [ 'before', 'after' ],
+					'description' => 'Place the clone "before" or "after" the source module within its parent.',
 				],
 			],
 		] );
@@ -1047,8 +1130,105 @@ class DiviOps_Agent {
 	}
 
 	/**
-	 * Search icons by keyword. Returns matching icons with their unicode, type, and weight.
+	 * The 5 customizer-bound default global color IDs. These are managed
+	 * via WP Customizer and writing to them through the registry creates
+	 * an entry that Divi's customizer-merge path then hides from registry
+	 * reads (see GlobalData::get_global_colors at GlobalData.php:341 — it
+	 * removes customizer-bound colors from the returned set). A write to
+	 * one of these via MCP would silently no-op from a UI perspective.
 	 */
+	private static function customizer_locked_color_ids(): array {
+		return [
+			'gcid-primary-color',
+			'gcid-secondary-color',
+			'gcid-heading-color',
+			'gcid-body-color',
+			'gcid-link-color',
+		];
+	}
+
+	/**
+	 * Validate a global-color ID and return the canonical form, or a
+	 * WP_Error explaining why it was rejected.
+	 *
+	 * Auto-prefixes `gcid-` if missing (caller convenience). Then enforces
+	 * Divi's downstream regex constraints:
+	 *
+	 * - GlobalData.php:760 extracts IDs via `/--gcid-([0-9a-z-]*)/` so
+	 *   anything outside `[0-9a-z-]` after the prefix breaks CSS-variable
+	 *   resolution silently (id stored, $variable() lookup fails).
+	 * - Style.php:935 emits CSS variable names directly from the ID so a
+	 *   long ID generates a long var name; cap at 80 chars (matches the
+	 *   uuid4 default).
+	 * - Customizer-bound defaults (see customizer_locked_color_ids) are
+	 *   rejected to prevent the silent registry-vs-customizer mismatch
+	 *   between Divi's $variable() resolver and the Theme Customizer.
+	 *
+	 * Empty input returns the canonical generated form `gcid-<uuid4>`.
+	 */
+	private static function validate_global_color_id( $raw, bool $allow_customizer_locked = false ) {
+		$raw = sanitize_text_field( (string) $raw );
+		if ( '' === $raw ) {
+			return 'gcid-' . wp_generate_uuid4();
+		}
+		// Auto-prefix.
+		$id = ( 0 === strpos( $raw, 'gcid-' ) ) ? $raw : 'gcid-' . $raw;
+
+		// Reserved customizer-bound defaults.
+		if ( ! $allow_customizer_locked && in_array( $id, self::customizer_locked_color_ids(), true ) ) {
+			return new WP_Error(
+				'reserved_id',
+				sprintf( "'%s' is bound to the WP Customizer (Theme Options → General → Color Schemes). Writes to it via the registry are hidden from VB. Edit through Customizer instead.", $id ),
+				[ 'status' => 403 ]
+			);
+		}
+
+		// Charset + length: the suffix after `gcid-` must match
+		// `[0-9a-z-]{1,80}` (Divi's extraction regex + sane upper bound).
+		$suffix = substr( $id, 5 );
+		if ( ! preg_match( '/^[0-9a-z-]{1,80}$/', $suffix ) ) {
+			return new WP_Error(
+				'invalid_id',
+				sprintf( "Color ID '%s' contains characters outside the allowed [0-9a-z-] set, or exceeds 80 chars after the 'gcid-' prefix. Divi's CSS-variable resolution at GlobalData.php:760 strips non-matching IDs silently.", $id ),
+				[ 'status' => 400 ]
+			);
+		}
+		return $id;
+	}
+
+	/**
+	 * Sanitize a CSS color value for the global-colors registry.
+	 *
+	 * Accepts hex (#rgb/#rrggbb/#rrggbbaa) and CSS rgb()/rgba()/hsl()/hsla()
+	 * functional notation — Divi's stock palette uses both (verified via live
+	 * read: gcid-4907c8d4 stores 'rgba(0,0,0,0.3)'). `sanitize_hex_color()` is
+	 * too restrictive on its own; we accept functional notation after a
+	 * shape check.
+	 *
+	 * Returns the sanitized color string, or `null` if the input is empty or
+	 * doesn't match either accepted shape. Callers should treat null as
+	 * invalid input and surface a 400 to the user instead of silently writing
+	 * a placeholder color into the palette.
+	 */
+	private static function sanitize_color( $raw ): ?string {
+		$raw = trim( (string) $raw );
+		if ( '' === $raw ) {
+			return null;
+		}
+		// Hex fast-path.
+		$hex = sanitize_hex_color( $raw );
+		if ( null !== $hex && '' !== $hex ) {
+			return $hex;
+		}
+		// Functional CSS color (rgb/rgba/hsl/hsla) — accept the shape, then
+		// generic sanitize for any control characters.
+		if ( preg_match( '/^(rgba?|hsla?)\s*\(\s*[0-9.\-,%\s\/]+\s*\)$/i', $raw ) ) {
+			return sanitize_text_field( $raw );
+		}
+		// Reject anything else.
+		return null;
+	}
+
 	/**
 	 * Update global colors in Divi's VB settings.
 	 * Colors array: [{"id":"gcid-my-color","label":"My Color","color":"#ff0000"}]
@@ -1082,32 +1262,86 @@ class DiviOps_Agent {
 			$color_map = $existing;
 		}
 
-		// Add/update new colors. Offset past Divi's customizer-bound colors —
-		// see create_variable for the full rationale. Seed from max existing
-		// order (not count) to stay stable across gaps from deletions.
-		$max_existing = 0;
-		if ( ! empty( $color_map ) ) {
-			$orders = array_column( $color_map, 'order' );
-			if ( ! empty( $orders ) ) {
-				$max_existing = max( array_map( 'intval', $orders ) );
-			}
-		}
+		// Add/update new colors. Shape mirrors Divi's canonical global-color
+		// payload (verified via GlobalDataController:46-69 + live-read of stock
+		// Divi-written colors): {color, folder, label, lastUpdated, status,
+		// usedInPosts}. Divi's `sanitize_global_colors_data` accepts arbitrary
+		// fields generically (no schema enforcement beyond gcid-* id + non-empty
+		// color), so extra/missing fields don't break — but matching the
+		// canonical shape keeps our writes indistinguishable from VB-written
+		// ones and avoids surprising future Divi versions that may tighten the
+		// schema. `usedInPosts` defaults to empty (Divi populates it on save);
+		// `folder` defaults to '' (no folder).
+		//
+		// Merge semantics: when an `id` is supplied for an existing color,
+		// PRESERVE existing fields not explicitly overwritten by the input.
+		// This makes single-field updates (e.g. only `color`) safe — the
+		// caller doesn't have to re-supply label/folder/status to keep them.
+		// New colors (no id, or unknown id) seed defaults from scratch.
 		$added = 0;
-		$order = max( self::get_customizer_color_count(), $max_existing ) + 1;
-		foreach ( $new_colors as $c ) {
+		foreach ( $new_colors as $idx => $c ) {
 			if ( ! is_array( $c ) ) {
 				continue;
 			}
-			$id    = sanitize_text_field( $c['id'] ?? 'gcid-' . wp_generate_password( 8, false ) );
-			$label = sanitize_text_field( $c['label'] ?? $id );
-			$color = sanitize_hex_color( $c['color'] ?? '#000000' ) ?: '#000000';
+			$id = self::validate_global_color_id( $c['id'] ?? '' );
+			if ( is_wp_error( $id ) ) {
+				// Annotate with the colors[] index so batch callers can
+				// identify which entry failed validation.
+				$err = $id;
+				$err_data = (array) $err->get_error_data();
+				$err_data['colors_index'] = $idx;
+				return new WP_Error( $err->get_error_code(), sprintf( 'colors[%d]: %s', $idx, $err->get_error_message() ), $err_data );
+			}
+			$existing = isset( $color_map[ $id ] ) && is_array( $color_map[ $id ] )
+				? $color_map[ $id ]
+				: [];
+
+			// Color: validate before write. New entries (no existing) MUST have
+			// a valid color; updates (existing entry) can omit color to keep it.
+			if ( isset( $c['color'] ) ) {
+				$color = self::sanitize_color( $c['color'] );
+				if ( null === $color ) {
+					return new WP_Error(
+						'invalid_color',
+						sprintf( "colors[%d].color is not a valid CSS color (hex or rgba/hsla notation expected)", $idx ),
+						[ 'status' => 400, 'received' => $c['color'] ]
+					);
+				}
+			} elseif ( ! empty( $existing ) ) {
+				$color = $existing['color'] ?? '#000000';
+			} else {
+				return new WP_Error(
+					'missing_color',
+					sprintf( "colors[%d] is missing required `color` field for new entry", $idx ),
+					[ 'status' => 400 ]
+				);
+			}
+
+			$label = array_key_exists( 'label', $c )
+				? sanitize_text_field( $c['label'] )
+				: ( $existing['label'] ?? '' );
+
+			$folder = array_key_exists( 'folder', $c )
+				? sanitize_text_field( $c['folder'] )
+				: ( $existing['folder'] ?? '' );
+
+			$status_raw = $c['status'] ?? ( $existing['status'] ?? 'active' );
+			$status     = in_array( $status_raw, [ 'active', 'archived' ], true ) ? $status_raw : 'active';
+
+			// Preserve usedInPosts on update — Divi tracks where each color is
+			// referenced; our writer should never clobber that index. Read from
+			// existing entry if present, else seed empty.
+			$used_in_posts = isset( $existing['usedInPosts'] ) && is_array( $existing['usedInPosts'] )
+				? $existing['usedInPosts']
+				: [];
 
 			$color_map[ $id ] = [
 				'color'       => $color,
-				'status'      => 'active',
+				'folder'      => $folder,
 				'label'       => $label,
-				'order'       => (string) $order++,
 				'lastUpdated' => gmdate( 'Y-m-d\TH:i:s.000\Z' ),
+				'status'      => $status,
+				'usedInPosts' => $used_in_posts,
 			];
 			$added++;
 		}
@@ -1121,6 +1355,91 @@ class DiviOps_Agent {
 			'count'   => count( $color_map ),
 			'added'   => $added,
 			'colors'  => $color_map,
+		] );
+	}
+
+	/**
+	 * Delete a global color from the registry by gcid.
+	 *
+	 * Mirrors the safety pattern of `delete_variable`: refuses to delete the
+	 * 5 customizer-bound default colors (`gcid-primary-color`,
+	 * `gcid-secondary-color`, `gcid-heading-color`, `gcid-body-color`,
+	 * `gcid-link-color`) since those are managed via WP Customizer and
+	 * removing them from the registry would break theme inheritance even if
+	 * the customizer values stay set.
+	 *
+	 * Soft-warns when a color is referenced by posts (per its `usedInPosts`
+	 * field) — caller must pass `force=true` to delete anyway. Note the
+	 * `usedInPosts` index is maintained by Divi on save, so a color used by
+	 * a page that was never opened in VB after the color was assigned via MCP
+	 * may not be tracked there. The check is best-effort, not authoritative.
+	 */
+	public static function delete_global_color( $request ) {
+		if ( ! current_user_can( 'manage_options' ) ) {
+			return new WP_Error( 'forbidden', 'Requires admin capability', [ 'status' => 403 ] );
+		}
+
+		$gcid  = sanitize_text_field( $request->get_param( 'gcid' ) );
+		$force = (bool) $request->get_param( 'force' );
+
+		if ( '' === $gcid || 0 !== strpos( $gcid, 'gcid-' ) ) {
+			return new WP_Error( 'invalid_gcid', 'gcid must be a non-empty string starting with "gcid-"', [ 'status' => 400 ] );
+		}
+
+		// Customizer-bound defaults — not deletable via MCP regardless of
+		// `force`. Removing them from the registry breaks Divi's theme
+		// inheritance because the customizer keeps the value but the
+		// registry lookup falls through.
+		if ( in_array( $gcid, self::customizer_locked_color_ids(), true ) ) {
+			return new WP_Error(
+				'customizer_locked',
+				sprintf( "'%s' is bound to the WP Customizer (Theme Options → General → Color Schemes) and cannot be deleted via MCP. Edit it through Customizer instead.", $gcid ),
+				[ 'status' => 403 ]
+			);
+		}
+
+		$raw         = et_get_option( 'et_global_data' );
+		$global_data = ! empty( $raw ) ? maybe_unserialize( $raw ) : [];
+		if ( ! is_array( $global_data ) ) {
+			$global_data = [];
+		}
+		$colors = isset( $global_data['global_colors'] ) && is_array( $global_data['global_colors'] )
+			? $global_data['global_colors']
+			: [];
+
+		if ( ! isset( $colors[ $gcid ] ) ) {
+			return new WP_Error( 'not_found', "Color '{$gcid}' not found in registry", [ 'status' => 404 ] );
+		}
+
+		$color = $colors[ $gcid ];
+		$used  = isset( $color['usedInPosts'] ) && is_array( $color['usedInPosts'] ) ? $color['usedInPosts'] : [];
+
+		// Live-reference soft-block (best-effort — see method docblock).
+		if ( ! $force && ! empty( $used ) ) {
+			return new WP_Error(
+				'has_references',
+				sprintf(
+					"Color '%s' has %d live reference(s) tracked by Divi. Pass force=true to delete anyway; orphan refs will render as invalid CSS until the pages are re-saved through VB.",
+					$gcid,
+					count( $used )
+				),
+				[ 'status' => 409, 'used_in_posts' => $used ]
+			);
+		}
+
+		unset( $colors[ $gcid ] );
+		$global_data['global_colors'] = $colors;
+		et_update_option( 'et_global_data', $global_data );
+
+		return rest_ensure_response( [
+			'success' => true,
+			'deleted' => [
+				'gcid'          => $gcid,
+				'color'         => $color['color'] ?? '',
+				'label'         => $color['label'] ?? '',
+				'used_in_posts' => $used,
+			],
+			'message' => "Color '{$gcid}' deleted.",
 		] );
 	}
 
@@ -3493,9 +3812,10 @@ class DiviOps_Agent {
 	 * Update a specific preset by ID.
 	 */
 	public static function preset_update( $request ) {
-		$preset_id = sanitize_text_field( $request->get_param( 'preset_id' ) );
-		$new_name  = $request->get_param( 'name' );
-		$new_attrs = $request->get_param( 'attrs' );
+		$preset_id    = sanitize_text_field( $request->get_param( 'preset_id' ) );
+		$new_name     = $request->get_param( 'name' );
+		$new_attrs    = $request->get_param( 'attrs' );
+		$new_priority = $request->get_param( 'priority' );
 
 		$d5    = self::get_d5_presets();
 		$found = false;
@@ -3533,6 +3853,12 @@ class DiviOps_Agent {
 					$preset['attrs']       = $new_attrs;
 					$preset['styleAttrs']  = $new_attrs;
 					$preset['renderAttrs'] = $new_attrs;
+				}
+				if ( null !== $new_priority && is_numeric( $new_priority ) ) {
+					// Controls stacked-preset cascade order in Divi's render path
+					// (GlobalPreset::get_merged_attrs sorts ascending — higher priority
+					// merged later, wins). Default in Divi is 10 when omitted.
+					$preset['priority'] = (int) $new_priority;
 				}
 
 				$preset['updated'] = time() * 1000;
@@ -3609,6 +3935,78 @@ class DiviOps_Agent {
 	}
 
 	/**
+	 * Set or clear the per-module/group default preset pointer.
+	 *
+	 * Walks both buckets to locate the preset and updates
+	 * `$d5[type][bucket_key]['default']` to the preset's UUID. With
+	 * `unset=true`, clears the default pointer to '' regardless of whether
+	 * the preset is currently the default — set/clear semantics are explicit
+	 * via the flag, not derived from current state.
+	 *
+	 * Defaults apply to NEW instances only; existing modules keep their
+	 * current preset bindings. Use preset_reassign for retroactive swaps.
+	 */
+	public static function preset_set_default( $request ) {
+		$preset_id = sanitize_text_field( $request->get_param( 'preset_id' ) );
+		$do_unset  = rest_sanitize_boolean( $request->get_param( 'unset' ) ?? false );
+
+		$d5    = self::get_d5_presets();
+		$found = false;
+
+		foreach ( [ 'module', 'group' ] as $type ) {
+			if ( ! isset( $d5[ $type ] ) ) {
+				continue;
+			}
+			foreach ( $d5[ $type ] as $mod => &$info ) {
+				if ( ! is_array( $info ) ) {
+					$info = (array) $info;
+				}
+				if ( ! isset( $info['items'][ $preset_id ] ) ) {
+					continue;
+				}
+
+				$preset         = (array) $info['items'][ $preset_id ];
+				$was_default_id = $info['default'] ?? '';
+				$new_default_id = $do_unset ? '' : $preset_id;
+				$info['default'] = $new_default_id;
+
+				$found = [
+					'id'             => $preset_id,
+					'module'         => $mod,
+					'type'           => $type,
+					'name'           => $preset['name'] ?? '',
+					'was_default_id' => $was_default_id,
+					'new_default_id' => $new_default_id,
+					'is_default'     => '' !== $new_default_id,
+				];
+				// Unset the live reference before exiting the nested loop —
+				// `break 2;` skips the post-loop `unset($info)` that PHP
+				// otherwise needs for foreach-by-reference cleanup. Defensive
+				// against future edits that reuse `$info` later in this method.
+				unset( $info );
+				break 2;
+			}
+			unset( $info );
+		}
+
+		if ( ! $found ) {
+			return new WP_Error( 'not_found', "Preset '{$preset_id}' not found", [ 'status' => 404 ] );
+		}
+
+		self::save_d5_presets( $d5 );
+
+		$msg = $do_unset
+			? "Default preset cleared for {$found['type']}/{$found['module']}."
+			: "Preset '{$preset_id}' is now the default for {$found['type']}/{$found['module']}.";
+
+		return rest_ensure_response( [
+			'success' => true,
+			'preset'  => $found,
+			'message' => $msg,
+		] );
+	}
+
+	/**
 	 * Create a new preset in the D5 registry.
 	 *
 	 * For type='module': writes to $d5['module'][module_name]['items'][uuid].
@@ -3622,6 +4020,8 @@ class DiviOps_Agent {
 		$group_name   = sanitize_text_field( $request->get_param( 'group_name' ) ?? '' );
 		$group_id     = sanitize_text_field( $request->get_param( 'group_id' ) ?? '' );
 		$primary_attr = sanitize_text_field( $request->get_param( 'primary_attr_name' ) ?? '' );
+		$make_default = rest_sanitize_boolean( $request->get_param( 'make_default' ) ?? false );
+		$priority     = $request->get_param( 'priority' );
 
 		if ( '' === $module_name || '' === $name || ! is_array( $attrs ) ) {
 			return new WP_Error( 'bad_request', 'module_name, name, attrs are required', [ 'status' => 400 ] );
@@ -3656,6 +4056,9 @@ class DiviOps_Agent {
 		if ( defined( 'ET_BUILDER_VERSION' ) && '' !== ET_BUILDER_VERSION ) {
 			$preset['version'] = ET_BUILDER_VERSION;
 		}
+		if ( null !== $priority && is_numeric( $priority ) ) {
+			$preset['priority'] = (int) $priority;
+		}
 
 		if ( 'group' === $type ) {
 			$preset['groupName'] = $group_name;
@@ -3676,9 +4079,14 @@ class DiviOps_Agent {
 		$d5[ $bucket ][ $bucket_key ]['default']         = $d5[ $bucket ][ $bucket_key ]['default'] ?? '';
 		$d5[ $bucket ][ $bucket_key ]['items'][ $uid ]   = $preset;
 
+		$was_default_id = $d5[ $bucket ][ $bucket_key ]['default'];
+		if ( $make_default ) {
+			$d5[ $bucket ][ $bucket_key ]['default'] = $uid;
+		}
+
 		self::save_d5_presets( $d5 );
 
-		return rest_ensure_response( [
+		$response = [
 			'success' => true,
 			'preset'  => [
 				'id'          => $uid,
@@ -3687,7 +4095,12 @@ class DiviOps_Agent {
 				'type'        => $type,
 				'bucket_key'  => $bucket_key,
 			],
-		] );
+		];
+		if ( $make_default ) {
+			$response['preset']['is_default']     = true;
+			$response['preset']['was_default_id'] = $was_default_id;
+		}
+		return rest_ensure_response( $response );
 	}
 
 	/**
@@ -5413,6 +5826,418 @@ class DiviOps_Agent {
 			}
 		}
 		return $count;
+	}
+
+	// ── Module state: lock / unlock / clone ────────────────────────
+
+	/**
+	 * Walk a parsed-blocks tree and apply $mutator to the matched block (or
+	 * its parent siblings array / parent block) in place. PHP's foreach-by-
+	 * reference + recursion + returning references is fragile, so we use a
+	 * callback pattern: the mutator runs INSIDE the recursion, with the
+	 * actual `&$block`, `&$siblings`, and `&$parent_block` references live.
+	 *
+	 * Mutator signature:
+	 *   `function (array &$siblings, int $index, array &$block, ?array &$parent_block) : void`
+	 *
+	 * The optional `$parent_block` parameter is critical for clone-style
+	 * operations: WordPress's `serialize_blocks()` only emits as many
+	 * innerBlocks as there are `null` placeholders in the parent's
+	 * `innerContent` array — so a clone that splices into `siblings`
+	 * (= `parent_block.innerBlocks`) MUST also splice a `null` into
+	 * `parent_block.innerContent`. For top-level blocks (no parent), the
+	 * parameter is null and serialize uses the array directly.
+	 *
+	 * Modes:
+	 *   - 'label':       match attrs.module.meta.adminLabel.desktop.value === $needle
+	 *   - 'match_text':  case-insensitive substring search of serialized block
+	 *   - 'auto_index':  "type:N" format (e.g. "text:5") — Nth occurrence of
+	 *                    block name `divi/{type}` in document order
+	 *
+	 * Returns true if a match was found and the mutator ran; false otherwise.
+	 */
+	private static function walk_and_mutate(
+		array &$blocks,
+		string $mode,
+		string $needle,
+		int $occurrence,
+		array &$counters,
+		int &$match_count,
+		callable $mutator,
+		?array &$parent_block = null
+	) {
+		$count = count( $blocks );
+		// Index by counter — must operate on $blocks[$i] not a foreach reference,
+		// because array_splice inside the mutator would shift indices and
+		// invalidate the foreach iterator.
+		for ( $i = 0; $i < $count; $i++ ) {
+			$block = &$blocks[ $i ];
+			$name  = isset( $block['blockName'] ) ? (string) $block['blockName'] : '';
+			$attrs = isset( $block['attrs'] ) && is_array( $block['attrs'] ) ? $block['attrs'] : [];
+
+			// Auto-index counter: count every block of each type in document order.
+			if ( 0 === strpos( $name, 'divi/' ) ) {
+				$short = substr( $name, 5 );
+				if ( ! isset( $counters[ $short ] ) ) {
+					$counters[ $short ] = 0;
+				}
+				$counters[ $short ]++;
+			}
+
+			// For 'match_text' mode, recurse FIRST (bottom-up search) so we
+			// match the most specific block containing the text, not the outer
+			// container that also contains it via descendants. Other modes use
+			// document-order top-down which gives the auto_index counter the
+			// same ordering semantics as get_page_layout.
+			if ( 'match_text' === $mode && isset( $block['innerBlocks'] ) && is_array( $block['innerBlocks'] ) && ! empty( $block['innerBlocks'] ) ) {
+				if ( self::walk_and_mutate(
+					$block['innerBlocks'], $mode, $needle, $occurrence, $counters, $match_count, $mutator, $block
+				) ) {
+					unset( $block );
+					return true;
+				}
+			}
+
+			$matched = false;
+			if ( 'label' === $mode ) {
+				$label = $attrs['module']['meta']['adminLabel']['desktop']['value'] ?? '';
+				if ( $label === $needle ) {
+					$match_count++;
+					if ( $match_count === $occurrence ) {
+						$matched = true;
+					}
+				}
+			} elseif ( 'auto_index' === $mode ) {
+				$parts = explode( ':', $needle );
+				if ( 2 === count( $parts ) && '' !== $parts[0] && ctype_digit( $parts[1] ) ) {
+					$ai_type = $parts[0];
+					$ai_n    = (int) $parts[1];
+					$short   = 0 === strpos( $name, 'divi/' ) ? substr( $name, 5 ) : '';
+					if ( $short === $ai_type && ( $counters[ $short ] ?? 0 ) === $ai_n ) {
+						$matched = true;
+					}
+				}
+			} elseif ( 'match_text' === $mode ) {
+				// At this point recursion above already returned false for this
+				// branch, so no descendant matched. Now check ONLY the current
+				// block's own opening-comment markup, NOT its descendants.
+				//
+				// `serialize_block($block)` walks innerBlocks recursively (per
+				// wp-includes/blocks.php:1717), which means a leaf match would
+				// also count every ancestor that contains it via descendants —
+				// double-counting that breaks the `occurrence` parameter and
+				// can let `occurrence:2` mutate the parent container instead of
+				// returning no_match.
+				//
+				// Workaround: temporarily strip innerBlocks/innerContent before
+				// serializing, so we get only this block's own opening comment
+				// (with attrs encoded). For self-closing leaf blocks this is
+				// already the full markup; for containers, it's just the
+				// `<!-- wp:divi/section ... -->` comment line, which won't
+				// contain descendant text content like "Your content goes here".
+				$shallow = $block;
+				$shallow['innerBlocks']  = [];
+				$shallow['innerContent'] = [];
+				if ( false !== stripos( serialize_block( $shallow ), $needle ) ) {
+					$match_count++;
+					if ( $match_count === $occurrence ) {
+						$matched = true;
+					}
+				}
+			}
+
+			if ( $matched ) {
+				$mutator( $blocks, $i, $block, $parent_block );
+				unset( $block );
+				return true;
+			}
+
+			// For non-'match_text' modes, recurse AFTER the check (top-down
+			// document order). Already done above for match_text.
+			if ( 'match_text' !== $mode && isset( $block['innerBlocks'] ) && is_array( $block['innerBlocks'] ) && ! empty( $block['innerBlocks'] ) ) {
+				if ( self::walk_and_mutate(
+					$block['innerBlocks'], $mode, $needle, $occurrence, $counters, $match_count, $mutator, $block
+				) ) {
+					unset( $block );
+					return true;
+				}
+			}
+			unset( $block );
+		}
+		return false;
+	}
+
+	/**
+	 * Resolve targeting params from the request to a (mode, needle, occurrence)
+	 * triple. Returns a WP_Error on missing/invalid params.
+	 */
+	private static function resolve_module_target( $request ) {
+		$label      = trim( (string) $request->get_param( 'label' ) );
+		$match_text = trim( (string) $request->get_param( 'match_text' ) );
+		$auto_index = trim( (string) $request->get_param( 'auto_index' ) );
+		$occurrence = max( 1, absint( $request->get_param( 'occurrence' ) ?? 1 ) );
+
+		if ( '' === $label && '' === $match_text && '' === $auto_index ) {
+			return new WP_Error( 'missing_target', 'One of "label", "match_text", or "auto_index" is required', [ 'status' => 400 ] );
+		}
+
+		$mode   = '' !== $auto_index ? 'auto_index' : ( '' !== $label ? 'label' : 'match_text' );
+		$needle = 'auto_index' === $mode ? $auto_index : ( 'label' === $mode ? $label : $match_text );
+		return [ 'mode' => $mode, 'needle' => $needle, 'occurrence' => $occurrence ];
+	}
+
+	/**
+	 * Load post + permission check shared by lock/unlock/clone. Returns
+	 * a [post, blocks] pair or WP_Error.
+	 */
+	private static function load_post_for_module_op( $request ) {
+		$post_id = absint( $request['id'] );
+		$post    = get_post( $post_id );
+		if ( ! $post ) {
+			return new WP_Error( 'not_found', 'Page not found', [ 'status' => 404 ] );
+		}
+		if ( ! current_user_can( 'edit_post', $post_id ) ) {
+			return new WP_Error( 'forbidden', 'Cannot edit this post', [ 'status' => 403 ] );
+		}
+		return [ 'post' => $post, 'blocks' => parse_blocks( $post->post_content ) ];
+	}
+
+	/**
+	 * Save mutated blocks back to the post. Returns true on success or a
+	 * WP_Error on failure.
+	 */
+	private static function save_mutated_blocks( $post, array $blocks ) {
+		$new_content = serialize_blocks( $blocks );
+		$result      = wp_update_post(
+			[ 'ID' => $post->ID, 'post_content' => wp_slash( $new_content ) ],
+			true
+		);
+		if ( is_wp_error( $result ) ) {
+			return $result;
+		}
+		return true;
+	}
+
+	/**
+	 * Lock a module so VB users cannot edit it. Sets `attrs.locked` to
+	 * `{desktop: {value: "on"}}` per Divi's per-breakpoint convention
+	 * (verified via VB-save probe). Locked modules render normally on
+	 * frontend; only VB-side editing is gated.
+	 */
+	public static function lock_module( $request ) {
+		$target = self::resolve_module_target( $request );
+		if ( is_wp_error( $target ) ) {
+			return $target;
+		}
+		$loaded = self::load_post_for_module_op( $request );
+		if ( is_wp_error( $loaded ) ) {
+			return $loaded;
+		}
+
+		$blocks            = $loaded['blocks'];
+		$counters          = [];
+		$match_count = 0;
+		$captured          = [ 'block_name' => '', 'admin_label' => '', 'was_locked' => false ];
+
+		$found = self::walk_and_mutate(
+			$blocks, $target['mode'], $target['needle'], $target['occurrence'],
+			$counters, $match_count,
+			function ( array &$siblings, int $i, array &$block, ?array &$parent_block ) use ( &$captured ) {
+				if ( ! isset( $block['attrs'] ) || ! is_array( $block['attrs'] ) ) {
+					$block['attrs'] = [];
+				}
+				$captured['was_locked']  = isset( $block['attrs']['locked']['desktop']['value'] )
+					&& 'on' === $block['attrs']['locked']['desktop']['value'];
+				$captured['block_name']  = $block['blockName'] ?? '';
+				$captured['admin_label'] = $block['attrs']['module']['meta']['adminLabel']['desktop']['value'] ?? '';
+				$block['attrs']['locked'] = [ 'desktop' => [ 'value' => 'on' ] ];
+			}
+		);
+
+		if ( ! $found ) {
+			return new WP_Error( 'no_match', sprintf( "No module found matching '%s' (mode=%s)", $target['needle'], $target['mode'] ), [ 'status' => 404 ] );
+		}
+
+		$saved = self::save_mutated_blocks( $loaded['post'], $blocks );
+		if ( is_wp_error( $saved ) ) {
+			return $saved;
+		}
+
+		return rest_ensure_response( [
+			'success' => true,
+			'module'  => array_merge( $captured, [ 'is_locked' => true ] ),
+			'message' => $captured['was_locked'] ? 'Module was already locked (re-confirmed).' : 'Module locked.',
+		] );
+	}
+
+	/**
+	 * Unlock a module by removing `attrs.locked` entirely. Matches Divi VB's
+	 * convention: unlocked = attribute absent (NOT `{value: "off"}`). VB
+	 * doesn't write a falsy value on unlock — it removes the field.
+	 */
+	public static function unlock_module( $request ) {
+		$target = self::resolve_module_target( $request );
+		if ( is_wp_error( $target ) ) {
+			return $target;
+		}
+		$loaded = self::load_post_for_module_op( $request );
+		if ( is_wp_error( $loaded ) ) {
+			return $loaded;
+		}
+
+		$blocks            = $loaded['blocks'];
+		$counters          = [];
+		$match_count = 0;
+		$captured          = [ 'block_name' => '', 'admin_label' => '', 'was_locked' => false ];
+
+		$found = self::walk_and_mutate(
+			$blocks, $target['mode'], $target['needle'], $target['occurrence'],
+			$counters, $match_count,
+			function ( array &$siblings, int $i, array &$block, ?array &$parent_block ) use ( &$captured ) {
+				if ( ! isset( $block['attrs'] ) || ! is_array( $block['attrs'] ) ) {
+					$block['attrs'] = [];
+				}
+				$captured['was_locked']  = isset( $block['attrs']['locked']['desktop']['value'] )
+					&& 'on' === $block['attrs']['locked']['desktop']['value'];
+				$captured['block_name']  = $block['blockName'] ?? '';
+				$captured['admin_label'] = $block['attrs']['module']['meta']['adminLabel']['desktop']['value'] ?? '';
+				unset( $block['attrs']['locked'] );
+			}
+		);
+
+		if ( ! $found ) {
+			return new WP_Error( 'no_match', sprintf( "No module found matching '%s' (mode=%s)", $target['needle'], $target['mode'] ), [ 'status' => 404 ] );
+		}
+
+		$saved = self::save_mutated_blocks( $loaded['post'], $blocks );
+		if ( is_wp_error( $saved ) ) {
+			return $saved;
+		}
+
+		return rest_ensure_response( [
+			'success' => true,
+			'module'  => array_merge( $captured, [ 'is_locked' => false ] ),
+			'message' => $captured['was_locked'] ? 'Module unlocked.' : 'Module was not locked (no-op).',
+		] );
+	}
+
+	/**
+	 * Clone a module by deep-copying its block JSON and inserting it next
+	 * to the source within the same parent container. `position` controls
+	 * before/after placement (default "after").
+	 *
+	 * Module IDs are reassigned by Divi at render time from the block tree
+	 * position, so the clone gets fresh IDs automatically — no need to
+	 * mint UUIDs on our side.
+	 */
+	public static function clone_module( $request ) {
+		$target = self::resolve_module_target( $request );
+		if ( is_wp_error( $target ) ) {
+			return $target;
+		}
+		$loaded = self::load_post_for_module_op( $request );
+		if ( is_wp_error( $loaded ) ) {
+			return $loaded;
+		}
+
+		$position = sanitize_key( (string) ( $request->get_param( 'position' ) ?? 'after' ) );
+		if ( ! in_array( $position, [ 'before', 'after' ], true ) ) {
+			$position = 'after';
+		}
+
+		$blocks            = $loaded['blocks'];
+		$counters          = [];
+		$match_count = 0;
+		$captured          = [ 'block_name' => '', 'admin_label' => '' ];
+
+		try {
+			$found = self::walk_and_mutate(
+				$blocks, $target['mode'], $target['needle'], $target['occurrence'],
+				$counters, $match_count,
+				function ( array &$siblings, int $i, array &$block, ?array &$parent_block ) use ( $position, &$captured ) {
+					$captured['block_name']  = $block['blockName'] ?? '';
+					$captured['admin_label'] = $block['attrs']['module']['meta']['adminLabel']['desktop']['value'] ?? '';
+					// PHP arrays-of-arrays are copy-by-value — this IS a deep clone for
+					// plain-array nodes (innerBlocks recursively included). No refs.
+					$clone     = $block;
+					$insert_at = ( 'after' === $position ) ? $i + 1 : $i;
+					array_splice( $siblings, $insert_at, 0, [ $clone ] );
+
+				// Critical: WordPress's serialize_blocks() emits innerBlocks based
+				// on `null` placeholders in the parent's `innerContent`. When the
+				// matched block lives inside another block (i.e. parent_block is
+				// not null), we must splice a null placeholder into
+				// $parent_block['innerContent'] at the SAME logical position as the
+				// new innerBlocks entry — otherwise the clone is silently dropped
+				// from the serialized output.
+				//
+				// `innerContent` is a flat array where strings are HTML chunks and
+				// nulls mark innerBlock slots. To insert at position $insert_at in
+				// `innerBlocks`, find the $insert_at'th null in innerContent and
+				// splice a new null there (or after, to preserve any pre-block HTML
+				// chunk).
+				if ( null !== $parent_block && isset( $parent_block['innerContent'] ) && is_array( $parent_block['innerContent'] ) ) {
+					$null_seen     = 0;
+					$last_null_idx = -1;
+					$ic_insert     = null;
+					foreach ( $parent_block['innerContent'] as $ic_idx => $ic_item ) {
+						if ( null === $ic_item ) {
+							if ( $null_seen === $insert_at ) {
+								// Insert at this null's position so the new placeholder
+								// pairs with the cloned innerBlock at the same logical index.
+								$ic_insert = $ic_idx;
+								break;
+							}
+							$last_null_idx = $ic_idx;
+							$null_seen++;
+						}
+					}
+
+					// Sanity check: parent_block must have at least one null
+					// placeholder, because we're cloning an EXISTING child block
+					// (so parent.innerBlocks had ≥1 entry pre-splice, which
+					// requires ≥1 null in innerContent for valid parsed input).
+					// Zero nulls = malformed parsed block — error rather than
+					// guess at insertion order.
+					if ( -1 === $last_null_idx && null === $ic_insert ) {
+						throw new \RuntimeException(
+							sprintf(
+								"Refusing to clone: parent block '%s' has innerBlocks but no `null` placeholders in innerContent (malformed parsed input). Cannot determine where to insert the new placeholder. Re-save the page through VB to regenerate canonical block markup, then retry.",
+								$parent_block['blockName'] ?? 'unknown'
+							)
+						);
+					}
+
+					// Fallback: $insert_at is beyond the last existing null
+					// (e.g. inserting at end). Place the new null IMMEDIATELY
+					// after the last existing null, NOT at array end — trailing
+					// HTML chunks after the last null must remain after our new
+					// placeholder so serialization order is preserved.
+					if ( null === $ic_insert ) {
+						$ic_insert = $last_null_idx + 1;
+					}
+					array_splice( $parent_block['innerContent'], $ic_insert, 0, [ null ] );
+				}
+			}
+			);
+		} catch ( \RuntimeException $e ) {
+			return new WP_Error( 'malformed_parent', $e->getMessage(), [ 'status' => 500 ] );
+		}
+
+		if ( ! $found ) {
+			return new WP_Error( 'no_match', sprintf( "No module found matching '%s' (mode=%s)", $target['needle'], $target['mode'] ), [ 'status' => 404 ] );
+		}
+
+		$saved = self::save_mutated_blocks( $loaded['post'], $blocks );
+		if ( is_wp_error( $saved ) ) {
+			return $saved;
+		}
+
+		return rest_ensure_response( [
+			'success' => true,
+			'cloned'  => array_merge( $captured, [ 'position' => $position ] ),
+			'message' => sprintf( "Module cloned %s source.", $position ),
+		] );
 	}
 
 	// ── Variable Manager CRUD ──────────────────────────────────────

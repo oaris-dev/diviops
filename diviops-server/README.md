@@ -96,7 +96,7 @@ The server connects via standard WordPress REST API and works with any environme
 
 > **WP-CLI note:** `WP_PATH` keeps the existing Local by Flywheel behavior by running `wp` directly on the host filesystem. For Docker-based environments (DDEV, wp-env, DevKinsta, WordPress Studio), set `WP_CLI_CMD` to the wrapper command instead. When `WP_CLI_CMD` is set, the server executes the wrapper from `WP_PATH` if provided, otherwise from its current working directory. The MCP server still validates the requested WP-CLI subcommand against its allowlist before executing either path.
 
-## Available Tools (48)
+## Available Tools (55)
 
 ### Read (26)
 | Tool | Description |
@@ -128,7 +128,7 @@ The server connects via standard WordPress REST API and works with any environme
 | `diviops_list_canvases` | List all canvas pages |
 | `diviops_get_canvas` | Get canvas content |
 
-### Write (20)
+### Write (27)
 | Tool | Description |
 |------|-------------|
 | `diviops_create_page` | Create a new page with optional Divi content |
@@ -138,11 +138,18 @@ The server connects via standard WordPress REST API and works with any environme
 | `diviops_remove_section` | Remove a section by admin label |
 | `diviops_update_module` | Update specific module attributes by label or text match |
 | `diviops_move_module` | Move a block before/after another block (reorder modules, sections) |
+| `diviops_lock_module` | Lock a module so VB users cannot edit it (frontend renders normally) |
+| `diviops_unlock_module` | Unlock a module by removing `attrs.locked` (matches VB's absence convention) |
+| `diviops_clone_module` | Deep-copy a module + insert next to source within the same parent |
+| `diviops_add_global_color` | Add a new global color to Divi's palette (writes canonical shape; closes ET's bundle Zod gap that drops `label`) |
+| `diviops_update_global_color` | Update an existing global color by gcid (only provided fields change) |
+| `diviops_delete_global_color` | Delete a global color (refuses if `usedInPosts` non-empty unless `force=true`; customizer-bound defaults always protected) |
 | `diviops_preset_cleanup` | Remove spam/duplicate presets, bulk rename |
-| `diviops_preset_create` | Write a new preset to the D5 registry (module or group type, supports `divi/column` etc.) |
+| `diviops_preset_create` | Write a new preset to the D5 registry (module or group type, supports `divi/column` etc.). Optional `make_default: true` sets it as the bucket's default; optional `priority` controls stack-merge order |
 | `diviops_preset_reassign` | Rewrite `modulePreset` references across pages (dry-run by default; optional `strip_inline` removes redundant inline attrs) |
-| `diviops_preset_update` | Update a specific preset (name, attrs) |
+| `diviops_preset_update` | Update a specific preset (name, attrs, priority) |
 | `diviops_preset_delete` | Delete a preset by ID |
+| `diviops_preset_set_default` | Set or clear the per-module/group default preset (defaults apply to NEW instances only — use `diviops_preset_reassign` for retroactive swaps) |
 | `diviops_save_to_library` | Save block markup to Divi Library |
 | `diviops_update_tb_layout` | Update a Theme Builder layout's block markup |
 | `diviops_create_tb_template` | Create Theme Builder template with header/footer and conditions |

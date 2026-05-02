@@ -263,6 +263,111 @@ server.registerTool(
 );
 
 server.registerTool(
+  "diviops_add_global_color",
+  {
+    description:
+      "Add a new global color to Divi's palette. Server mints a fresh `gcid-<uuid>` ID and writes to the et_global_data option in the canonical Divi shape `{color, folder, label, lastUpdated, status, usedInPosts}`. The color appears in the VB color picker after save and can be referenced via `$variable({type:color,value:{name:gcid-...}})$` tokens. Note: Divi's AI Agent bundle has a Zod schema gap that drops `label` on its own writes — our PHP path goes around that bug by writing directly to the option. CONCURRENCY: this is a read-modify-write on a single WP option with no conflict detection. If a Visual Builder session holds stale global data, its next save can clobber colors written here in the interim. Coordinate writes when VB sessions are active, or have the user reload VB after MCP color writes.",
+    inputSchema: {
+      color: z
+        .string()
+        .describe('CSS color value — hex (e.g. "#ff0000", "#ff0000aa") or functional rgba/hsla notation. Bare keywords like "red" are not accepted.'),
+      label: z
+        .string()
+        .optional()
+        .describe('Human-readable label shown in the VB color picker (e.g. "Brand Red"). Optional — defaults to empty (matches Divi\'s stock palette which leaves labels blank).'),
+      folder: z
+        .string()
+        .optional()
+        .describe("Folder name for grouping colors in the picker UI. Optional — defaults to empty (no folder)."),
+      status: z
+        .enum(["active", "archived"])
+        .optional()
+        .default("active")
+        .describe('Color status — "active" (default, visible in picker) or "archived" (hidden but preserved).'),
+    },
+  },
+  async ({ color, label, folder, status }) => {
+    const colorEntry: Record<string, any> = { color };
+    if (label !== undefined) colorEntry.label = label;
+    if (folder !== undefined) colorEntry.folder = folder;
+    if (status) colorEntry.status = status;
+    const result = await wp.request("/global-colors", {
+      method: "POST",
+      body: { colors: [colorEntry], mode: "merge" },
+    });
+    return { content: [{ type: "text" as const, text: JSON.stringify(result) }] };
+  },
+);
+
+server.registerTool(
+  "diviops_update_global_color",
+  {
+    description:
+      "Update an existing global color by gcid. Only provided fields are updated; omitted fields are preserved. The lastUpdated timestamp is bumped on every write. Use diviops_get_global_colors first to find the gcid for a color. CONCURRENCY: same VB-session race caveat as diviops_add_global_color — the write is read-modify-write on a single WP option, so an active VB session's next save can clobber this update.",
+    inputSchema: {
+      gcid: z
+        .string()
+        .describe('Global color ID, e.g. "gcid-abc123..." (must start with "gcid-"). Get from diviops_get_global_colors.'),
+      color: z
+        .string()
+        .optional()
+        .describe('New CSS color value — hex or rgba/hsla notation. Omit to keep existing.'),
+      label: z
+        .string()
+        .optional()
+        .describe('New human-readable label. Pass empty string to clear.'),
+      folder: z
+        .string()
+        .optional()
+        .describe('New folder. Pass empty string to clear.'),
+      status: z
+        .enum(["active", "archived"])
+        .optional()
+        .describe('Change status — "active" or "archived". Omit to keep existing.'),
+    },
+  },
+  async ({ gcid, color, label, folder, status }) => {
+    const colorEntry: Record<string, any> = { id: gcid };
+    if (color !== undefined) colorEntry.color = color;
+    if (label !== undefined) colorEntry.label = label;
+    if (folder !== undefined) colorEntry.folder = folder;
+    if (status) colorEntry.status = status;
+    const result = await wp.request("/global-colors", {
+      method: "POST",
+      body: { colors: [colorEntry], mode: "merge" },
+    });
+    return { content: [{ type: "text" as const, text: JSON.stringify(result) }] };
+  },
+);
+
+server.registerTool(
+  "diviops_delete_global_color",
+  {
+    description:
+      "Delete a global color from the registry by gcid. Refuses by default if the color is tracked as referenced by any post (per Divi's `usedInPosts` index — pass `force: true` to delete anyway; orphan refs will render as invalid CSS until pages are re-saved through VB). Always refuses to delete the 5 customizer-bound defaults (gcid-primary-color, gcid-secondary-color, gcid-heading-color, gcid-body-color, gcid-link-color) regardless of force — those must be edited via WP Customizer. CONCURRENCY: same VB-session race caveat as diviops_add_global_color — an active VB session's next save can re-introduce a color we just deleted if the session held stale data.",
+    inputSchema: {
+      gcid: z
+        .string()
+        .describe('Global color ID to delete (must start with "gcid-").'),
+      force: z
+        .boolean()
+        .optional()
+        .default(false)
+        .describe("If true, delete even when usedInPosts shows live references. Customizer-bound defaults remain protected regardless."),
+    },
+  },
+  async ({ gcid, force }) => {
+    const body: Record<string, any> = { gcid };
+    if (force) body.force = true;
+    const result = await wp.request("/global-color-delete", {
+      method: "POST",
+      body,
+    });
+    return { content: [{ type: "text" as const, text: JSON.stringify(result) }] };
+  },
+);
+
+server.registerTool(
   "diviops_get_global_fonts",
   {
     description: "Get the global font definitions from Divi settings.",
@@ -699,6 +804,80 @@ server.registerTool(
 );
 
 server.registerTool(
+  "diviops_lock_module",
+  {
+    description:
+      'Lock a module so VB users cannot edit it. Sets attrs.locked = {desktop: {value: "on"}} per Divi\'s per-breakpoint convention (verified via VB-save probe). Locked modules render normally on frontend; only VB-side editing is gated. Same targeting pattern as diviops_update_module — pick one of label / match_text / auto_index. Use diviops_unlock_module to reverse.',
+    inputSchema: {
+      page_id: z.number().describe("WordPress post/page ID"),
+      label: z.string().optional().describe("Admin label of the module to lock (exact match)"),
+      match_text: z.string().optional().describe("Text to search for in module markup (case-insensitive)"),
+      auto_index: z.string().optional().describe('Auto-index in "type:N" format (e.g. "text:3")'),
+      occurrence: z.number().int().min(1).optional().default(1).describe("Which occurrence when multiple modules share the same label (1-based)"),
+    },
+  },
+  async ({ page_id, label, match_text, auto_index, occurrence }) => {
+    const body: Record<string, any> = {};
+    if (label) body.label = label;
+    if (match_text) body.match_text = match_text;
+    if (auto_index) body.auto_index = auto_index;
+    if (occurrence && occurrence > 1) body.occurrence = occurrence;
+    const result = await wp.request(`/page/${page_id}/lock-module`, { method: "POST", body });
+    return { content: [{ type: "text" as const, text: JSON.stringify(result) }] };
+  },
+);
+
+server.registerTool(
+  "diviops_unlock_module",
+  {
+    description:
+      "Unlock a module by removing attrs.locked entirely. Matches Divi VB's convention: unlocked = attribute absent (NOT {value: 'off'}) — VB doesn't write a falsy value on unlock, it removes the field. Same targeting pattern as diviops_lock_module.",
+    inputSchema: {
+      page_id: z.number().describe("WordPress post/page ID"),
+      label: z.string().optional().describe("Admin label of the module to unlock (exact match)"),
+      match_text: z.string().optional().describe("Text to search for in module markup (case-insensitive)"),
+      auto_index: z.string().optional().describe('Auto-index in "type:N" format'),
+      occurrence: z.number().int().min(1).optional().default(1).describe("Which occurrence when multiple modules share the same label (1-based)"),
+    },
+  },
+  async ({ page_id, label, match_text, auto_index, occurrence }) => {
+    const body: Record<string, any> = {};
+    if (label) body.label = label;
+    if (match_text) body.match_text = match_text;
+    if (auto_index) body.auto_index = auto_index;
+    if (occurrence && occurrence > 1) body.occurrence = occurrence;
+    const result = await wp.request(`/page/${page_id}/unlock-module`, { method: "POST", body });
+    return { content: [{ type: "text" as const, text: JSON.stringify(result) }] };
+  },
+);
+
+server.registerTool(
+  "diviops_clone_module",
+  {
+    description:
+      'Clone a module by deep-copying its block JSON and inserting it next to the source within the same parent container. Position controls before/after placement (default "after"). Module IDs are reassigned by Divi at render time from the block tree position, so the clone gets fresh IDs automatically. Same targeting pattern as diviops_lock_module.',
+    inputSchema: {
+      page_id: z.number().describe("WordPress post/page ID"),
+      label: z.string().optional().describe("Admin label of the module to clone (exact match)"),
+      match_text: z.string().optional().describe("Text to search for in module markup (case-insensitive)"),
+      auto_index: z.string().optional().describe('Auto-index in "type:N" format'),
+      occurrence: z.number().int().min(1).optional().default(1).describe("Which occurrence when multiple modules share the same label (1-based)"),
+      position: z.enum(["before", "after"]).optional().default("after").describe('Place the clone "before" or "after" the source module within its parent.'),
+    },
+  },
+  async ({ page_id, label, match_text, auto_index, occurrence, position }) => {
+    const body: Record<string, any> = {};
+    if (label) body.label = label;
+    if (match_text) body.match_text = match_text;
+    if (auto_index) body.auto_index = auto_index;
+    if (occurrence && occurrence > 1) body.occurrence = occurrence;
+    if (position) body.position = position;
+    const result = await wp.request(`/page/${page_id}/clone-module`, { method: "POST", body });
+    return { content: [{ type: "text" as const, text: JSON.stringify(result) }] };
+  },
+);
+
+server.registerTool(
   "diviops_create_page",
   {
     description:
@@ -814,7 +993,7 @@ server.registerTool(
   "diviops_preset_update",
   {
     description:
-      "Update a specific preset by ID. Can rename and/or replace its style attributes. Note: Divi serves frontend CSS from a per-post static cache at wp-content/et-cache/{post_id}/ that wp cache flush does NOT invalidate — if you're verifying a preset change on the rendered frontend, delete that dir for affected pages to force regeneration. Server-side preset state updates immediately; only the pre-rendered CSS file is stale.",
+      "Update a specific preset by ID. Can rename, replace its style attributes, and/or change its stack priority. Note: Divi serves frontend CSS from a per-post static cache at wp-content/et-cache/{post_id}/ that wp cache flush does NOT invalidate — if you're verifying a preset change on the rendered frontend, delete that dir for affected pages to force regeneration. Server-side preset state updates immediately; only the pre-rendered CSS file is stale.",
     inputSchema: {
       preset_id: z.string().describe("Preset ID (UUID or short ID)"),
       name: z.string().optional().describe("New display name for the preset"),
@@ -824,12 +1003,20 @@ server.registerTool(
         .describe(
           "New style attributes (replaces attrs, styleAttrs, and renderAttrs — matches VB save semantics so render cache stays in sync with edit state)",
         ),
+      priority: z
+        .number()
+        .int()
+        .optional()
+        .describe(
+          "Stack-merge priority. When this preset is part of a stacked-preset arrangement (e.g. base typography + brand override on the same module/group slot), Divi sorts presets ascending and merges in priority order, so a higher number wins the cascade. Default in Divi is 10 when omitted. Only meaningful for presets that participate in a stack — solo presets render the same regardless of priority.",
+        ),
     },
   },
-  async ({ preset_id, name, attrs }) => {
+  async ({ preset_id, name, attrs, priority }) => {
     const body: Record<string, any> = { preset_id };
     if (name) body.name = name;
     if (attrs) body.attrs = attrs;
+    if (typeof priority === "number") body.priority = priority;
     const result = await wp.request("/preset-update", {
       method: "POST",
       body,
@@ -904,9 +1091,22 @@ server.registerTool(
         .describe(
           'Primary attr name for the group (e.g. "title" for designTitleText). Optional.',
         ),
+      make_default: z
+        .boolean()
+        .optional()
+        .describe(
+          "If true, set this newly-created preset as the default for its module/group after creation. Defaults apply to NEW instances only — existing modules keep their current preset bindings (use diviops_preset_reassign for retroactive swaps). Saves a round-trip vs. calling diviops_preset_set_default after creation.",
+        ),
+      priority: z
+        .number()
+        .int()
+        .optional()
+        .describe(
+          "Stack-merge priority. When this preset participates in a stacked-preset arrangement, Divi sorts ascending and merges in priority order — higher number wins the cascade. Default in Divi is 10 when omitted.",
+        ),
     },
   },
-  async ({ module_name, name, attrs, type, group_name, group_id, primary_attr_name }) => {
+  async ({ module_name, name, attrs, type, group_name, group_id, primary_attr_name, make_default, priority }) => {
     if (type === "group" && (!group_name || !group_id)) {
       throw new Error(
         'type="group" requires both group_name and group_id. Example: group_name="divi/font", group_id="designTitleText".',
@@ -916,6 +1116,8 @@ server.registerTool(
     if (group_name) body.group_name = group_name;
     if (group_id) body.group_id = group_id;
     if (primary_attr_name) body.primary_attr_name = primary_attr_name;
+    if (make_default) body.make_default = true;
+    if (typeof priority === "number") body.priority = priority;
     const result = await wp.request("/preset-create", { method: "POST", body });
     return {
       content: [
@@ -997,6 +1199,40 @@ server.registerTool(
   },
   async () => {
     const result = await wp.request("/preset-scan-orphans");
+    return {
+      content: [
+        { type: "text" as const, text: JSON.stringify(result) },
+      ],
+    };
+  },
+);
+
+server.registerTool(
+  "diviops_preset_set_default",
+  {
+    description:
+      "Set or clear the per-module/group default preset. Walks both buckets to locate the preset by UUID, then points the containing module/group's `default` slot at it. Pass unset=true to clear the slot back to none. Defaults apply to NEW module instances only — existing modules keep their current preset bindings (use diviops_preset_reassign for retroactive swaps). Use diviops_preset_audit's `is_default` field to verify state before/after.",
+    inputSchema: {
+      preset_id: z
+        .string()
+        .describe(
+          "Preset UUID. Bucket (module vs. group) and target module/group are auto-resolved from the registry — no need to specify them.",
+        ),
+      unset: z
+        .boolean()
+        .optional()
+        .describe(
+          "If true, clear the default pointer for the module/group this preset lives in (regardless of whether this preset is currently the default). Defaults to false (set the preset as the default).",
+        ),
+    },
+  },
+  async ({ preset_id, unset }) => {
+    const body: Record<string, any> = { preset_id };
+    if (unset) body.unset = true;
+    const result = await wp.request("/preset-set-default", {
+      method: "POST",
+      body,
+    });
     return {
       content: [
         { type: "text" as const, text: JSON.stringify(result) },
