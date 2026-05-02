@@ -308,6 +308,8 @@ Need a semantic name? Register it inside Divi as a `gvid-*` / `gcid-*` in the Va
 | **Icon** | Border/bg on module only | `module.decoration.{border,background}` | `icon.decoration.{border,background}` |
 | **Video** | No module background | `overlay.decoration.background` | `module.decoration.background` |
 | **Social Media Follow** | Custom icon size lives under `icon.advanced`, gated by `useSize` toggle | `icon.advanced.useSize: "on"` + `icon.advanced.size: "<value>"` (`"96px"`, `"$variable({...})$"`, `"calc(2rem + 1vw)"`, `"clamp(48px, 5vw, 96px)"`, `"var(--gvid-...)"`, or length keywords — all accepted at parity per Divi 5.3.3) | omitting `useSize` (size is ignored) or assuming a numeric-only field (pre-5.3.3 silently dropped math/var/keyword) |
+| **Breadcrumbs (5.4.0+)** | `trail.advanced.htmlTag` is the only `trail.advanced.*` key the renderer reads | `trail.advanced.htmlTag.desktop.value`: `"nav"` (default) \| `"div"` \| `"span"` \| `"p"` | other `trail.advanced.*` paths silently inert at render — `trail` is content-config only, not style-registered |
+| **Breadcrumbs (5.4.0+)** | Per-item element backgrounds restricted (no mask/pattern/video, no parallax) | put rich backgrounds on `module.decoration.background` instead | setting `mask`/`pattern`/`video`/parallax on `breadcrumb.decoration.background`, `breadcrumbLink.decoration.background`, `home.decoration.background`, or `separator.decoration.background` → silently dropped |
 
 ---
 
