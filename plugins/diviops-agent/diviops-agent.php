@@ -3897,6 +3897,14 @@ class DiviOps_Agent {
 					'type'   => $type,
 					'name'   => $preset['name'],
 				];
+				// Unset both live references before exiting the nested loop —
+				// `break 2;` skips the post-loop `unset($info)` that PHP
+				// otherwise needs for foreach-by-reference cleanup. `$preset`
+				// (line 3863) is a second reference into `$info['items'][...]`
+				// and needs the same treatment. Defensive against future edits
+				// that reuse either symbol later in this method.
+				unset( $preset );
+				unset( $info );
 				break 2;
 			}
 			unset( $info );
@@ -3944,6 +3952,11 @@ class DiviOps_Agent {
 					'name'   => $preset['name'] ?? '',
 				];
 				unset( $info['items'][ $preset_id ] );
+				// Unset the live reference before exiting the nested loop —
+				// `break 2;` skips the post-loop `unset($info)` that PHP
+				// otherwise needs for foreach-by-reference cleanup. Defensive
+				// against future edits that reuse `$info` later in this method.
+				unset( $info );
 				break 2;
 			}
 			unset( $info );
