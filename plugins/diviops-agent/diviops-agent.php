@@ -3,7 +3,7 @@
  * Plugin Name: DiviOps Agent
  * Plugin URI: https://github.com/oaris-dev/diviops
  * Description: REST API bridge for DiviOps — connects Claude Code to your Divi 5 site for AI-powered page building and design management.
- * Version: 1.0.0-beta.40
+ * Version: 1.0.0-beta.41
  * Author: oaris.de
  * Author URI: https://oaris.de
  * Text Domain: diviops-agent
@@ -22,7 +22,7 @@ class DiviOps_Agent {
 	/**
 	 * Plugin version — used for handshake compatibility checks.
 	 */
-	const VERSION = '1.0.0-beta.40';
+	const VERSION = '1.0.0-beta.41';
 
 	/**
 	 * Minimum MCP server version this plugin is compatible with.
@@ -2193,12 +2193,9 @@ class DiviOps_Agent {
 	 * Replace a section identified by admin label or text content.
 	 */
 	public static function replace_section( $request ) {
-		$post_id    = absint( $request['id'] );
-		$label      = sanitize_text_field( $request->get_param( 'label' ) ?? '' );
-		$match_text = sanitize_text_field( $request->get_param( 'match_text' ) ?? '' );
-		$content    = $request->get_param( 'content' );
-		$occurrence = max( 1, absint( $request->get_param( 'occurrence' ) ?? 1 ) );
-		$post       = get_post( $post_id );
+		$post_id = absint( $request['id'] );
+		$content = $request->get_param( 'content' );
+		$post    = get_post( $post_id );
 
 		if ( ! $post ) {
 			return new WP_Error( 'not_found', 'Page not found', [ 'status' => 404 ] );
@@ -2206,9 +2203,17 @@ class DiviOps_Agent {
 		if ( ! current_user_can( 'edit_post', $post_id ) ) {
 			return new WP_Error( 'forbidden', 'Cannot edit this post', [ 'status' => 403 ] );
 		}
-		if ( '' === $label && '' === $match_text ) {
-			return new WP_Error( 'missing_target', 'Either "label" or "match_text" is required', [ 'status' => 400 ] );
+
+		// Section tools accept only label + match_text (no auto_index). Same
+		// missing/ambiguous validation contract as module tools.
+		$target = self::resolve_module_target( $request, [ 'allow_auto_index' => false ] );
+		if ( is_wp_error( $target ) ) {
+			return $target;
 		}
+		$label      = 'label'      === $target['mode'] ? $target['needle'] : '';
+		$match_text = 'match_text' === $target['mode'] ? $target['needle'] : '';
+		$occurrence = $target['occurrence'];
+
 		if ( ! is_string( $content ) ) {
 			return new WP_Error( 'invalid_content', 'content must be a string of Divi section markup.', [ 'status' => 400 ] );
 		}
@@ -2252,11 +2257,8 @@ class DiviOps_Agent {
 	 * Remove a section identified by admin label or text content.
 	 */
 	public static function remove_section( $request ) {
-		$post_id    = absint( $request['id'] );
-		$label      = sanitize_text_field( $request->get_param( 'label' ) ?? '' );
-		$match_text = sanitize_text_field( $request->get_param( 'match_text' ) ?? '' );
-		$occurrence = max( 1, absint( $request->get_param( 'occurrence' ) ?? 1 ) );
-		$post       = get_post( $post_id );
+		$post_id = absint( $request['id'] );
+		$post    = get_post( $post_id );
 
 		if ( ! $post ) {
 			return new WP_Error( 'not_found', 'Page not found', [ 'status' => 404 ] );
@@ -2264,9 +2266,14 @@ class DiviOps_Agent {
 		if ( ! current_user_can( 'edit_post', $post_id ) ) {
 			return new WP_Error( 'forbidden', 'Cannot edit this post', [ 'status' => 403 ] );
 		}
-		if ( '' === $label && '' === $match_text ) {
-			return new WP_Error( 'missing_target', 'Either "label" or "match_text" is required', [ 'status' => 400 ] );
+
+		$target = self::resolve_module_target( $request, [ 'allow_auto_index' => false ] );
+		if ( is_wp_error( $target ) ) {
+			return $target;
 		}
+		$label      = 'label'      === $target['mode'] ? $target['needle'] : '';
+		$match_text = 'match_text' === $target['mode'] ? $target['needle'] : '';
+		$occurrence = $target['occurrence'];
 
 		$existing = $post->post_content;
 		$result   = self::find_and_replace_section( $existing, $label, '', $match_text, $occurrence );
@@ -4988,19 +4995,20 @@ class DiviOps_Agent {
 	 * Get a single section's markup by admin label or text content.
 	 */
 	public static function get_section( $request ) {
-		$post_id    = absint( $request['id'] );
-		$label      = sanitize_text_field( $request->get_param( 'label' ) ?? '' );
-		$match_text = sanitize_text_field( $request->get_param( 'match_text' ) ?? '' );
-		$occurrence = max( 1, absint( $request->get_param( 'occurrence' ) ?? 1 ) );
-		$post       = get_post( $post_id );
+		$post_id = absint( $request['id'] );
+		$post    = get_post( $post_id );
 
 		if ( ! $post ) {
 			return new WP_Error( 'not_found', 'Page not found', [ 'status' => 404 ] );
 		}
 
-		if ( '' === $label && '' === $match_text ) {
-			return new WP_Error( 'missing_target', 'Either "label" or "match_text" is required', [ 'status' => 400 ] );
+		$target = self::resolve_module_target( $request, [ 'allow_auto_index' => false ] );
+		if ( is_wp_error( $target ) ) {
+			return $target;
 		}
+		$label      = 'label'      === $target['mode'] ? $target['needle'] : '';
+		$match_text = 'match_text' === $target['mode'] ? $target['needle'] : '';
+		$occurrence = $target['occurrence'];
 
 		$content = $post->post_content;
 		$result  = self::extract_section( $content, $label, $match_text, $occurrence );
@@ -5036,13 +5044,9 @@ class DiviOps_Agent {
 	 * 3. match_text — match by innerContent text (substring, first match)
 	 */
 	public static function update_module( $request ) {
-		$post_id    = absint( $request['id'] );
-		$label      = $request->get_param( 'label' );
-		$match_text = $request->get_param( 'match_text' );
-		$auto_index = $request->get_param( 'auto_index' );
-		$occurrence = max( 1, absint( $request->get_param( 'occurrence' ) ?? 1 ) );
-		$attrs      = $request->get_param( 'attrs' );
-		$post       = get_post( $post_id );
+		$post_id = absint( $request['id'] );
+		$attrs   = $request->get_param( 'attrs' );
+		$post    = get_post( $post_id );
 
 		if ( ! $post ) {
 			return new WP_Error( 'not_found', 'Page not found', [ 'status' => 404 ] );
@@ -5052,42 +5056,41 @@ class DiviOps_Agent {
 			return new WP_Error( 'forbidden', 'Cannot edit this post', [ 'status' => 403 ] );
 		}
 
-		if ( empty( $label ) && empty( $match_text ) && empty( $auto_index ) ) {
-			return new WP_Error( 'missing_target', 'One of "label", "match_text", or "auto_index" is required', [ 'status' => 400 ] );
+		// Selector validation (missing / ambiguous / malformed auto_index)
+		// is centralized in resolve_module_target().
+		$target = self::resolve_module_target( $request );
+		if ( is_wp_error( $target ) ) {
+			return $target;
 		}
+
 		if ( ! is_array( $attrs ) ) {
 			return new WP_Error( 'invalid_attrs', 'attrs must be an object or associative array.', [ 'status' => 400 ] );
 		}
 
-		$label      = ! empty( $label ) ? sanitize_text_field( $label ) : '';
-		$match_text = ! empty( $match_text ) ? sanitize_text_field( $match_text ) : '';
-		$auto_index = ! empty( $auto_index ) ? sanitize_text_field( $auto_index ) : '';
+		// Map helper output back to the local variables the rest of this
+		// handler uses. Kept rather than rewriting downstream to minimize
+		// risk; the inline parsing block is replaced, not the walk.
+		$label      = 'label'      === $target['mode'] ? $target['needle'] : '';
+		$match_text = 'match_text' === $target['mode'] ? $target['needle'] : '';
+		$auto_index = 'auto_index' === $target['mode'] ? $target['needle'] : '';
+		$occurrence = $target['occurrence'];
+		// Internal mode tag — preserves the existing `'text'` vs `'match_text'`
+		// distinction used by the walk below.
+		$mode = 'match_text' === $target['mode'] ? 'text' : $target['mode'];
 
 		$content = $post->post_content;
-
-		// Determine targeting mode.
-		$mode = '';
-		if ( ! empty( $auto_index ) ) {
-			$mode = 'auto_index';
-		} elseif ( ! empty( $label ) ) {
-			$mode = 'label';
-		} else {
-			$mode = 'text';
-		}
 
 		// Build the search needle for label mode.
 		$needle = 'label' === $mode
 			? '"adminLabel":{"desktop":{"value":"' . $label . '"}}'
 			: '';
 
-		// For auto_index, parse "type:N" format.
+		// For auto_index, parse "type:N" format. Validation happened inside
+		// resolve_module_target(); this only splits the already-validated string.
 		$ai_type   = '';
 		$ai_target = 0;
 		if ( 'auto_index' === $mode ) {
-			$parts = explode( ':', $auto_index );
-			if ( 2 !== count( $parts ) || '' === $parts[0] || ! ctype_digit( $parts[1] ) || (int) $parts[1] < 1 ) {
-				return new WP_Error( 'invalid_auto_index', "auto_index must be 'type:N' format with N >= 1 (e.g. 'text:5')", [ 'status' => 400 ] );
-			}
+			$parts     = explode( ':', $auto_index );
 			$ai_type   = $parts[0];
 			$ai_target = (int) $parts[1];
 		}
@@ -5481,17 +5484,42 @@ class DiviOps_Agent {
 			return new WP_Error( 'invalid_position', 'Position must be "before" or "after"', [ 'status' => 400 ] );
 		}
 
-		// Source targeting params.
-		$src_label      = sanitize_text_field( $request->get_param( 'source_label' ) ?? '' );
-		$src_match_text = sanitize_text_field( $request->get_param( 'source_match_text' ) ?? '' );
-		$src_auto_index = sanitize_text_field( $request->get_param( 'source_auto_index' ) ?? '' );
-		$src_occurrence = max( 1, absint( $request->get_param( 'source_occurrence' ) ?? 1 ) );
+		// Source + target selectors share the same validation contract as
+		// single-target tools: missing/ambiguous/malformed auto_index all
+		// rejected with 400 + context tag so the caller knows which side
+		// failed (matters when both sides are passed and only one is bad).
+		$source_target = self::resolve_module_target( $request, [
+			'label_param'      => 'source_label',
+			'match_text_param' => 'source_match_text',
+			'auto_index_param' => 'source_auto_index',
+			'occurrence_param' => 'source_occurrence',
+			'context'          => 'source',
+		] );
+		if ( is_wp_error( $source_target ) ) {
+			return $source_target;
+		}
 
-		// Target targeting params.
-		$tgt_label      = sanitize_text_field( $request->get_param( 'target_label' ) ?? '' );
-		$tgt_match_text = sanitize_text_field( $request->get_param( 'target_match_text' ) ?? '' );
-		$tgt_auto_index = sanitize_text_field( $request->get_param( 'target_auto_index' ) ?? '' );
-		$tgt_occurrence = max( 1, absint( $request->get_param( 'target_occurrence' ) ?? 1 ) );
+		$target_target = self::resolve_module_target( $request, [
+			'label_param'      => 'target_label',
+			'match_text_param' => 'target_match_text',
+			'auto_index_param' => 'target_auto_index',
+			'occurrence_param' => 'target_occurrence',
+			'context'          => 'target',
+		] );
+		if ( is_wp_error( $target_target ) ) {
+			return $target_target;
+		}
+
+		// Map helper output back to the local variables find_block() takes.
+		$src_label      = 'label'      === $source_target['mode'] ? $source_target['needle'] : '';
+		$src_match_text = 'match_text' === $source_target['mode'] ? $source_target['needle'] : '';
+		$src_auto_index = 'auto_index' === $source_target['mode'] ? $source_target['needle'] : '';
+		$src_occurrence = $source_target['occurrence'];
+
+		$tgt_label      = 'label'      === $target_target['mode'] ? $target_target['needle'] : '';
+		$tgt_match_text = 'match_text' === $target_target['mode'] ? $target_target['needle'] : '';
+		$tgt_auto_index = 'auto_index' === $target_target['mode'] ? $target_target['needle'] : '';
+		$tgt_occurrence = $target_target['occurrence'];
 
 		$content = $post->post_content;
 
@@ -6009,17 +6037,128 @@ class DiviOps_Agent {
 	}
 
 	/**
-	 * Resolve targeting params from the request to a (mode, needle, occurrence)
-	 * triple. Returns a WP_Error on missing/invalid params.
+	 * Resolve the targeting mode + needle for a single-block selector.
+	 *
+	 * Reads `label` / `match_text` / `auto_index` (and `occurrence`) from the
+	 * REST request and returns a `[mode, needle, occurrence]` triple, OR a
+	 * `WP_Error` with the appropriate 400.
+	 *
+	 * Validation rules:
+	 *   - At least one selector must be present (`missing_target`)
+	 *   - At most one selector may be present (`ambiguous_target`) — silent
+	 *     priority is a footgun for callers who set two selectors thinking
+	 *     they'll AND, when in fact one wins and the other is ignored.
+	 *   - When `auto_index` is used, it must match `type:N` with non-empty
+	 *     `type` and `N >= 1` (`invalid_auto_index`). Catches malformed input
+	 *     at the targeting layer rather than letting it fall through to a
+	 *     misleading `404 no_match`.
+	 *
+	 * Param-name remapping via $opts lets `move_module` reuse this helper for
+	 * its `source_*` / `target_*` selector pairs, and lets section ops opt
+	 * out of `auto_index` (which they don't accept):
+	 *
+	 *   $opts = [
+	 *     'label_param'      => 'source_label',       // default 'label'
+	 *     'match_text_param' => 'source_match_text',  // default 'match_text'
+	 *     'auto_index_param' => 'source_auto_index',  // default 'auto_index'
+	 *     'occurrence_param' => 'source_occurrence',  // default 'occurrence'
+	 *     'allow_auto_index' => false,                // default true
+	 *     'context'          => 'source',             // for error messages — default ''
+	 *   ];
+	 *
+	 * Returns:
+	 *   [ 'mode' => 'label'|'match_text'|'auto_index',
+	 *     'needle' => string,
+	 *     'occurrence' => int >= 1 ]
+	 *   OR WP_Error with status 400.
 	 */
-	private static function resolve_module_target( $request ) {
-		$label      = trim( (string) $request->get_param( 'label' ) );
-		$match_text = trim( (string) $request->get_param( 'match_text' ) );
-		$auto_index = trim( (string) $request->get_param( 'auto_index' ) );
-		$occurrence = max( 1, absint( $request->get_param( 'occurrence' ) ?? 1 ) );
+	private static function resolve_module_target( $request, array $opts = [] ) {
+		$label_param      = $opts['label_param']      ?? 'label';
+		$match_text_param = $opts['match_text_param'] ?? 'match_text';
+		$auto_index_param = $opts['auto_index_param'] ?? 'auto_index';
+		$occurrence_param = $opts['occurrence_param'] ?? 'occurrence';
+		$allow_auto_index = $opts['allow_auto_index'] ?? true;
+		$context          = $opts['context']          ?? '';
+		$ctx_suffix       = '' !== $context ? " ({$context})" : '';
 
-		if ( '' === $label && '' === $match_text && '' === $auto_index ) {
-			return new WP_Error( 'missing_target', 'One of "label", "match_text", or "auto_index" is required', [ 'status' => 400 ] );
+		// Mirror the per-handler sanitize_text_field that the inline parsing
+		// did before centralization (strips control chars, tags, extra
+		// whitespace). Removing it would be a behavior regression for callers
+		// who relied on the normalization — labels are typed as 'string' at
+		// the route layer but not auto-sanitized.
+		$label      = sanitize_text_field( (string) $request->get_param( $label_param ) );
+		$match_text = sanitize_text_field( (string) $request->get_param( $match_text_param ) );
+		$auto_index_raw = sanitize_text_field( (string) $request->get_param( $auto_index_param ) );
+		$auto_index = $allow_auto_index ? $auto_index_raw : '';
+		$occurrence = max( 1, absint( $request->get_param( $occurrence_param ) ?? 1 ) );
+
+		// When auto_index is not allowed (section ops), still check the raw
+		// param so a caller passing `{label: "foo", auto_index: "text:1"}`
+		// gets an explicit "auto_index not supported here" error instead of
+		// silently ignoring the auto_index and proceeding with label.
+		// Re-introduces the same silent-priority footgun the helper exists to
+		// prevent if we don't catch it here.
+		if ( ! $allow_auto_index && '' !== $auto_index_raw ) {
+			return new WP_Error(
+				'unsupported_selector',
+				sprintf(
+					"%s is not supported for this tool%s. Pass only \"label\" or \"match_text\".",
+					$auto_index_param,
+					$ctx_suffix
+				),
+				[ 'status' => 400 ]
+			);
+		}
+
+		// Count non-empty selectors. Reject both 0 and >1 with distinct codes
+		// so callers get a precise diagnostic.
+		$selectors_provided = (int) ( '' !== $label ) + (int) ( '' !== $match_text ) + (int) ( '' !== $auto_index );
+
+		if ( 0 === $selectors_provided ) {
+			$allowed = $allow_auto_index
+				? '"label", "match_text", or "auto_index"'
+				: '"label" or "match_text"';
+			return new WP_Error(
+				'missing_target',
+				sprintf( 'One of %s is required%s.', $allowed, $ctx_suffix ),
+				[ 'status' => 400 ]
+			);
+		}
+
+		if ( $selectors_provided > 1 ) {
+			$provided = [];
+			if ( '' !== $label )      { $provided[] = $label_param; }
+			if ( '' !== $match_text ) { $provided[] = $match_text_param; }
+			if ( '' !== $auto_index ) { $provided[] = $auto_index_param; }
+			return new WP_Error(
+				'ambiguous_target',
+				sprintf(
+					"Multiple selectors provided%s: %s. Pass exactly one — silent priority would mask the conflict.",
+					$ctx_suffix,
+					implode( ', ', $provided )
+				),
+				[ 'status' => 400 ]
+			);
+		}
+
+		// Auto-index format validation: must be `type:N` with non-empty type
+		// and integer N >= 1. Without this, malformed input (e.g. "text",
+		// "text:abc", ":5") silently reaches the walk and surfaces as a
+		// misleading `no_match` 404 instead of the actual input error.
+		if ( '' !== $auto_index ) {
+			$parts = explode( ':', $auto_index );
+			if ( 2 !== count( $parts ) || '' === $parts[0] || ! ctype_digit( $parts[1] ) || (int) $parts[1] < 1 ) {
+				return new WP_Error(
+					'invalid_auto_index',
+					sprintf(
+						"%s '%s' must be 'type:N' format with non-empty type and N >= 1 (e.g. 'text:5')%s.",
+						$auto_index_param,
+						$auto_index,
+						$ctx_suffix
+					),
+					[ 'status' => 400 ]
+				);
+			}
 		}
 
 		$mode   = '' !== $auto_index ? 'auto_index' : ( '' !== $label ? 'label' : 'match_text' );
