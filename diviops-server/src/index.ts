@@ -2044,6 +2044,31 @@ server.registerTool(
 );
 
 server.registerTool(
+  "diviops_variables_used_on_page",
+  {
+    description:
+      "Detect which numeric/font variable IDs a single page actually emits — the exact set Divi 5.4.0+ uses to scope selective `:root{--gvid-*}` CSS variable emission. Walks the same content stack the frontend assembles: post_content + active Theme Builder header/body/footer template content + appended canvas content (interaction targets etc.), plus presets referenced by that content. NOTE: this is `gvid-*` only — color variables (`gcid-*`) are emitted via a separate path (`GlobalData` color block) that is NOT scoped per-page in 5.4.0; this tool returns gvid IDs only. Use for per-page orphan validation (complements global diviops_variables_scan_orphans), preflight before bulk variable rename (know which pages are affected), or to debug why a numeric/font variable doesn't render on a specific page. Read-only. Returns variable_ids (sorted, deduped), count, and the tb_template_ids resolved for that post.",
+    inputSchema: {
+      post_id: z
+        .number()
+        .int()
+        .positive()
+        .describe(
+          "WordPress post/page ID. The page does not need to be Divi-built — TB templates and canvases attached to non-Divi posts are still scanned.",
+        ),
+    },
+  },
+  async ({ post_id }) => {
+    const result = await wp.request(`/variables-used-on-page/${post_id}`);
+    return {
+      content: [
+        { type: "text" as const, text: JSON.stringify(result) },
+      ],
+    };
+  },
+);
+
+server.registerTool(
   "diviops_flush_static_cache",
   {
     description:

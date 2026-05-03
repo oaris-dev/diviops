@@ -96,9 +96,9 @@ The server connects via standard WordPress REST API and works with any environme
 
 > **WP-CLI note:** `WP_PATH` keeps the existing Local by Flywheel behavior by running `wp` directly on the host filesystem. For Docker-based environments (DDEV, wp-env, DevKinsta, WordPress Studio), set `WP_CLI_CMD` to the wrapper command instead. When `WP_CLI_CMD` is set, the server executes the wrapper from `WP_PATH` if provided, otherwise from its current working directory. The MCP server still validates the requested WP-CLI subcommand against its allowlist before executing either path.
 
-## Available Tools (55)
+## Available Tools (56)
 
-### Read (26)
+### Read (27)
 | Tool | Description |
 |------|-------------|
 | `diviops_test_connection` | Test WordPress connection and Divi version |
@@ -125,6 +125,7 @@ The server connects via standard WordPress REST API and works with any environme
 | `diviops_get_tb_layout` | Get a Theme Builder layout's block markup (header/body/footer) |
 | `diviops_list_variables` | List design token variables (filter by type or prefix) |
 | `diviops_variables_scan_orphans` | Find `gvid-`/`gcid-` refs with no backing Variable Manager entry (orphans render as invalid CSS) + unused variables (defined, never referenced). Scans pages, Theme Builder layouts (header/body/footer), Divi Library items, canvas pages, and the preset registry |
+| `diviops_variables_used_on_page` | Detect which `gvid-` (numeric/font) IDs a single page emits — the exact set Divi 5.4.0+ uses to scope selective `:root{--gvid-*}` CSS variable emission. Walks the same content stack the frontend assembles (post_content + active TB header/body/footer + appended canvases + presets). `gcid-` colors are out of scope (separate emission path). Use for per-page orphan validation, preflight before bulk variable rename, or to debug why a numeric/font variable doesn't render on a specific page. Read-only |
 | `diviops_list_canvases` | List all canvas pages |
 | `diviops_get_canvas` | Get canvas content |
 

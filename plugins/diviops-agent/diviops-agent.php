@@ -3,7 +3,7 @@
  * Plugin Name: DiviOps Agent
  * Plugin URI: https://github.com/oaris-dev/diviops
  * Description: REST API bridge for DiviOps — connects Claude Code to your Divi 5 site for AI-powered page building and design management.
- * Version: 1.0.0-beta.38
+ * Version: 1.0.0-beta.39
  * Author: oaris.de
  * Author URI: https://oaris.de
  * Text Domain: diviops-agent
@@ -22,7 +22,7 @@ class DiviOps_Agent {
 	/**
 	 * Plugin version — used for handshake compatibility checks.
 	 */
-	const VERSION = '1.0.0-beta.38';
+	const VERSION = '1.0.0-beta.39';
 
 	/**
 	 * Minimum MCP server version this plugin is compatible with.
@@ -914,6 +914,15 @@ class DiviOps_Agent {
 			'callback'            => [ __CLASS__, 'variables_scan_orphans' ],
 			// Admin-only: response correlates variable IDs with page titles — inventory-leak risk (matches /preset-scan-orphans).
 			'permission_callback' => [ __CLASS__, 'check_admin_permission' ],
+		] );
+
+		register_rest_route( self::REST_NAMESPACE, '/variables-used-on-page/(?P<id>\d+)', [
+			'methods'             => 'GET',
+			'callback'            => [ __CLASS__, 'variables_used_on_page' ],
+			'permission_callback' => [ __CLASS__, 'check_read_permission' ],
+			'args'                => [
+				'id' => [ 'required' => true, 'type' => 'integer' ],
+			],
 		] );
 
 		register_rest_route( self::REST_NAMESPACE, '/flush-static-cache', [
@@ -6903,6 +6912,283 @@ class DiviOps_Agent {
 		}
 
 		return rest_ensure_response( $response );
+	}
+
+	/**
+	 * Detect numeric/font variable IDs (gvid-*) the page actually emits.
+	 *
+	 * Mirrors the same content-stack assembly Divi performs at frontend render
+	 * (FrontEnd.php:628-675) so the result matches the variable IDs Divi 5.4.0+
+	 * uses to scope selective `:root{--gvid-*}` emission via
+	 * `Style::get_global_numeric_and_fonts_vars_style($ids)`:
+	 *
+	 *   1. The post's own `post_content`
+	 *   2. Theme Builder header/body/footer template content active for that post
+	 *   3. Appended (above/below) canvas content for the post and each TB template
+	 *   4. Interaction-target canvas content discovered in the assembled stack
+	 *   5. Canvas-portal-referenced canvases (recursive, with the same
+	 *      10-iteration safety cap Divi's frontend uses)
+	 *   6. Presets referenced by the above (resolved via Divi's preset chain)
+	 *
+	 * The TB-template resolution uses `ET_Theme_Builder_Request::from_post( $post_id )`
+	 * rather than the global-query-bound `from_current()`, so the answer is
+	 * accurate from a REST request without simulating the singular query state.
+	 *
+	 * Canvas content uses the public OffCanvasHooks per-owner helpers
+	 * (`get_canvas_content_for_appended`, `extract_interaction_target_ids_from_content`,
+	 * `get_canvas_content_for_targets`, `get_canvas_content_for_canvas_portals`)
+	 * instead of the convenience wrapper
+	 * `get_all_appended_canvas_content_for_post_and_templates()`. The wrapper's
+	 * inner helper bails on REST requests via `DynamicAssetsUtils::is_dynamic_front_end_request()`
+	 * (REST_REQUEST + wp_is_json_request are explicit gates), which would
+	 * silently drop canvas content from the scan and miss any gvid- IDs only
+	 * referenced from canvas modules. The per-owner helpers have no REST gate.
+	 *
+	 * Canvas-portal IDs are extracted directly from the assembled stack with
+	 * `DynamicAssetsUtils::extract_canvas_portal_canvas_ids_from_content()`
+	 * because the same util's cached `canvas_portal_ids` field is also gated
+	 * on `is_cacheable_request` (DynamicAssetsUtils.php:2736-2772) and would
+	 * be empty in REST.
+	 *
+	 * NOTE: gvid-* only. Color variables (gcid-*) are emitted via a separate
+	 * `GlobalData` color-block path that is NOT scoped per-page in 5.4.0, so
+	 * `DetectFeature::get_page_global_variable_ids()` does not surface them and
+	 * neither does this endpoint. Use `diviops_variables_scan_orphans` for
+	 * site-wide gcid- coverage.
+	 */
+	public static function variables_used_on_page( $request ) {
+		$post_id = (int) $request['id'];
+		if ( $post_id <= 0 ) {
+			return new WP_Error(
+				'diviops_invalid_post_id',
+				'post_id must be a positive integer.',
+				[ 'status' => 400 ]
+			);
+		}
+
+		$post = get_post( $post_id );
+		if ( ! $post instanceof WP_Post ) {
+			return new WP_Error(
+				'diviops_post_not_found',
+				sprintf( 'Post %d not found.', $post_id ),
+				[ 'status' => 404 ]
+			);
+		}
+
+		if ( ! class_exists( '\\ET\\Builder\\FrontEnd\\Assets\\DetectFeature' ) ) {
+			return new WP_Error(
+				'diviops_divi_not_active',
+				'Divi 5 (with DetectFeature class) is required for this endpoint.',
+				[ 'status' => 500 ]
+			);
+		}
+
+		// Build the combined main content: post_content + each TB template's
+		// post_content, space-joined. This matches `FrontEnd.php:640-653`
+		// exactly and is the same string Divi passes as `$main_content` to
+		// `get_all_appended_canvas_content_for_post_and_templates()` at line 658.
+		// Critically, this combined string — not a per-owner one — is what
+		// every owner needs so interaction-target discovery is identical to
+		// the frontend, and so the canvas-data static cache gets seeded
+		// correctly (see the cache-seed call below).
+		$post_main_content = is_string( $post->post_content ) ? $post->post_content : '';
+		$content_stack     = $post_main_content;
+		$combined_main     = $post_main_content;
+
+		// Active TB header/body/footer templates for this specific post.
+		$tb_template_ids = [];
+		if ( class_exists( 'ET_Theme_Builder_Request' ) && function_exists( 'et_theme_builder_get_template_layouts' ) ) {
+			$tb_request = \ET_Theme_Builder_Request::from_post( $post_id );
+			$tb_layouts = et_theme_builder_get_template_layouts( $tb_request );
+
+			$layout_post_types = [
+				defined( 'ET_THEME_BUILDER_HEADER_LAYOUT_POST_TYPE' ) ? ET_THEME_BUILDER_HEADER_LAYOUT_POST_TYPE : null,
+				defined( 'ET_THEME_BUILDER_BODY_LAYOUT_POST_TYPE' )   ? ET_THEME_BUILDER_BODY_LAYOUT_POST_TYPE   : null,
+				defined( 'ET_THEME_BUILDER_FOOTER_LAYOUT_POST_TYPE' ) ? ET_THEME_BUILDER_FOOTER_LAYOUT_POST_TYPE : null,
+			];
+
+			foreach ( $layout_post_types as $layout_post_type ) {
+				if ( null === $layout_post_type || empty( $tb_layouts[ $layout_post_type ] ) ) {
+					continue;
+				}
+				$layout = $tb_layouts[ $layout_post_type ];
+				if ( empty( $layout['override'] ) || empty( $layout['enabled'] ) ) {
+					continue;
+				}
+				$layout_id = (int) ( $layout['id'] ?? 0 );
+				if ( $layout_id <= 0 ) {
+					continue;
+				}
+				$tb_template_ids[] = $layout_id;
+				$tb_post           = get_post( $layout_id );
+				if ( $tb_post instanceof WP_Post && ! empty( $tb_post->post_content ) ) {
+					$content_stack .= ' ' . $tb_post->post_content;
+					$combined_main .= ' ' . $tb_post->post_content;
+				}
+			}
+		}
+
+		// Appended + interaction-target + canvas-portal content for the post
+		// and its TB templates. We can't use the convenience wrapper
+		// `get_all_appended_canvas_content_for_post_and_templates()` here
+		// because its inner helper (`get_all_appended_canvas_content`) bails
+		// out on REST requests via `DynamicAssetsUtils::is_dynamic_front_end_request()`
+		// (REST_REQUEST + wp_is_json_request are explicit gates), so canvas
+		// content would silently never appear in the scan.
+		//
+		// Assemble it directly from the public OffCanvasHooks helpers, which
+		// have no REST gating.
+		//
+		// CRITICAL: seed `DynamicAssetsUtils::get_all_canvas_data_for_post($owner_id, $combined_main)`
+		// per owner BEFORE any other canvas helper runs for that owner.
+		// `get_canvas_content_for_appended()` internally calls
+		// `get_all_canvas_data_for_post($owner_id)` with an empty main_content
+		// (OffCanvasHooks.php:2892), which would write the static cache
+		// (keyed both by content-hash and by base "post_id_md5('')") with
+		// `interaction_targets => []` — empty seed, no targets discoverable.
+		// `get_canvas_content_for_targets()` later reads the same base key
+		// (it also passes empty main_content) and would find no targets.
+		// Seeding first with the same combined main Divi uses populates the
+		// cache with `interaction_targets` so the later targets call works.
+		// See DynamicAssetsUtils.php:2937-2965 (interaction_targets build) and
+		// :2990-2995 (dual-key cache write).
+		//
+		// Canvas portal IDs need to be extracted ourselves: that same util's
+		// `canvas_portal_ids` field is also gated behind `is_cacheable_request`
+		// (DynamicAssetsUtils.php:2736-2772), so the cached `canvas_data`
+		// returns an empty array for that field in REST. We walk the combined
+		// main content with `extract_canvas_portal_canvas_ids_from_content()`
+		// + recursive expansion via `get_canvas_content_for_canvas_portals()`,
+		// matching the full pipeline at OffCanvasHooks.php:3004-3047 (incl.
+		// the 10-iteration safety cap for nested portals).
+		//
+		// Interaction targets are extracted from `$combined_main` (matching
+		// what Divi passes at OffCanvasHooks.php:3070/3087 — same combined
+		// string for every owner) and filtered through
+		// `canvas_block_content_contains_target` to drop targets already
+		// satisfied on the main canvas (matches OffCanvasHooks.php:2980-3002).
+		if ( class_exists( '\\ET\\Builder\\VisualBuilder\\OffCanvas\\OffCanvasHooks' ) ) {
+			$canvas_owner_ids = array_values( array_unique( array_merge( [ $post_id ], $tb_template_ids ) ) );
+
+			// Pre-extract + filter target IDs once — Divi passes the same
+			// combined main to every owner, so the filtered set is identical
+			// across the loop. Cheap to compute: extract is short-circuited
+			// by `DetectFeature::has_interactions_enabled` and the filter is
+			// two str_contains + a regex per target.
+			$shared_filtered_target_ids = [];
+			$shared_target_ids          = \ET\Builder\VisualBuilder\OffCanvas\OffCanvasHooks::extract_interaction_target_ids_from_content( $combined_main );
+			if ( ! empty( $shared_target_ids ) ) {
+				foreach ( $shared_target_ids as $target_id ) {
+					if ( ! \ET\Builder\VisualBuilder\OffCanvas\OffCanvasHooks::canvas_block_content_contains_target( $combined_main, $target_id ) ) {
+						$shared_filtered_target_ids[] = $target_id;
+					}
+				}
+			}
+
+			// Pre-seed the portal IDs that come from the combined main content
+			// (matches Divi's `canvas_data['canvas_portal_ids']` which is built
+			// from main + TB content at DynamicAssetsUtils.php:2749-2771). Same
+			// for every owner since the main is the same.
+			$shared_portal_ids_from_main = [];
+			if ( str_contains( $combined_main, 'canvas-portal' ) ) {
+				$shared_portal_ids_from_main = \ET\Builder\FrontEnd\Assets\DynamicAssetsUtils::extract_canvas_portal_canvas_ids_from_content( $combined_main );
+			}
+
+			foreach ( $canvas_owner_ids as $owner_id ) {
+				// Seed the static canvas-data cache for this owner with the
+				// combined main content so interaction_targets is populated
+				// before any helper call below reads the base cache key.
+				\ET\Builder\FrontEnd\Assets\DynamicAssetsUtils::get_all_canvas_data_for_post( $owner_id, $combined_main );
+
+				// Per-owner local buffer — Divi's `get_all_appended_canvas_content`
+				// uses a fresh `$all_canvas_content` per owner (line 2969) and
+				// expands portals only from THAT buffer + the canvas_data's main-
+				// derived portal IDs, calling `get_canvas_content_for_canvas_portals(
+				// $ids, $owner_id)` against THIS owner's $post_id (line 3033).
+				// Sharing portal-ID extraction across owners via the global
+				// $content_stack would resolve a same-named portal ID against the
+				// wrong owner and over-include canvases the frontend would not
+				// fetch. Keep portal expansion strictly per-owner here.
+				$owner_canvas_content = '';
+
+				// Explicitly appended canvases (above/below).
+				$appended = \ET\Builder\VisualBuilder\OffCanvas\OffCanvasHooks::get_canvas_content_for_appended( $owner_id );
+				if ( ! empty( $appended ) ) {
+					$owner_canvas_content .= $appended;
+				}
+
+				// Interaction-targeted canvases — same filtered set per owner.
+				if ( ! empty( $shared_filtered_target_ids ) ) {
+					$interaction = \ET\Builder\VisualBuilder\OffCanvas\OffCanvasHooks::get_canvas_content_for_targets( $shared_filtered_target_ids, $owner_id );
+					if ( ! empty( $interaction ) ) {
+						$owner_canvas_content .= $interaction;
+					}
+				}
+
+				// Canvas-portal expansion (recursive, capped). Seed from the
+				// shared main-derived IDs + portals discovered inside this
+				// OWNER's local appended/interaction buffer — matches the
+				// merge at OffCanvasHooks.php:3009-3017.
+				$portal_ids_from_owner_buffer = [];
+				if ( '' !== $owner_canvas_content && str_contains( $owner_canvas_content, 'canvas-portal' ) ) {
+					$portal_ids_from_owner_buffer = \ET\Builder\FrontEnd\Assets\DynamicAssetsUtils::extract_canvas_portal_canvas_ids_from_content( $owner_canvas_content );
+				}
+
+				$portal_ids_to_expand = array_values( array_unique( array_merge( $shared_portal_ids_from_main, $portal_ids_from_owner_buffer ) ) );
+
+				if ( ! empty( $portal_ids_to_expand ) ) {
+					$expanded_portal_ids = [];
+					$iteration_limit     = 10;
+					$iteration           = 0;
+
+					while ( $iteration < $iteration_limit ) {
+						$portal_ids_to_process = array_values( array_diff( $portal_ids_to_expand, $expanded_portal_ids ) );
+						if ( empty( $portal_ids_to_process ) ) {
+							break;
+						}
+
+						++$iteration;
+						$expanded_portal_ids = array_merge( $expanded_portal_ids, $portal_ids_to_process );
+
+						$portal_content = \ET\Builder\VisualBuilder\OffCanvas\OffCanvasHooks::get_canvas_content_for_canvas_portals( $portal_ids_to_process, $owner_id );
+						if ( empty( $portal_content ) ) {
+							continue;
+						}
+
+						$owner_canvas_content .= $portal_content;
+
+						if ( str_contains( $portal_content, 'canvas-portal' ) ) {
+							$nested_portal_ids = \ET\Builder\FrontEnd\Assets\DynamicAssetsUtils::extract_canvas_portal_canvas_ids_from_content( $portal_content );
+							if ( ! empty( $nested_portal_ids ) ) {
+								$portal_ids_to_expand = array_unique( array_merge( $portal_ids_to_expand, $nested_portal_ids ) );
+							}
+						}
+					}
+				}
+
+				// Merge this owner's collected canvas content into the global
+				// stack for variable detection. The per-owner isolation only
+				// applies to canvas content discovery (where $owner_id matters);
+				// gvid- token detection runs against the union.
+				if ( '' !== $owner_canvas_content ) {
+					$content_stack .= ' ' . $owner_canvas_content;
+				}
+			}
+		}
+
+		$variable_ids = '' !== $content_stack
+			? \ET\Builder\FrontEnd\Assets\DetectFeature::get_page_global_variable_ids( $content_stack )
+			: [];
+
+		// Sort so callers get a stable order (frontend cares about uniqueness, not order).
+		sort( $variable_ids );
+
+		return rest_ensure_response( [
+			'post_id'         => $post_id,
+			'variable_ids'    => $variable_ids,
+			'count'           => count( $variable_ids ),
+			'tb_template_ids' => $tb_template_ids,
+		] );
 	}
 
 	/**
