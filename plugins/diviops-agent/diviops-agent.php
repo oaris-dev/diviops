@@ -3,7 +3,7 @@
  * Plugin Name: DiviOps Agent
  * Plugin URI: https://github.com/oaris-dev/diviops
  * Description: REST API bridge for DiviOps — connects Claude Code to your Divi 5 site for AI-powered page building and design management.
- * Version: 1.0.0-beta.39
+ * Version: 1.0.0-beta.40
  * Author: oaris.de
  * Author URI: https://oaris.de
  * Text Domain: diviops-agent
@@ -22,7 +22,7 @@ class DiviOps_Agent {
 	/**
 	 * Plugin version — used for handshake compatibility checks.
 	 */
-	const VERSION = '1.0.0-beta.39';
+	const VERSION = '1.0.0-beta.40';
 
 	/**
 	 * Minimum MCP server version this plugin is compatible with.
@@ -914,6 +914,25 @@ class DiviOps_Agent {
 			'callback'            => [ __CLASS__, 'variables_scan_orphans' ],
 			// Admin-only: response correlates variable IDs with page titles — inventory-leak risk (matches /preset-scan-orphans).
 			'permission_callback' => [ __CLASS__, 'check_admin_permission' ],
+		] );
+
+		register_rest_route( self::REST_NAMESPACE, '/variables-create-fluid-system', [
+			'methods'             => 'POST',
+			'callback'            => [ __CLASS__, 'create_fluid_system' ],
+			// Admin-only: bulk write to the variable registry.
+			'permission_callback' => [ __CLASS__, 'check_admin_permission' ],
+			'args'                => [
+				'profile'           => [ 'required' => false, 'type' => 'string', 'default' => 'divi-default' ],
+				'custom_anchors'    => [ 'required' => false, 'type' => 'object' ],
+				'typography'        => [ 'required' => false, 'type' => 'object' ],
+				'spacing'           => [ 'required' => false, 'type' => 'object' ],
+				'radius'            => [ 'required' => false, 'type' => 'object' ],
+				'namespace'         => [ 'required' => false, 'type' => 'string', 'default' => 'oa' ],
+				'output_unit'       => [ 'required' => false, 'type' => 'string' ],
+				'root_font_size_px' => [ 'required' => false, 'type' => 'number' ],
+				'dry_run'           => [ 'required' => false, 'type' => 'boolean', 'default' => false ],
+				'overwrite'         => [ 'required' => false, 'type' => 'boolean', 'default' => false ],
+			],
 		] );
 
 		register_rest_route( self::REST_NAMESPACE, '/variables-used-on-page/(?P<id>\d+)', [
@@ -6736,6 +6755,432 @@ class DiviOps_Agent {
 			'type'    => $type,
 			'label'   => $label,
 			'value'   => $sanitized_value,
+		] );
+	}
+
+	/**
+	 * Validate a caller-supplied name_prefix against the gvid- ID charset.
+	 *
+	 * Generated IDs follow `gvid-{namespace}-{prefix}-{n}` or
+	 * `gvid-{namespace}-size-{prefix}{n}`. Divi's ID resolution at
+	 * `GlobalData.php:760` strips any chars outside [a-z0-9-_] silently —
+	 * the variable is created in the registry but $variable() lookups fail
+	 * to resolve at render time. Reject up front rather than letting the
+	 * silent-render-failure ship.
+	 *
+	 * Mirrors the same charset our diviops_add_global_color enforces.
+	 *
+	 * @return string The validated, lowercased prefix, or $default if input is null/empty.
+	 * @throws \InvalidArgumentException if the prefix contains disallowed chars.
+	 */
+	private static function validate_name_prefix( $input, $field_name, $default ) {
+		if ( null === $input || '' === $input ) {
+			return $default;
+		}
+		if ( ! is_string( $input ) ) {
+			throw new \InvalidArgumentException( "$field_name must be a string." );
+		}
+		$lower = strtolower( $input );
+		if ( ! preg_match( '/^[a-z0-9_-]+$/', $lower ) ) {
+			throw new \InvalidArgumentException( sprintf(
+				"%s '%s' contains characters outside [a-z0-9-_]. Divi's \$variable() resolver strips disallowed chars silently, so the generated IDs would be created in the registry but fail to resolve at render time. Use only [a-z0-9-_].",
+				$field_name,
+				$input
+			) );
+		}
+		return $lower;
+	}
+
+	/**
+	 * Named modular-scale ratios. Mirrors common typography scales so AI
+	 * callers can pass a memorable name instead of looking up a magic number.
+	 * Numeric ratios are accepted directly via the schema and bypass this map.
+	 */
+	private static function modular_scale_ratio( $name ) {
+		$ratios = [
+			'minor-second'     => 1.067,
+			'major-second'     => 1.125,
+			'minor-third'      => 1.2,
+			'major-third'      => 1.25,
+			'perfect-fourth'   => 1.333,
+			'augmented-fourth' => 1.414,
+			'perfect-fifth'    => 1.5,
+			'golden'           => 1.618,
+		];
+		return $ratios[ $name ] ?? null;
+	}
+
+	/**
+	 * Resolve the (min_viewport_px, max_viewport_px) pair for a profile.
+	 * - "divi-default": 360/1350 — matches Divi 5.4.0's Variable Generator Modal defaults
+	 *   (rowMaxWidthPx 1080 / rowWidthPercent 80% = 1350 outer viewport).
+	 * - "wide": 320/1920 — diviops convention covering wider device span; matches the
+	 *   default anchors used by `create_variable`'s shorthand form.
+	 * - "custom": caller supplies anchors via the `custom_anchors` field.
+	 */
+	private static function resolve_fluid_anchors( $profile, $custom_anchors ) {
+		switch ( $profile ) {
+			case 'divi-default':
+				return [ 360.0, 1350.0 ];
+			case 'wide':
+				return [ 320.0, 1920.0 ];
+			case 'custom':
+				if ( ! is_array( $custom_anchors ) ) {
+					throw new \InvalidArgumentException( 'profile="custom" requires custom_anchors: {min_viewport_px, max_viewport_px}.' );
+				}
+				$min_vp = isset( $custom_anchors['min_viewport_px'] ) ? (float) $custom_anchors['min_viewport_px'] : 0.0;
+				$max_vp = isset( $custom_anchors['max_viewport_px'] ) ? (float) $custom_anchors['max_viewport_px'] : 0.0;
+				if ( $min_vp <= 0 || $max_vp <= 0 || $max_vp <= $min_vp ) {
+					throw new \InvalidArgumentException( 'custom_anchors must provide positive min_viewport_px and max_viewport_px with max > min.' );
+				}
+				return [ $min_vp, $max_vp ];
+			default:
+				throw new \InvalidArgumentException( "Unknown profile '$profile' — expected 'divi-default', 'wide', or 'custom'." );
+		}
+	}
+
+	/**
+	 * Compute the typography modular-scale chain.
+	 *
+	 * Step N's value = `base_px × ratio^(steps-N)`, so step 1 = LARGEST size
+	 * and step `steps` = base body size. Mirrors HTML heading conventions
+	 * (h1 = largest).
+	 *
+	 * Fluid behavior is opt-in via `fluid_growth`:
+	 *   - fluid_growth = 1.0 (default) → each step is a fixed value (discrete token)
+	 *   - fluid_growth > 1.0          → step N fluid-scales from
+	 *                                    base_px × ratio^(steps-N)        at min_viewport
+	 *                                 to base_px × ratio^(steps-N) × fluid_growth at max_viewport
+	 *
+	 * `max_ratio` is also accepted (advanced): if set, large-viewport value uses
+	 * `base_px × max_ratio^(steps-N) × fluid_growth` so the scale chain itself
+	 * widens at the large anchor (matches ET's per-breakpoint ratio pattern).
+	 *
+	 * @return array<int, array{id:string, value:string, label:string}>
+	 */
+	private static function compute_typography_scale( $cfg, $anchors, $output_unit, $root_font_size_px, $namespace ) {
+		$base_px       = isset( $cfg['base_px'] ) ? (float) $cfg['base_px'] : 16.0;
+		$steps         = isset( $cfg['steps'] ) ? (int) $cfg['steps'] : 6;
+		$fluid_growth  = isset( $cfg['fluid_growth'] ) ? (float) $cfg['fluid_growth'] : 1.0;
+		$name_prefix   = self::validate_name_prefix(
+			$cfg['name_prefix'] ?? null,
+			'typography.name_prefix',
+			'h'
+		);
+
+		if ( $base_px <= 0 ) {
+			throw new \InvalidArgumentException( 'typography.base_px must be a positive number (px).' );
+		}
+		if ( $steps < 1 || $steps > 20 ) {
+			throw new \InvalidArgumentException( 'typography.steps must be between 1 and 20.' );
+		}
+		if ( $fluid_growth <= 0 ) {
+			throw new \InvalidArgumentException( 'typography.fluid_growth must be a positive number (e.g. 1.0 for non-fluid, 1.25 for moderate growth).' );
+		}
+
+		$ratio     = self::resolve_modular_ratio( $cfg['ratio'] ?? 1.25 );
+		$max_ratio = isset( $cfg['max_ratio'] ) ? self::resolve_modular_ratio( $cfg['max_ratio'] ) : $ratio;
+
+		[ $min_vp, $max_vp ] = $anchors;
+
+		$out = [];
+		for ( $n = 1; $n <= $steps; $n++ ) {
+			// Reverse step indexing so h1 = largest, hN = base.
+			$exponent = $steps - $n;
+			$small_px = $base_px * pow( $ratio, $exponent );
+			$large_px = $base_px * pow( $max_ratio, $exponent ) * $fluid_growth;
+
+			$value = self::build_fluid_clamp( $min_vp, $small_px, $max_vp, $large_px, $output_unit, $root_font_size_px );
+			$id    = sprintf( 'gvid-%s-size-%s%d', $namespace, $name_prefix, $n );
+			$out[] = [
+				'id'    => $id,
+				'value' => $value,
+				'label' => sprintf( 'Size %s%d', strtoupper( $name_prefix ), $n ),
+			];
+		}
+		return $out;
+	}
+
+	/**
+	 * Resolve a ratio input — accepts a positive number or a named scale.
+	 */
+	private static function resolve_modular_ratio( $ratio_input ) {
+		if ( is_numeric( $ratio_input ) ) {
+			$r = (float) $ratio_input;
+			if ( $r <= 0 ) {
+				throw new \InvalidArgumentException( 'Modular ratio must be a positive number.' );
+			}
+			return $r;
+		}
+		if ( is_string( $ratio_input ) ) {
+			$resolved = self::modular_scale_ratio( $ratio_input );
+			if ( null !== $resolved ) {
+				return $resolved;
+			}
+			throw new \InvalidArgumentException( "Unknown modular ratio name '$ratio_input'. Pass a number or one of: minor-second, major-second, minor-third, major-third, perfect-fourth, augmented-fourth, perfect-fifth, golden." );
+		}
+		throw new \InvalidArgumentException( 'Modular ratio must be a number or a named scale.' );
+	}
+
+	/**
+	 * Compute a spacing/radius scale.
+	 *
+	 * Each step's "small" value lives on the chosen scale (linear or
+	 * geometric) between min_px and max_px. Default behavior is discrete
+	 * (each step emits a fixed value, not a clamp) — that matches how
+	 * spacing/radius tokens are typically used in design systems.
+	 *
+	 * Fluid behavior is opt-in via `fluid_growth`:
+	 *   - fluid_growth = 1.0 (default) → discrete: step N value is constant across viewports
+	 *   - fluid_growth > 1.0          → step N value scales from `small` at min_viewport
+	 *                                    to `small × fluid_growth` at max_viewport
+	 *
+	 * - `linear`: equal arithmetic spacing (min, ..., max) — best for spacing.
+	 * - `geometric`: equal multiplicative spacing — best for radius/typography-like scales.
+	 *
+	 * @return array<int, array{id:string, value:string, label:string}>
+	 */
+	private static function compute_size_scale( $cfg, $bucket, $default_prefix, $anchors, $output_unit, $root_font_size_px, $namespace ) {
+		$min_px       = isset( $cfg['min_px'] ) ? (float) $cfg['min_px'] : 0.0;
+		$max_px       = isset( $cfg['max_px'] ) ? (float) $cfg['max_px'] : 0.0;
+		$steps        = isset( $cfg['steps'] ) ? (int) $cfg['steps'] : 6;
+		$scale        = isset( $cfg['scale'] ) ? (string) $cfg['scale'] : 'linear';
+		$fluid_growth = isset( $cfg['fluid_growth'] ) ? (float) $cfg['fluid_growth'] : 1.0;
+		$name_prefix  = self::validate_name_prefix(
+			$cfg['name_prefix'] ?? null,
+			"$bucket.name_prefix",
+			$default_prefix
+		);
+
+		if ( $min_px < 0 || $max_px <= 0 ) {
+			throw new \InvalidArgumentException( "$bucket.min_px must be ≥ 0 and $bucket.max_px must be > 0." );
+		}
+		if ( $max_px < $min_px ) {
+			throw new \InvalidArgumentException( "$bucket.max_px must be ≥ $bucket.min_px." );
+		}
+		if ( $steps < 1 || $steps > 30 ) {
+			throw new \InvalidArgumentException( "$bucket.steps must be between 1 and 30." );
+		}
+		if ( ! in_array( $scale, [ 'linear', 'geometric' ], true ) ) {
+			throw new \InvalidArgumentException( "$bucket.scale must be 'linear' or 'geometric'." );
+		}
+		if ( 'geometric' === $scale && $min_px <= 0 ) {
+			throw new \InvalidArgumentException( "$bucket.scale='geometric' requires min_px > 0 (geometric step from 0 is undefined)." );
+		}
+		if ( $fluid_growth <= 0 ) {
+			throw new \InvalidArgumentException( "$bucket.fluid_growth must be a positive number (1.0 = discrete, > 1 = fluid)." );
+		}
+
+		[ $min_vp, $max_vp ] = $anchors;
+
+		$out = [];
+		for ( $n = 1; $n <= $steps; $n++ ) {
+			if ( 1 === $steps ) {
+				// Single step: the "scale" doesn't really apply — emit a clamp
+				// that goes min→max across the viewport (most useful single-step
+				// shape). fluid_growth is ignored in this case.
+				$small_v = $min_px;
+				$large_v = $max_px;
+			} else {
+				$t = ( $n - 1 ) / ( $steps - 1 );
+				if ( 'linear' === $scale ) {
+					$small_v = $min_px + $t * ( $max_px - $min_px );
+				} else {
+					$small_v = $min_px * pow( $max_px / $min_px, $t );
+				}
+				$large_v = $small_v * $fluid_growth;
+			}
+
+			$value = self::build_fluid_clamp( $min_vp, $small_v, $max_vp, $large_v, $output_unit, $root_font_size_px );
+			$id    = sprintf( 'gvid-%s-%s-%d', $namespace, $name_prefix, $n );
+			$out[] = [
+				'id'    => $id,
+				'value' => $value,
+				'label' => sprintf( '%s %d', ucfirst( $name_prefix ), $n ),
+			];
+		}
+		return $out;
+	}
+
+	/**
+	 * Batch generator: emit a fluid typography + spacing + radius set in one call.
+	 *
+	 * Mirrors ET 5.4.0's Variable Generator Modal at the algorithm level
+	 * (clamp() math is identical via build_fluid_clamp) but layers profile-
+	 * selectable anchors over it: divi-default (360/1350) matches ET's defaults,
+	 * wide (320/1920) matches the diviops convention, custom takes explicit
+	 * anchors. Each category is independent and optional.
+	 *
+	 * Response shape (consistent across dry_run and persist modes):
+	 *   - `created`: entries that would be (or were) written. With overwrite=false,
+	 *     this contains only NEW entries; existing IDs land in `skipped` instead.
+	 *     With overwrite=true, every plan entry lands here (`overwrote` flag
+	 *     distinguishes update vs create).
+	 *   - `skipped`: existing IDs not written this call (overwrite=false only).
+	 *
+	 * To audit the FULL computed plan (every entry regardless of existing IDs),
+	 * call with overwrite=true + dry_run=true — that returns each generated
+	 * entry under `created` with `overwrote: true|false` flagging which would
+	 * be updates vs new writes. This is the recommended preflight pattern.
+	 *
+	 * Persistence is a single write to `et_divi_global_variables` so an invalid
+	 * mid-batch step rolls back cleanly (no half-written registry).
+	 */
+	public static function create_fluid_system( $request ) {
+		$profile           = sanitize_text_field( $request->get_param( 'profile' ) ?: 'divi-default' );
+		$custom_anchors    = $request->get_param( 'custom_anchors' );
+		$typography        = $request->get_param( 'typography' );
+		$spacing           = $request->get_param( 'spacing' );
+		$radius            = $request->get_param( 'radius' );
+		$namespace_raw     = $request->get_param( 'namespace' );
+		$output_unit       = $request->get_param( 'output_unit' );
+		$root_font_size_px = $request->get_param( 'root_font_size_px' );
+		$dry_run           = rest_sanitize_boolean( $request->get_param( 'dry_run' ) ?? false );
+		$overwrite         = rest_sanitize_boolean( $request->get_param( 'overwrite' ) ?? false );
+
+		// Namespace validation mirrors validate_name_prefix(): explicit reject
+		// instead of sanitize_key()'s silent strip. sanitize_key() rewriting
+		// "oa!" or "o a" to "oa" would alias bogus input onto the default
+		// namespace; with overwrite=true that means silently rewriting the
+		// WRONG token set. The reject path keeps the failure loud.
+		try {
+			$namespace = self::validate_name_prefix(
+				( null === $namespace_raw || '' === $namespace_raw ) ? 'oa' : $namespace_raw,
+				'namespace',
+				'oa'
+			);
+		} catch ( \Exception $e ) {
+			return new WP_Error( 'invalid_namespace', $e->getMessage(), [ 'status' => 400 ] );
+		}
+
+		// At least one category must be present.
+		if ( ! is_array( $typography ) && ! is_array( $spacing ) && ! is_array( $radius ) ) {
+			return new WP_Error( 'no_categories', 'At least one of typography/spacing/radius must be provided.', [ 'status' => 400 ] );
+		}
+
+		// Validate output_unit + root_font_size_px (same opt-in rules as create_variable).
+		if ( null !== $output_unit && 'rem' !== $output_unit && 'px' !== $output_unit ) {
+			return new WP_Error( 'invalid_output_unit', "output_unit must be 'rem' or 'px'.", [ 'status' => 400 ] );
+		}
+		if ( null !== $root_font_size_px ) {
+			if ( ! is_numeric( $root_font_size_px ) || (float) $root_font_size_px <= 0 ) {
+				return new WP_Error( 'invalid_root_font_size_px', 'root_font_size_px must be a positive number (px).', [ 'status' => 400 ] );
+			}
+			$root_font_size_px = (float) $root_font_size_px;
+		}
+		// rem emission requires explicit opt-in via output_unit='rem' or root_font_size_px.
+		// Inputs to this batch tool are all numeric px (base_px / min_px / max_px) so the
+		// rem-in-input gate doesn't apply here, but rem OUTPUT still bakes a root assumption.
+		$effective_output_unit = $output_unit ?? ( null !== $root_font_size_px ? 'rem' : 'px' );
+		$effective_root        = ( null === $root_font_size_px ) ? 16.0 : $root_font_size_px;
+
+		// Resolve anchors.
+		try {
+			$anchors = self::resolve_fluid_anchors( $profile, $custom_anchors );
+		} catch ( \Exception $e ) {
+			return new WP_Error( 'invalid_profile', $e->getMessage(), [ 'status' => 400 ] );
+		}
+
+		// Compute each requested category.
+		$plan = [];
+		try {
+			if ( is_array( $typography ) ) {
+				$plan = array_merge( $plan, self::compute_typography_scale( $typography, $anchors, $effective_output_unit, $effective_root, $namespace ) );
+			}
+			if ( is_array( $spacing ) ) {
+				$plan = array_merge( $plan, self::compute_size_scale( $spacing, 'spacing', 'space', $anchors, $effective_output_unit, $effective_root, $namespace ) );
+			}
+			if ( is_array( $radius ) ) {
+				$plan = array_merge( $plan, self::compute_size_scale( $radius, 'radius', 'rounded', $anchors, $effective_output_unit, $effective_root, $namespace ) );
+			}
+		} catch ( \Exception $e ) {
+			return new WP_Error( 'fluid_system_generation_failed', $e->getMessage(), [ 'status' => 400 ] );
+		}
+
+		// Ensure the plan has no internal ID collisions (e.g. typography
+		// name_prefix overlapping with spacing name_prefix at the same step).
+		$seen = [];
+		foreach ( $plan as $entry ) {
+			if ( isset( $seen[ $entry['id'] ] ) ) {
+				return new WP_Error(
+					'plan_id_collision',
+					sprintf( "Two generated entries share ID '%s'. Adjust name_prefix in one of typography/spacing/radius to disambiguate.", $entry['id'] ),
+					[ 'status' => 400 ]
+				);
+			}
+			$seen[ $entry['id'] ] = true;
+		}
+
+		// Inspect existing registry to compute skipped vs to-create.
+		$vars = get_option( 'et_divi_global_variables', [] );
+		if ( ! is_array( $vars ) ) {
+			$vars = [];
+		}
+		if ( ! is_array( $vars['numbers'] ?? null ) ) {
+			$vars['numbers'] = [];
+		}
+
+		$created      = [];
+		$skipped      = [];
+		$max_order    = 0;
+		if ( ! empty( $vars['numbers'] ) ) {
+			$orders = array_column( $vars['numbers'], 'order' );
+			if ( ! empty( $orders ) ) {
+				$max_order = max( array_map( 'intval', $orders ) );
+			}
+		}
+
+		foreach ( $plan as $entry ) {
+			$id    = $entry['id'];
+			$value = $entry['value'];
+			$label = $entry['label'];
+
+			$exists = isset( $vars['numbers'][ $id ] );
+			if ( $exists && ! $overwrite ) {
+				$skipped[] = [
+					'id'     => $id,
+					'reason' => 'exists',
+					'value'  => $vars['numbers'][ $id ]['value'] ?? null,
+				];
+				continue;
+			}
+
+			// Preserve order on overwrite; assign a fresh order on create.
+			$order = $exists
+				? (int) ( $vars['numbers'][ $id ]['order'] ?? ++$max_order )
+				: ++$max_order;
+
+			$vars['numbers'][ $id ] = [
+				'id'          => $id,
+				'label'       => $label,
+				'value'       => $value,
+				'order'       => $order,
+				'status'      => 'active',
+				'lastUpdated' => gmdate( 'Y-m-d\TH:i:s.000\Z' ),
+				'type'        => 'numbers',
+			];
+			$created[] = [
+				'id'         => $id,
+				'value'      => $value,
+				'label'      => $label,
+				'overwrote'  => $exists,
+			];
+		}
+
+		if ( ! $dry_run && ! empty( $created ) ) {
+			update_option( 'et_divi_global_variables', $vars );
+		}
+
+		return rest_ensure_response( [
+			'success'      => true,
+			'profile'      => $profile,
+			'anchors'      => [ 'min_viewport_px' => $anchors[0], 'max_viewport_px' => $anchors[1] ],
+			'output_unit'  => $effective_output_unit,
+			'dry_run'      => $dry_run,
+			'created'      => $created,
+			'skipped'      => $skipped,
+			'created_count' => count( $created ),
+			'skipped_count' => count( $skipped ),
 		] );
 	}
 

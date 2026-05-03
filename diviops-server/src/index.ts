@@ -1995,6 +1995,219 @@ server.registerTool(
 );
 
 server.registerTool(
+  "diviops_create_fluid_system",
+  {
+    description:
+      "Batch-emit a fluid typography + spacing + radius variable set in one call — mirrors Divi 5.4.0's Variable Generator Modal at the algorithm level (clamp() math is identical to diviops_create_variable's fluid mode) but layers profile-selectable anchors over it. Each category is independent and optional. Use for: (1) bootstrapping a design system in one call instead of 20+ individual diviops_create_variable invocations; (2) mirroring ET's variable layout so your tokens coexist with VB-generated ones in the Variable Manager; (3) deterministic preflight via dry_run before committing the registry change. By default, refuses to overwrite existing IDs (returns them in `skipped`) — pass overwrite=true to update in place. Persists in a single atomic write to the variable registry; mid-batch failures roll back cleanly.",
+    inputSchema: {
+      profile: z
+        .enum(["divi-default", "wide", "custom"])
+        .optional()
+        .default("divi-default")
+        .describe(
+          'Anchor preset for the underlying clamp() math. "divi-default" (360→1350) matches Divi 5.4.0\'s Variable Generator Modal defaults; "wide" (320→1920) covers a wider device span (the diviops convention); "custom" requires custom_anchors. Affects ALL three categories uniformly.',
+        ),
+      custom_anchors: z
+        .object({
+          min_viewport_px: z.number().positive(),
+          max_viewport_px: z.number().positive(),
+        })
+        .refine((a) => a.max_viewport_px > a.min_viewport_px, {
+          message: "custom_anchors.max_viewport_px must be > min_viewport_px",
+        })
+        .optional()
+        .describe(
+          'Required when profile="custom". Defines the (min_viewport_px, max_viewport_px) pair the clamp() formulas anchor to. max must be > min. (The profile/custom_anchors pairing is also enforced server-side, returning 400 invalid_profile if profile="custom" is sent without custom_anchors.)',
+        ),
+      typography: z
+        .object({
+          base_px: z
+            .number()
+            .positive()
+            .describe(
+              "Base body size in px. Step N's value = base_px × ratio^(steps-1). h1 = largest (top of chain), hN = base.",
+            ),
+          ratio: z
+            .union([
+              z.number().positive(),
+              z.enum([
+                "minor-second",
+                "major-second",
+                "minor-third",
+                "major-third",
+                "perfect-fourth",
+                "augmented-fourth",
+                "perfect-fifth",
+                "golden",
+              ]),
+            ])
+            .describe(
+              "Modular-scale ratio. Pass a named scale ('major-third'=1.25, 'perfect-fifth'=1.5, 'golden'=1.618, etc.) or a raw number. Step N is base × ratio^(steps-N), so h1 (step 1) is the largest size when steps>1.",
+            ),
+          steps: z
+            .number()
+            .int()
+            .min(1)
+            .max(20)
+            .describe(
+              "Number of typography steps to emit (e.g. 6 = h1..h6). Cap is 20 to prevent runaway scale chains.",
+            ),
+          max_ratio: z
+            .union([
+              z.number().positive(),
+              z.enum([
+                "minor-second",
+                "major-second",
+                "minor-third",
+                "major-third",
+                "perfect-fourth",
+                "augmented-fourth",
+                "perfect-fifth",
+                "golden",
+              ]),
+            ])
+            .optional()
+            .describe(
+              "Optional ratio at max viewport. Defaults to ratio (same chain at both anchors). Pass a larger value (e.g. ratio=1.2 + max_ratio=1.333) for a more dramatic scale on large screens.",
+            ),
+          fluid_growth: z
+            .number()
+            .positive()
+            .optional()
+            .describe(
+              "Multiplicative growth factor at max viewport. Default 1.0 = discrete (each step emits a fixed value, no clamp growth). Common values: 1.2-1.5 for moderate fluid scaling. Step N's clamp goes from `base × ratio^(steps-N)` at min_viewport to `base × max_ratio^(steps-N) × fluid_growth` at max_viewport.",
+            ),
+          name_prefix: z
+            .string()
+            .optional()
+            .describe(
+              "ID prefix per step. Default 'h' → IDs become gvid-{namespace}-size-h1..hN. Pass 'display' for hero sizes ('gvid-{namespace}-size-display1..').",
+            ),
+        })
+        .optional(),
+      spacing: z
+        .object({
+          min_px: z.number().min(0),
+          max_px: z.number().positive(),
+          steps: z.number().int().min(1).max(30),
+          scale: z
+            .enum(["linear", "geometric"])
+            .optional()
+            .default("linear")
+            .describe(
+              "Distribution between min_px and max_px. 'linear' = equal arithmetic spacing (best for spacing scales). 'geometric' = equal multiplicative spacing (best for typography-like scales). geometric requires min_px > 0.",
+            ),
+          fluid_growth: z
+            .number()
+            .positive()
+            .optional()
+            .describe(
+              "Multiplicative growth factor at max viewport. Default 1.0 = discrete (each spacing token is constant across viewports — typical design-system behavior). > 1.0 = fluid (each token scales from `value` at min_viewport to `value × fluid_growth` at max_viewport).",
+            ),
+          name_prefix: z
+            .string()
+            .optional()
+            .describe(
+              "ID prefix. Default 'space' → gvid-{namespace}-space-1..N.",
+            ),
+        })
+        .optional(),
+      radius: z
+        .object({
+          min_px: z.number().min(0),
+          max_px: z.number().positive(),
+          steps: z.number().int().min(1).max(30),
+          scale: z.enum(["linear", "geometric"]).optional().default("linear"),
+          fluid_growth: z
+            .number()
+            .positive()
+            .optional()
+            .describe(
+              "Multiplicative growth factor at max viewport. Default 1.0 = discrete. Most radius tokens stay discrete; pass > 1.0 only when you want corners to grow with viewport.",
+            ),
+          name_prefix: z
+            .string()
+            .optional()
+            .describe(
+              "ID prefix. Default 'rounded' → gvid-{namespace}-rounded-1..N.",
+            ),
+        })
+        .optional(),
+      namespace: z
+        .string()
+        .regex(/^[a-z0-9_-]+$/i, {
+          message:
+            "namespace must match [a-z0-9_-]+ (case-insensitive; lowercased server-side). Inputs outside this charset are rejected explicitly rather than silently rewritten — passing 'o a' or 'oa!' would alias onto the default 'oa' namespace and risk overwriting unrelated tokens.",
+        })
+        .optional()
+        .default("oa")
+        .describe(
+          "Namespace inserted into every generated ID (gvid-{namespace}-*). Default 'oa' matches existing diviops convention. Validated against [a-z0-9_-]+ on both client and server (rejects rather than sanitizes — see message for rationale).",
+        ),
+      output_unit: z
+        .enum(["rem", "px"])
+        .optional()
+        .describe(
+          'Unit for emitted clamp() formulas. Defaults to "px" (root-agnostic, safe). Pass "rem" to opt into rem emission (bakes the 1rem=16px assumption unless root_font_size_px is also passed).',
+        ),
+      root_font_size_px: z
+        .number()
+        .positive()
+        .optional()
+        .describe(
+          "Site's actual root font-size in px. Pass for non-16px-root sites (e.g. 10 for `html { font-size: 62.5% }`). Passing this alone implies output_unit='rem'.",
+        ),
+      dry_run: z
+        .boolean()
+        .optional()
+        .default(false)
+        .describe(
+          "Preview the full plan without persisting. Returns identical `created`/`skipped` shape so callers can audit IDs and clamp() values before committing.",
+        ),
+      overwrite: z
+        .boolean()
+        .optional()
+        .default(false)
+        .describe(
+          "When false (default), existing IDs land in `skipped` with the existing value. When true, each existing ID is updated in place (label + value rewritten, order preserved).",
+        ),
+    },
+  },
+  async ({
+    profile,
+    custom_anchors,
+    typography,
+    spacing,
+    radius,
+    namespace,
+    output_unit,
+    root_font_size_px,
+    dry_run,
+    overwrite,
+  }) => {
+    const body: Record<string, unknown> = { profile };
+    if (custom_anchors !== undefined) body.custom_anchors = custom_anchors;
+    if (typography !== undefined) body.typography = typography;
+    if (spacing !== undefined) body.spacing = spacing;
+    if (radius !== undefined) body.radius = radius;
+    if (namespace !== undefined) body.namespace = namespace;
+    if (output_unit !== undefined) body.output_unit = output_unit;
+    if (root_font_size_px !== undefined) body.root_font_size_px = root_font_size_px;
+    if (dry_run !== undefined) body.dry_run = dry_run;
+    if (overwrite !== undefined) body.overwrite = overwrite;
+    const result = await wp.request("/variables-create-fluid-system", {
+      method: "POST",
+      body,
+    });
+    return {
+      content: [
+        { type: "text" as const, text: JSON.stringify(result) },
+      ],
+    };
+  },
+);
+
+server.registerTool(
   "diviops_delete_variable",
   {
     description:

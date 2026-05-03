@@ -96,7 +96,7 @@ The server connects via standard WordPress REST API and works with any environme
 
 > **WP-CLI note:** `WP_PATH` keeps the existing Local by Flywheel behavior by running `wp` directly on the host filesystem. For Docker-based environments (DDEV, wp-env, DevKinsta, WordPress Studio), set `WP_CLI_CMD` to the wrapper command instead. When `WP_CLI_CMD` is set, the server executes the wrapper from `WP_PATH` if provided, otherwise from its current working directory. The MCP server still validates the requested WP-CLI subcommand against its allowlist before executing either path.
 
-## Available Tools (56)
+## Available Tools (57)
 
 ### Read (27)
 | Tool | Description |
@@ -129,7 +129,7 @@ The server connects via standard WordPress REST API and works with any environme
 | `diviops_list_canvases` | List all canvas pages |
 | `diviops_get_canvas` | Get canvas content |
 
-### Write (27)
+### Write (28)
 | Tool | Description |
 |------|-------------|
 | `diviops_create_page` | Create a new page with optional Divi content |
@@ -155,6 +155,7 @@ The server connects via standard WordPress REST API and works with any environme
 | `diviops_update_tb_layout` | Update a Theme Builder layout's block markup |
 | `diviops_create_tb_template` | Create Theme Builder template with header/footer and conditions |
 | `diviops_create_variable` | Create a design token variable. For `type=numbers` fluid tokens, pass `min`+`max` shorthand (anchors default to 320px/1920px) or explicit `targets` like `{"320px":"20px","1920px":"60px"}` — server generates arithmetically-correct `clamp()` instead of hand-written math that silently under-reaches the stated max. All-px inputs emit px (root-agnostic). Rem inputs OR rem output require explicit opt-in: pass `output_unit="rem"` (accepts the 1rem=16px default) or `root_font_size_px:N` (declares your site's actual root font-size, e.g. `10` for `html { font-size: 62.5% }`, `20` for `html { font-size: 20px }`) |
+| `diviops_create_fluid_system` | Batch-emit a fluid typography + spacing + radius variable set in one call. Mirrors Divi 5.4.0's Variable Generator Modal at the algorithm level (clamp() math is identical to `diviops_create_variable`'s fluid mode) but layers profile-selectable anchors over it: `divi-default` (360→1350) matches ET's defaults, `wide` (320→1920) matches the diviops convention, `custom` takes explicit anchors. Each category is independent and optional. Typography uses modular-scale chains (named ratios `major-third`/`perfect-fifth`/`golden`/etc., or raw numbers) — h1 = largest, hN = base. Spacing/radius support `linear` or `geometric` step distributions. `dry_run: true` returns the full plan without persisting; `overwrite: false` (default) skips existing IDs. Single atomic write to the registry — mid-batch failures roll back cleanly |
 | `diviops_delete_variable` | Delete a variable by ID. Returns HTTP 409 when live references exist unless `force=true` (use `diviops_variables_scan_orphans` to find reference locations). Returns HTTP 403 for Divi's customizer-bound defaults (`gcid-primary-color`, `gcid-secondary-color`, `gcid-heading-color`, `gcid-body-color`, `gcid-link-color` — managed via WP Customizer) |
 | `diviops_create_canvas` | Create a canvas page |
 | `diviops_update_canvas` | Update canvas content |
