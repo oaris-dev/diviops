@@ -23,7 +23,7 @@ WordPress plugin that exposes Divi 5 Visual Builder data and operations via auth
 3. Activate `DiviOps Agent`.
 4. Keep your MCP server config pointed at `/wp-json/diviops/v1/`; the REST namespace is unchanged.
 
-See [setup guide](../../../.oaris/docs/setup-guide.md) for full onboarding with MCP server registration.
+See [setup guide](../../../docs/setup-guide.md) for full onboarding with MCP server registration.
 
 ## REST Endpoints
 
@@ -44,7 +44,7 @@ Base: `/wp-json/diviops/v1/`
 | `/global-fonts` | GET | Global font definitions |
 | `/icons/search?q=&type=&limit=` | GET | Search 1,989 icons by keyword |
 | `/presets` | GET | All presets (D5 + legacy) |
-| `/preset-audit` | GET | Preset analysis with referenced/unreferenced breakdown |
+| `/preset-audit` | GET | Preset analysis with referenced/unreferenced breakdown + `orphan_default_pointers` (per-bucket `default` pointers referencing UUIDs missing from `items[]`) |
 | `/preset-scan-orphans` | GET | List preset UUIDs referenced in pages but missing from the D5 registry (dangling vs D4-legacy) |
 | `/variables` | GET | List design token variables (filter by type, prefix) |
 | `/variables-scan-orphans` | GET | List variable IDs referenced in pages but not defined in the registry |
@@ -74,7 +74,7 @@ Base: `/wp-json/diviops/v1/`
 | `/preset-reassign` | POST | Rewrite preset UUID refs across page content + (for group-bucket swaps) registry chains. Supports `scope: "module" \| "group" \| "both"` (default `"both"`); dry-run default with explicit `mode: "apply"` to commit |
 | `/preset-cleanup` | POST | Remove spam/duplicate presets, bulk rename |
 | `/preset-update` | POST | Update a single preset (name, attrs) |
-| `/preset-delete` | POST | Delete a preset by ID |
+| `/preset-delete` | POST | Delete a preset by ID. Refuses with `409 preset_is_default` if the target is the registered default for its bucket; pass `force=true` to delete and clear the `default` pointer in the same write |
 | `/variable/create` | POST | Create a design token variable (colors or numbers/strings/etc) |
 | `/variable/delete` | POST | Delete a variable by ID |
 | `/canvas/create` | POST | Create a new canvas item |

@@ -3,7 +3,7 @@
  */
 
 /** Minimum WP plugin version this server requires. */
-export const MIN_PLUGIN_VERSION = '1.0.0-beta.41';
+export const MIN_PLUGIN_VERSION = '1.0.0-beta.43';
 
 /**
  * Compare two semver-like version strings (supports pre-release tags).

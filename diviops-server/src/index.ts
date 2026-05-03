@@ -919,7 +919,7 @@ server.registerTool(
   "diviops_preset_audit",
   {
     description:
-      "Audit all Divi presets (module + group). Each entry reports `block_ref_count` (page-content refs via modulePreset / groupPreset block markup), `group_ref_count` (in-registry chain refs from other presets — module presets via top-level `groupPresets.<slot>.presetId`, group presets via `attrs.groupPreset.<slot>.presetId`), and `referenced` (true if either > 0). Group presets that are chain-referenced also expose `referenced_by_presets` (UUIDs of the presets that wire them in — typically module presets, but type-agnostic). Use this before deleting — orphan-cleanup based only on page refs would silently wipe load-bearing chain-wired group presets (font, border, box-shadow, spacing, button).",
+      "Audit all Divi presets (module + group). Each entry reports `block_ref_count` (page-content refs via modulePreset / groupPreset block markup), `group_ref_count` (in-registry chain refs from other presets — module presets via top-level `groupPresets.<slot>.presetId`, group presets via `attrs.groupPreset.<slot>.presetId`), and `referenced` (true if either > 0). Group presets that are chain-referenced also expose `referenced_by_presets` (UUIDs of the presets that wire them in — typically module presets, but type-agnostic). Use this before deleting — orphan-cleanup based only on page refs would silently wipe load-bearing chain-wired group presets (font, border, box-shadow, spacing, button). Also reports `orphan_default_pointers`: per-bucket `default` pointers that reference a UUID no longer present in `items[]` (caused by past unsafe deletes). Render-safe but blocks Divi's lazy recreate-on-VB-use path; clear via diviops_preset_set_default with unset=true on the affected module/group.",
   },
   async () => {
     const result = await wp.request("/preset-audit");
@@ -1033,15 +1033,23 @@ server.registerTool(
   "diviops_preset_delete",
   {
     description:
-      "Delete a specific preset by ID. Use diviops_preset_audit first to verify the preset is unreferenced before deleting.",
+      "Delete a specific preset by ID. Use diviops_preset_audit first to verify the preset is unreferenced before deleting. Refuses with 409 preset_is_default if the target is the registered default for its module/group bucket — clear the pointer first via diviops_preset_set_default with unset=true, or pass force=true to delete and clear the pointer in one write.",
     inputSchema: {
       preset_id: z.string().describe("Preset ID to delete"),
+      force: z
+        .boolean()
+        .optional()
+        .describe(
+          "When true, deletes the preset even if it is the registered default and clears the default pointer in the same write. Default false (refuse-by-default).",
+        ),
     },
   },
-  async ({ preset_id }) => {
+  async ({ preset_id, force }) => {
+    const body: Record<string, unknown> = { preset_id };
+    if (force !== undefined) body.force = force;
     const result = await wp.request("/preset-delete", {
       method: "POST",
-      body: { preset_id },
+      body,
     });
     return {
       content: [
@@ -1211,23 +1219,39 @@ server.registerTool(
   "diviops_preset_set_default",
   {
     description:
-      "Set or clear the per-module/group default preset. Walks both buckets to locate the preset by UUID, then points the containing module/group's `default` slot at it. Pass unset=true to clear the slot back to none. Defaults apply to NEW module instances only — existing modules keep their current preset bindings (use diviops_preset_reassign for retroactive swaps). Use diviops_preset_audit's `is_default` field to verify state before/after.",
+      "Set or clear the per-module/group default preset. Two addressing modes: (1) preset_id mode — walks both buckets to locate the preset by UUID, then points the containing module/group's `default` slot at it (or clears it with unset=true). (2) Bucket-addressed clear — pass type + module + unset=true to clear an orphan default pointer when the preset_id no longer exists in items[] (the preset_id walk path can't locate orphans — that's the very state being repaired; surfaced via diviops_preset_audit's `orphan_default_pointers`). Defaults apply to NEW module instances only — existing modules keep their current preset bindings (use diviops_preset_reassign for retroactive swaps). Use diviops_preset_audit's `is_default` and `orphan_default_pointers` fields to verify state before/after.",
     inputSchema: {
       preset_id: z
         .string()
+        .optional()
         .describe(
-          "Preset UUID. Bucket (module vs. group) and target module/group are auto-resolved from the registry — no need to specify them.",
+          "Preset UUID. Bucket (module vs. group) and target module/group are auto-resolved from the registry — no need to specify them. Required unless using bucket-addressed clear (type + module + unset=true) to repair an orphan default pointer.",
+        ),
+      type: z
+        .enum(["module", "group"])
+        .optional()
+        .describe(
+          "Bucket-addressed clear: bucket type. Required together with `module` and `unset=true` to clear an orphan default pointer (UUID gone from items[] but `default` still references it).",
+        ),
+      module: z
+        .string()
+        .optional()
+        .describe(
+          'Bucket-addressed clear: module slug or group key (e.g. "divi/blurb", "divi/font"). Required together with `type` and `unset=true`.',
         ),
       unset: z
         .boolean()
         .optional()
         .describe(
-          "If true, clear the default pointer for the module/group this preset lives in (regardless of whether this preset is currently the default). Defaults to false (set the preset as the default).",
+          "If true, clear the default pointer. With preset_id, clears the bucket containing that preset. With type+module, clears that bucket directly (use this form for orphan-pointer repair). Defaults to false (set the preset as the default — preset_id required).",
         ),
     },
   },
-  async ({ preset_id, unset }) => {
-    const body: Record<string, any> = { preset_id };
+  async ({ preset_id, type, module, unset }) => {
+    const body: Record<string, any> = {};
+    if (preset_id !== undefined) body.preset_id = preset_id;
+    if (type !== undefined) body.type = type;
+    if (module !== undefined) body.module = module;
     if (unset) body.unset = true;
     const result = await wp.request("/preset-set-default", {
       method: "POST",

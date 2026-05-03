@@ -115,7 +115,7 @@ The server connects via standard WordPress REST API and works with any environme
 | `diviops_find_icon` | Search 1,989 icons by keyword (FA + Divi) |
 | `diviops_list_templates` | List available MCP prompt templates |
 | `diviops_get_template` | Get a specific template's block markup |
-| `diviops_preset_audit` | Audit presets with referenced/unreferenced analysis. Walks both page content and in-registry `groupPresets` chains; exposes `block_ref_count`, `group_ref_count`, `referenced_by_presets` |
+| `diviops_preset_audit` | Audit presets with referenced/unreferenced analysis. Walks both page content and in-registry `groupPresets` chains; exposes `block_ref_count`, `group_ref_count`, `referenced_by_presets`. Also reports `orphan_default_pointers` — per-bucket `default` pointers referencing UUIDs missing from `items[]` (legacy damage from past unsafe deletes; clear via `diviops_preset_set_default` in bucket-addressed mode: `type` + `module` + `unset=true`) |
 | `diviops_preset_scan_orphans` | List page-referenced preset UUIDs missing from the D5 registry (separates dangling orphans from D4-legacy refs) |
 | `diviops_list_library` | List saved Divi Library items |
 | `diviops_get_library_item` | Get a library item's block markup |
@@ -149,8 +149,8 @@ The server connects via standard WordPress REST API and works with any environme
 | `diviops_preset_create` | Write a new preset to the D5 registry (module or group type, supports `divi/column` etc.). Optional `make_default: true` sets it as the bucket's default; optional `priority` controls stack-merge order |
 | `diviops_preset_reassign` | Rewrite `modulePreset` references across pages (dry-run by default; optional `strip_inline` removes redundant inline attrs) |
 | `diviops_preset_update` | Update a specific preset (name, attrs, priority) |
-| `diviops_preset_delete` | Delete a preset by ID |
-| `diviops_preset_set_default` | Set or clear the per-module/group default preset (defaults apply to NEW instances only — use `diviops_preset_reassign` for retroactive swaps) |
+| `diviops_preset_delete` | Delete a preset by ID. Refuses with HTTP 409 `preset_is_default` when the target is the registered default for its bucket — clear the pointer first via `diviops_preset_set_default` with `unset=true`, or pass `force=true` to delete and clear the pointer in one write |
+| `diviops_preset_set_default` | Set or clear the per-module/group default preset. Two modes: by `preset_id` (UUID-addressed; auto-resolves bucket) or by `type` + `module` + `unset=true` (bucket-addressed clear, used to repair orphan default pointers when the UUID is gone from `items[]`). Defaults apply to NEW instances only — use `diviops_preset_reassign` for retroactive swaps |
 | `diviops_save_to_library` | Save block markup to Divi Library |
 | `diviops_update_tb_layout` | Update a Theme Builder layout's block markup |
 | `diviops_create_tb_template` | Create Theme Builder template with header/footer and conditions |
@@ -250,7 +250,7 @@ The three DEFAULT-tier filesystem commands (`wp export`, `acf export <path>`, `a
 
 ## Safety Patterns
 
-High-risk or bulk destructive tools follow one of two conventions to guard against unintended mutation. Both are stateless (no session tokens between calls), but they guard differently: Pattern A is a **stateless gate** — the first call mutates when the safety check passes, refuses with an explanatory error when it fires. Pattern B is **preview-before-commit** — the first call never mutates; an explicit apply step is required. Tools without a gate (e.g., `diviops_preset_delete`, `diviops_update_page_content`) execute their mutation directly — whether to adopt a pattern is a per-tool design decision, not a retrofit requirement.
+High-risk or bulk destructive tools follow one of two conventions to guard against unintended mutation. Both are stateless (no session tokens between calls), but they guard differently: Pattern A is a **stateless gate** — the first call mutates when the safety check passes, refuses with an explanatory error when it fires. Pattern B is **preview-before-commit** — the first call never mutates; an explicit apply step is required. Tools without a gate (e.g., `diviops_update_page_content`) execute their mutation directly — whether to adopt a pattern is a per-tool design decision, not a retrofit requirement.
 
 ### Pattern A — `force: false/true` (refuse-with-override)
 
@@ -266,6 +266,7 @@ Tool refuses the operation with an explanatory error when a safety check fails; 
 | Tool | Guard | Override |
 |------|-------|----------|
 | `diviops_delete_variable` | HTTP 409 when live references exist | `force=true` |
+| `diviops_preset_delete` | HTTP 409 `preset_is_default` when target is the registered default for its bucket | `force=true` (deletes + clears the `default` pointer in the same write) |
 
 ### Pattern B — `mode: "dry-run"/"apply"` (preview-then-commit)
 

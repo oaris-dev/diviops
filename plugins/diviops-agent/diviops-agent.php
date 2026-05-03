@@ -3,7 +3,7 @@
  * Plugin Name: DiviOps Agent
  * Plugin URI: https://github.com/oaris-dev/diviops
  * Description: REST API bridge for DiviOps — connects Claude Code to your Divi 5 site for AI-powered page building and design management.
- * Version: 1.0.0-beta.41
+ * Version: 1.0.0-beta.43
  * Author: oaris.de
  * Author URI: https://oaris.de
  * Text Domain: diviops-agent
@@ -22,7 +22,7 @@ class DiviOps_Agent {
 	/**
 	 * Plugin version — used for handshake compatibility checks.
 	 */
-	const VERSION = '1.0.0-beta.41';
+	const VERSION = '1.0.0-beta.43';
 
 	/**
 	 * Minimum MCP server version this plugin is compatible with.
@@ -367,7 +367,8 @@ class DiviOps_Agent {
 			'callback'            => [ __CLASS__, 'preset_delete' ],
 			'permission_callback' => [ __CLASS__, 'check_admin_permission' ],
 			'args'                => [
-				'preset_id' => [ 'required' => true, 'type' => 'string' ],
+				'preset_id' => [ 'required' => true,  'type' => 'string' ],
+				'force'     => [ 'required' => false, 'type' => 'boolean', 'default' => false ],
 			],
 		] );
 
@@ -432,7 +433,13 @@ class DiviOps_Agent {
 			'callback'            => [ __CLASS__, 'preset_set_default' ],
 			'permission_callback' => [ __CLASS__, 'check_admin_permission' ],
 			'args'                => [
-				'preset_id' => [ 'required' => true,  'type' => 'string' ],
+				// Two addressing modes:
+				//   1. preset_id (existing): set/clear default by walking items[] for that UUID.
+				//   2. type+module (bucket-addressed clear): clear an orphan default pointer
+				//      when preset_id no longer exists in items[]. Requires unset=true.
+				'preset_id' => [ 'required' => false, 'type' => 'string' ],
+				'type'      => [ 'required' => false, 'type' => 'string', 'enum' => [ 'module', 'group' ] ],
+				'module'    => [ 'required' => false, 'type' => 'string' ],
 				'unset'     => [ 'required' => false, 'type' => 'boolean', 'default' => false ],
 			],
 		] );
@@ -3503,11 +3510,12 @@ class DiviOps_Agent {
 		$referenced_uuids = array_keys( $refs['all_uuids'] + $chain['counts'] );
 
 		$summary = [
-			'total_presets'       => 0,
-			'spam_referenced'    => [],
-			'spam_unreferenced'  => [],
-			'descriptive'        => [],
-			'empty_defaults'     => [],
+			'total_presets'           => 0,
+			'spam_referenced'         => [],
+			'spam_unreferenced'       => [],
+			'descriptive'             => [],
+			'empty_defaults'          => [],
+			'orphan_default_pointers' => [],
 		];
 
 		foreach ( [ 'module', 'group' ] as $type ) {
@@ -3518,6 +3526,20 @@ class DiviOps_Agent {
 				$info  = (array) $info;
 				$items = isset( $info['items'] ) ? (array) $info['items'] : [];
 				$summary['total_presets'] += count( $items );
+
+				// Diagnostic: a `default` pointer that doesn't resolve to any
+				// item in the same bucket. Caused by past unsafe deletes that
+				// removed the record without clearing the pointer.
+				// Render-safe (Divi falls back to internal defaults) but
+				// blocks Divi's lazy recreate-on-VB-use path indefinitely.
+				$default_id = $info['default'] ?? '';
+				if ( '' !== $default_id && ! isset( $items[ $default_id ] ) ) {
+					$summary['orphan_default_pointers'][] = [
+						'type'      => $type,
+						'module'    => $mod,
+						'orphan_id' => $default_id,
+					];
+				}
 
 				foreach ( $items as $pid => $preset ) {
 					$preset      = (array) $preset;
@@ -3563,16 +3585,18 @@ class DiviOps_Agent {
 		}
 
 		return rest_ensure_response( [
-			'total_presets'           => $summary['total_presets'],
-			'spam_referenced_count'   => count( $summary['spam_referenced'] ),
-			'spam_unreferenced_count' => count( $summary['spam_unreferenced'] ),
-			'descriptive_count'       => count( $summary['descriptive'] ),
-			'empty_default_count'     => count( $summary['empty_defaults'] ),
-			'spam_referenced'         => $summary['spam_referenced'],
-			'spam_unreferenced'       => $summary['spam_unreferenced'],
-			'descriptive'             => $summary['descriptive'],
-			'page_refs'               => $refs['per_page'],
-			'total_referenced_uuids'  => count( $referenced_uuids ),
+			'total_presets'                 => $summary['total_presets'],
+			'spam_referenced_count'         => count( $summary['spam_referenced'] ),
+			'spam_unreferenced_count'       => count( $summary['spam_unreferenced'] ),
+			'descriptive_count'             => count( $summary['descriptive'] ),
+			'empty_default_count'           => count( $summary['empty_defaults'] ),
+			'orphan_default_pointer_count'  => count( $summary['orphan_default_pointers'] ),
+			'spam_referenced'               => $summary['spam_referenced'],
+			'spam_unreferenced'             => $summary['spam_unreferenced'],
+			'descriptive'                   => $summary['descriptive'],
+			'orphan_default_pointers'       => $summary['orphan_default_pointers'],
+			'page_refs'                     => $refs['per_page'],
+			'total_referenced_uuids'        => count( $referenced_uuids ),
 		] );
 	}
 
@@ -3935,9 +3959,11 @@ class DiviOps_Agent {
 	 */
 	public static function preset_delete( $request ) {
 		$preset_id = sanitize_text_field( $request->get_param( 'preset_id' ) );
+		$force     = rest_sanitize_boolean( $request->get_param( 'force' ) ?? false );
 
-		$d5    = self::get_d5_presets();
-		$found = false;
+		$d5             = self::get_d5_presets();
+		$found          = false;
+		$default_cleared = null;
 
 		foreach ( [ 'module', 'group' ] as $type ) {
 			if ( ! isset( $d5[ $type ] ) ) {
@@ -3951,14 +3977,46 @@ class DiviOps_Agent {
 					continue;
 				}
 
-				$preset = (array) $info['items'][ $preset_id ];
-				$found  = [
+				$preset     = (array) $info['items'][ $preset_id ];
+				$is_default = ( $info['default'] ?? '' ) === $preset_id;
+
+				// Refuse-by-default if this preset is the registered default for
+				// its bucket. Without this guard, the record disappears but the
+				// parent's `default` pointer keeps referencing the deleted UUID,
+				// leaving the registry in a stale-pointer state. Divi falls back
+				// to internal defaults at render but does not lazy-recreate a
+				// fresh blank — the orphan persists indefinitely.
+				// `force=true` clears the pointer in the same write to opt out.
+				if ( $is_default && ! $force ) {
+					unset( $info );
+					return new WP_Error(
+						'preset_is_default',
+						"Preset '{$preset_id}' is the registered default for {$type}/{$mod}. "
+						. "Clear the default pointer first via /preset-set-default with unset=true, "
+						. 'or pass force=true to delete and clear the pointer in the same write.',
+						[
+							'status' => 409,
+							'preset' => [
+								'id'     => $preset_id,
+								'type'   => $type,
+								'module' => $mod,
+								'name'   => $preset['name'] ?? '',
+							],
+						]
+					);
+				}
+
+				$found = [
 					'id'     => $preset_id,
 					'module' => $mod,
 					'type'   => $type,
 					'name'   => $preset['name'] ?? '',
 				];
 				unset( $info['items'][ $preset_id ] );
+				if ( $is_default ) {
+					$info['default'] = '';
+					$default_cleared = [ 'type' => $type, 'module' => $mod ];
+				}
 				// Unset the live reference before exiting the nested loop —
 				// `break 2;` skips the post-loop `unset($info)` that PHP
 				// otherwise needs for foreach-by-reference cleanup. Defensive
@@ -3975,30 +4033,98 @@ class DiviOps_Agent {
 
 		self::save_d5_presets( $d5 );
 
-		return rest_ensure_response( [
+		$response = [
 			'success' => true,
 			'deleted' => $found,
 			'message' => "Preset '{$preset_id}' deleted.",
-		] );
+		];
+		if ( $default_cleared ) {
+			$response['default_cleared'] = $default_cleared;
+			$response['message'] .= " Default pointer for {$default_cleared['type']}/{$default_cleared['module']} cleared.";
+		}
+
+		return rest_ensure_response( $response );
 	}
 
 	/**
 	 * Set or clear the per-module/group default preset pointer.
 	 *
-	 * Walks both buckets to locate the preset and updates
-	 * `$d5[type][bucket_key]['default']` to the preset's UUID. With
-	 * `unset=true`, clears the default pointer to '' regardless of whether
-	 * the preset is currently the default — set/clear semantics are explicit
-	 * via the flag, not derived from current state.
+	 * Two addressing modes:
+	 *
+	 *   1. preset_id mode — walks both buckets to locate the preset, then
+	 *      updates `$d5[type][bucket_key]['default']` to the preset's UUID
+	 *      (or '' with unset=true). The resolved preset must exist in
+	 *      `items[]`; missing preset returns 404.
+	 *
+	 *   2. type+module mode (bucket-addressed clear) — addresses the bucket
+	 *      directly without walking items[]. Required when clearing an
+	 *      orphan default pointer (UUID gone from items[] but `default`
+	 *      still references it; surfaced via preset_audit's
+	 *      `orphan_default_pointers`). Requires unset=true; setting a
+	 *      default by bucket without naming a preset has no meaning.
 	 *
 	 * Defaults apply to NEW instances only; existing modules keep their
 	 * current preset bindings. Use preset_reassign for retroactive swaps.
 	 */
 	public static function preset_set_default( $request ) {
-		$preset_id = sanitize_text_field( $request->get_param( 'preset_id' ) );
-		$do_unset  = rest_sanitize_boolean( $request->get_param( 'unset' ) ?? false );
+		$preset_id    = sanitize_text_field( (string) $request->get_param( 'preset_id' ) );
+		$req_type     = sanitize_key( (string) $request->get_param( 'type' ) );
+		$req_module   = sanitize_text_field( (string) $request->get_param( 'module' ) );
+		$do_unset     = rest_sanitize_boolean( $request->get_param( 'unset' ) ?? false );
 
-		$d5    = self::get_d5_presets();
+		$d5 = self::get_d5_presets();
+
+		// Bucket-addressed clear: type + module + unset=true. Used to repair
+		// orphan default pointers where preset_id no longer exists in items[]
+		// (the preset_id-walk path can't locate them — that's the very state
+		// we need to clear). Refuse the bucket form when unset is false:
+		// setting a bucket's default without naming a preset is meaningless.
+		if ( '' === $preset_id && '' !== $req_type && '' !== $req_module ) {
+			if ( ! $do_unset ) {
+				return new WP_Error(
+					'invalid_args',
+					'Bucket-addressed mode (type + module) requires unset=true. To set a default, pass preset_id.',
+					[ 'status' => 400 ]
+				);
+			}
+			if ( ! isset( $d5[ $req_type ][ $req_module ] ) ) {
+				return new WP_Error(
+					'not_found',
+					"Bucket '{$req_type}/{$req_module}' not found in registry.",
+					[ 'status' => 404 ]
+				);
+			}
+
+			$bucket          = (array) $d5[ $req_type ][ $req_module ];
+			$prev_default_id = $bucket['default'] ?? '';
+			$bucket['default']             = '';
+			$d5[ $req_type ][ $req_module ] = $bucket;
+
+			self::save_d5_presets( $d5 );
+
+			return rest_ensure_response( [
+				'success' => true,
+				'preset'  => [
+					'id'             => '',
+					'type'           => $req_type,
+					'module'         => $req_module,
+					'name'           => '',
+					'was_default_id' => $prev_default_id,
+					'new_default_id' => '',
+					'is_default'     => false,
+				],
+				'message' => "Default preset cleared for {$req_type}/{$req_module}.",
+			] );
+		}
+
+		if ( '' === $preset_id ) {
+			return new WP_Error(
+				'invalid_args',
+				'Either preset_id, or type + module + unset=true, is required.',
+				[ 'status' => 400 ]
+			);
+		}
+
 		$found = false;
 
 		foreach ( [ 'module', 'group' ] as $type ) {
