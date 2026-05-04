@@ -3,7 +3,7 @@
  * Plugin Name: DiviOps Agent
  * Plugin URI: https://github.com/oaris-dev/diviops
  * Description: REST API bridge for DiviOps — connects Claude Code to your Divi 5 site for AI-powered page building and design management.
- * Version: 1.0.0-beta.45
+ * Version: 1.0.0-beta.46
  * Author: oaris.de
  * Author URI: https://oaris.de
  * Text Domain: diviops-agent
@@ -22,7 +22,7 @@ class DiviOps_Agent {
 	/**
 	 * Plugin version — used for handshake compatibility checks.
 	 */
-	const VERSION = '1.0.0-beta.45';
+	const VERSION = '1.0.0-beta.46';
 
 	/**
 	 * Minimum MCP server version this plugin is compatible with.
@@ -6638,24 +6638,89 @@ class DiviOps_Agent {
 			return new WP_Error( 'invalid_type', 'Type must be one of: ' . implode( ', ', $valid_types ), [ 'status' => 400 ] );
 		}
 
+		// Inactive/archived sort last. Status fields seen on stored data: 'active', 'inactive',
+		// 'archived', 'temporary' (per Divi GlobalData::convert_global_colors_data + sanitize
+		// paths). Anything not 'active' is demoted; entries with no `status` default to active.
+		$is_active = static fn( array $v ): bool => ( $v['status'] ?? 'active' ) === 'active';
+
+		// Five WP/customizer-default global colors live alongside user palette in
+		// et_global_data['global_colors'] but Divi never assigns them an `order` field —
+		// their canonical position is fixed by the source map at GlobalData.php:43-49 and
+		// $customizer_colors:58-84. Pin them to the top of the colors bucket so consumers
+		// don't see them demoted to the missing-order tail.
+		$wp_default_color_order = [
+			'gcid-primary-color'   => 1,
+			'gcid-secondary-color' => 2,
+			'gcid-heading-color'   => 3,
+			'gcid-body-color'      => 4,
+			'gcid-link-color'      => 5,
+		];
+
+		// Comparator for non-color buckets (numbers/strings/images/links/fonts).
+		// Active first, then numeric `order` ascending, then no-order legacy entries,
+		// then inactive/archived. Stable label tiebreak.
+		$sort_by_order = static function ( array $a, array $b ) use ( $is_active ): int {
+			$a_active = $is_active( $a ) ? 0 : 1;
+			$b_active = $is_active( $b ) ? 0 : 1;
+			if ( $a_active !== $b_active ) {
+				return $a_active <=> $b_active;
+			}
+			$a_has = isset( $a['order'] ) && is_numeric( $a['order'] );
+			$b_has = isset( $b['order'] ) && is_numeric( $b['order'] );
+			if ( $a_has && $b_has ) {
+				$cmp = (float) $a['order'] <=> (float) $b['order'];
+				if ( 0 !== $cmp ) {
+					return $cmp;
+				}
+			} elseif ( $a_has !== $b_has ) {
+				return $a_has ? -1 : 1;
+			}
+			return strcmp( (string) ( $a['label'] ?? '' ), (string) ( $b['label'] ?? '' ) );
+		};
+
+		// Comparator for colors — WP-defaults pin first, then delegate to $sort_by_order.
+		$sort_colors = static function ( array $a, array $b ) use ( $sort_by_order, $wp_default_color_order ): int {
+			$a_default = $wp_default_color_order[ $a['__id'] ?? '' ] ?? null;
+			$b_default = $wp_default_color_order[ $b['__id'] ?? '' ] ?? null;
+			if ( null !== $a_default && null !== $b_default ) {
+				return $a_default <=> $b_default;
+			}
+			if ( null !== $a_default ) {
+				return -1;
+			}
+			if ( null !== $b_default ) {
+				return 1;
+			}
+			return $sort_by_order( $a, $b );
+		};
+
 		// Colors (separate storage).
 		if ( ! $filter_type || 'colors' === $filter_type ) {
 			$raw         = et_get_option( 'et_global_data' );
 			$global_data = ! empty( $raw ) ? maybe_unserialize( $raw ) : [];
 			$colors      = is_array( $global_data ) ? ( $global_data['global_colors'] ?? [] ) : [];
 
+			$colors = array_filter( $colors, 'is_array' );
+			// Stamp __id on a local copy so the comparator can recognize WP defaults without
+			// closing over the foreach key. The field is not emitted in the response — see the
+			// explicit projection below.
+			array_walk( $colors, static function ( &$c, $id ): void {
+				$c['__id'] = $id;
+			} );
+			uasort( $colors, $sort_colors );
+
 			foreach ( $colors as $id => $c ) {
-				if ( ! is_array( $c ) ) {
-					continue;
-				}
 				if ( $filter_prefix && 0 !== strpos( $id, $filter_prefix ) ) {
 					continue;
 				}
 				$result[] = [
-					'id'    => $id,
-					'type'  => 'colors',
-					'label' => $c['label'] ?? $id,
-					'value' => $c['color'] ?? '',
+					'id'          => $id,
+					'type'        => 'colors',
+					'label'       => $c['label'] ?? $id,
+					'value'       => $c['color'] ?? '',
+					'order'       => $c['order'] ?? ( $wp_default_color_order[ $id ] ?? null ),
+					'status'      => $c['status'] ?? 'active',
+					'lastUpdated' => $c['lastUpdated'] ?? null,
 				];
 			}
 		}
@@ -6674,18 +6739,21 @@ class DiviOps_Agent {
 			if ( ! is_array( $vars[ $type ] ?? null ) ) {
 				continue;
 			}
-			foreach ( $vars[ $type ] as $id => $v ) {
-				if ( ! is_array( $v ) ) {
-					continue;
-				}
+			$bucket = array_filter( $vars[ $type ], 'is_array' );
+			uasort( $bucket, $sort_by_order );
+
+			foreach ( $bucket as $id => $v ) {
 				if ( $filter_prefix && 0 !== strpos( $id, $filter_prefix ) ) {
 					continue;
 				}
 				$result[] = [
-					'id'    => $id,
-					'type'  => $type,
-					'label' => $v['label'] ?? $id,
-					'value' => $v['value'] ?? '',
+					'id'          => $id,
+					'type'        => $type,
+					'label'       => $v['label'] ?? $id,
+					'value'       => $v['value'] ?? '',
+					'order'       => $v['order'] ?? null,
+					'status'      => $v['status'] ?? 'active',
+					'lastUpdated' => $v['lastUpdated'] ?? null,
 				];
 			}
 		}
