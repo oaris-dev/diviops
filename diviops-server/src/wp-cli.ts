@@ -57,6 +57,20 @@ const DEFAULT_COMMANDS: readonly string[] = [
   'acf import',
   'acf field-group list',
   'acf field-group get',
+  // SCF 6.8.4+ adds `wp scf json {status,sync,import,export}` (also aliased as
+  // `wp acf json …`). All four are dev-time schema ops — `status`/`sync` are
+  // diff/apply against on-disk JSON, `import` re-creates DB entries from JSON,
+  // `export` writes DB schema to JSON. Same tier semantics as the legacy `acf`
+  // entries above; FS-touching subcommands (export, import) are second-pass
+  // validated below.
+  'scf json status',
+  'scf json sync',
+  'scf json import',
+  'scf json export',
+  'acf json status',
+  'acf json sync',
+  'acf json import',
+  'acf json export',
   // Users (read-only)
   'user list',
   // Cache (non-destructive maintenance)
@@ -363,74 +377,103 @@ export function createWpCli(config: WpCliConfig) {
     ? { ...execOptions, env, cwd: config.wpPath }
     : { ...execOptions, env };
 
+  // Internal argv-based runner — used by both `run(string)` (after
+  // parseCommand) and `runArgs(string[])` (skip parseCommand). Typed
+  // wrappers should call runArgs to bypass parseCommand's quote-toggling
+  // weakness: when a value contains an apostrophe (e.g. label "Bob's
+  // Group", file path /tmp/it's-fine.json), parseCommand mis-splits the
+  // argv because it treats the embedded `'` as a quote toggle. Passing
+  // pre-built argv eliminates the parsing step entirely so user-provided
+  // strings flow through verbatim — execFile (no shell) handles them
+  // correctly. Raised in PR #473 review (Copilot/Gemini both flagged).
+  const runArgv = async (
+    args: string[],
+  ): Promise<{ success: boolean; output: string; error?: string }> => {
+    const check = isCommandAllowed(args);
+    if (!check.allowed) {
+      return { success: false, output: '', error: check.reason };
+    }
+
+    // Second-pass FS validation for commands whose flags/args can read/write
+    // arbitrary paths. Scoped to DEFAULT-tier FS commands only — EXTENDED
+    // (`import`, `eval-file`) are opt-in via DIVIOPS_WP_CLI_ALLOW, so opting
+    // in signals the caller accepts path-scope risk. Skip entirely when the
+    // user explicitly disables via DIVIOPS_WP_CLI_UNSAFE_FS=1.
+    //
+    // Wrapper mode (WP_CLI_CMD set) is gated separately inside
+    // validateFilesystemFlags — host-derived safe roots don't correspond to
+    // the wrapper's filesystem namespace, so the validator requires an
+    // explicit DIVIOPS_WP_CLI_SAFE_FS_ROOT there. We also skip the host-side
+    // mkdir in wrapper mode since the safe root is either container-scoped
+    // (user-managed) or unset (validator rejects).
+    if (!fsValidationDisabled() && matchFsSensitiveCommand(args)) {
+      const safeRoot = resolveSafeFsRoot(config.wpPath);
+      if (!customWpCliCmd) {
+        ensureSafeFsRoot(safeRoot);
+      }
+      const fsCheck = validateFilesystemFlags(args, safeRoot, {
+        isWrapper: !!customWpCliCmd,
+      });
+      if (!fsCheck.allowed) {
+        return { success: false, output: '', error: fsCheck.reason };
+      }
+    }
+
+    const fullArgs = customWpCliCmd
+      ? [...prefixArgs, ...args, '--no-color']
+      : [...args, `--path=${config.wpPath}`, '--no-color'];
+
+    return new Promise((resolve) => {
+      execFile(
+        executable,
+        fullArgs,
+        runOptions,
+        (error, stdout, stderr) => {
+          // Filter PHP deprecation warnings from output
+          const output = (stdout + '\n' + stderr)
+            .split('\n')
+            .filter((line) => !line.includes('Deprecated:') && !line.includes('PHP Deprecated'))
+            .join('\n')
+            .trim();
+
+          if (error) {
+            const detail = error.killed
+              ? 'Command timed out'
+              : error.signal
+                ? `Killed by signal ${error.signal}`
+                : `Exit code ${error.code ?? 'unknown'}`;
+            resolve({ success: false, output, error: detail });
+          } else {
+            resolve({ success: true, output });
+          }
+        },
+      );
+    });
+  };
+
   return {
     /**
-     * Execute a WP-CLI command. Returns stdout on success.
-     * Commands are parsed into args and validated against an allowlist.
-     * Uses execFile (no shell) to prevent command injection.
+     * Execute a WP-CLI command from a string. Parsed via parseCommand
+     * (single/double-quote toggling, no escape support). Validated against
+     * the allowlist. Uses execFile (no shell) to prevent command injection.
+     *
+     * Prefer `runArgs` from typed wrappers — it skips parseCommand entirely
+     * so user-supplied values containing apostrophes/quotes flow through
+     * verbatim instead of being mis-split.
      */
     async run(command: string): Promise<{ success: boolean; output: string; error?: string }> {
-      const args = parseCommand(command);
-      const check = isCommandAllowed(args);
-      if (!check.allowed) {
-        return { success: false, output: '', error: check.reason };
-      }
+      return runArgv(parseCommand(command));
+    },
 
-      // Second-pass FS validation for commands whose flags/args can read/write
-      // arbitrary paths. Scoped to DEFAULT-tier FS commands only — EXTENDED
-      // (`import`, `eval-file`) are opt-in via DIVIOPS_WP_CLI_ALLOW, so opting
-      // in signals the caller accepts path-scope risk. Skip entirely when the
-      // user explicitly disables via DIVIOPS_WP_CLI_UNSAFE_FS=1.
-      //
-      // Wrapper mode (WP_CLI_CMD set) is gated separately inside
-      // validateFilesystemFlags — host-derived safe roots don't correspond to
-      // the wrapper's filesystem namespace, so the validator requires an
-      // explicit DIVIOPS_WP_CLI_SAFE_FS_ROOT there. We also skip the host-side
-      // mkdir in wrapper mode since the safe root is either container-scoped
-      // (user-managed) or unset (validator rejects).
-      if (!fsValidationDisabled() && matchFsSensitiveCommand(args)) {
-        const safeRoot = resolveSafeFsRoot(config.wpPath);
-        if (!customWpCliCmd) {
-          ensureSafeFsRoot(safeRoot);
-        }
-        const fsCheck = validateFilesystemFlags(args, safeRoot, {
-          isWrapper: !!customWpCliCmd,
-        });
-        if (!fsCheck.allowed) {
-          return { success: false, output: '', error: fsCheck.reason };
-        }
-      }
-
-      const fullArgs = customWpCliCmd
-        ? [...prefixArgs, ...args, '--no-color']
-        : [...args, `--path=${config.wpPath}`, '--no-color'];
-
-      return new Promise((resolve) => {
-        execFile(
-          executable,
-          fullArgs,
-          runOptions,
-          (error, stdout, stderr) => {
-            // Filter PHP deprecation warnings from output
-            const output = (stdout + '\n' + stderr)
-              .split('\n')
-              .filter((line) => !line.includes('Deprecated:') && !line.includes('PHP Deprecated'))
-              .join('\n')
-              .trim();
-
-            if (error) {
-              const detail = error.killed
-                ? 'Command timed out'
-                : error.signal
-                  ? `Killed by signal ${error.signal}`
-                  : `Exit code ${error.code ?? 'unknown'}`;
-              resolve({ success: false, output, error: detail });
-            } else {
-              resolve({ success: true, output });
-            }
-          },
-        );
-      });
+    /**
+     * Execute a WP-CLI command from a pre-built argv array. Skips
+     * parseCommand so values containing whitespace, apostrophes, or
+     * quotes pass through unmodified. Same allowlist + FS-safe-root
+     * validation as `run`. Use this from typed wrappers that already
+     * have the args structured (no string concatenation needed).
+     */
+    async runArgs(args: string[]): Promise<{ success: boolean; output: string; error?: string }> {
+      return runArgv(args);
     },
 
     /** Return the list of allowed commands and available extensions. */

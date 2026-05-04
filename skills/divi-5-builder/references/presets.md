@@ -3,7 +3,7 @@
 ## Table of Contents
 
 - [Architecture](#architecture) — layers, variable tokens, preset types, storage format
-- [How Presets Are Referenced](#how-presets-are-referenced-in-block-markup) — attribute-level, stacking, module-level, cascade
+- [How Presets Are Referenced](#how-presets-are-referenced-in-block-markup) — attribute-level, stacking, Composable Settings, module-level, cascade
 - [oa Design System — Tokens](#oa-design-system--design-tokens) — naming, colors (35), font sizes (15), line heights (3), spacings (13), radii (6)
 - [oa Design System — Presets](#oa-design-system--attribute-level-presets) — headings, body, color overrides, buttons, module-level
 - [MCP Generation Examples](#mcp-generation-examples) — preset in blocks, color opacity
@@ -88,7 +88,7 @@ et_divi_builder_global_presets_d5 (option)
 │               ├── attrs / styleAttrs / renderAttrs
 │               └── groupPresets: { ... }     ← references to attribute-level presets
 └── group
-    └── {groupName}                           ← e.g. "divi/font", "divi/font-body"
+    └── {groupName}                           ← e.g. "divi/font", "divi/font-body", "divi/spacing"
         ├── default: "preset-id"
         └── items
             └── {preset-id}
@@ -100,12 +100,21 @@ et_divi_builder_global_presets_d5 (option)
 ```
 
 **Attribute-level preset fields:**
-- `groupName` — the VB component: `divi/font`, `divi/font-body`, `divi/button`, etc.
-- `groupId` — the VB panel section: `designTitleText`, `designText`, `designButton`, etc.
-- `moduleName` — the module it was created on (informational, not a restriction)
-- `attrs` — full attributes (render + style)
-- `styleAttrs` — only CSS-generating attributes
-- `renderAttrs` — only HTML-affecting attributes (e.g. headingLevel)
+- `groupName` — the VB component: `divi/font`, `divi/font-body`, `divi/button`, `divi/spacing`, etc.
+- `groupId` — the slot identity. Pre-5.4.0 was always a short identifier (`designTitleText`, `designText`, `button`); from 5.4.0 onward, **Composable Settings group presets use the dotted attribute path** as `groupId` (e.g. `title.decoration.spacing`, `module.decoration.spacing`, `content.decoration.spacing`)
+- `moduleName` — the module the preset was created on (informational, not a restriction)
+- `attrs` — present whenever the preset has any styling
+- `styleAttrs` — present when `attrs` has CSS-emitting fields. Strips structural-only fields (e.g. `headingLevel`)
+- `renderAttrs` — present only when the preset carries attrs that need a per-instance render merge (Pass B). Most VB-saved presets do NOT have this key. Pure chain-ref-only group presets have neither `styleAttrs` nor `renderAttrs` — just a single `attrs` bucket containing `groupPreset.<slot>.presetId` chain refs
+
+**Three observed VB-saved bucket shapes** *(VB-verified 2026-05-04)*:
+- **`{attrs}` only** — pure chain-ref group presets with no own styling
+- **`{attrs, styleAttrs}`** — most spacing/typography presets observed in this project
+- **`{attrs, styleAttrs, renderAttrs}`** — observed on Text presets that carry `module.advanced.text.text.orientation` (one confirmed Pass-B-feeding case)
+
+> The full trigger matrix for renderAttrs population is **not yet characterized**. We've confirmed `module.advanced.text.text.orientation` triggers it; other attrs likely do too (transform, sticky, dimensional overrides per the Pass B documentation below) but those have not been VB-observed in this project. Treat "missing renderAttrs" as the default and presence as the special case until the matrix is fully mapped.
+
+MCP `diviops_preset_create` writes all three buckets uniformly (full-mirror — see "Full-mirror mitigation" below). This is intentional for Pass-B-consumer consistency, but the bucket-shape divergence from VB is a real difference. Diff/audit tools comparing VB-authored vs MCP-authored presets must not treat missing `renderAttrs` as drift — it's a structural choice on VB's side.
 
 ### CSS Emission (Dual-Pass)
 
@@ -131,7 +140,9 @@ Pass B emission is **conditional**, not universal. The full trigger matrix (modu
 
 #### Full-mirror mitigation (already shipped)
 
-`diviops_preset_create` and `diviops_preset_update` write `attrs = styleAttrs = renderAttrs` on every call, matching VB save semantics. This keeps the two passes in lockstep: the "values disagree" branch that causes stale-Pass-B bugs is eliminated regardless of whether Pass B actually emits for a given combination. **Tools authored against the MCP surface don't need to predict Pass B emission to be correct.**
+`diviops_preset_create` and `diviops_preset_update` write `attrs = styleAttrs = renderAttrs` on every call. This keeps the two passes in lockstep: the "values disagree" branch that causes stale-Pass-B bugs is eliminated regardless of whether Pass B actually emits for a given combination. **Tools authored against the MCP surface don't need to predict Pass B emission to be correct.**
+
+> **VB-divergence note** — VB writes a 1/2/3-bucket shape based on whether the preset carries Pass-B-emitting attrs (see "Three observed VB-saved bucket shapes" above). MCP's full-mirror is intentionally more conservative for Pass-B-consumer correctness, but means MCP-authored and VB-authored presets are not byte-equivalent on the registry side. Whether VB round-trips an MCP-authored preset cleanly (saves it back without rewriting the bucket shape) is **not yet verified** — see the "MCP-authoring of new shapes" caveat in the MCP Endpoints section.
 
 The scenario where prediction still matters: **external** consumers relying on Pass B for CSS-specificity guarantees (e.g. "this preset should beat a theme stylesheet rule").
 
@@ -167,6 +178,13 @@ Top-level `groupPreset` key (singular, not plural):
 | `designTitleText` | `divi/font` | Heading/title font (Heading, Blurb, Accordion, etc.) |
 | `designText` | `divi/font-body` | Body text font (Text, Blurb, etc.) |
 | `button` | `divi/button` | Button styling (Button, CTA, etc.) |
+| `module.decoration.spacing` | `divi/spacing` | Module-level spacing (margin/padding on the module wrapper) — Composable Settings, 5.4.0+ *(VB-verified 2026-05-04)* |
+| `title.decoration.spacing` | `divi/spacing` | Inner-element spacing on Heading's title — Composable Settings, 5.4.0+ *(VB-verified 2026-05-04)* |
+| `content.decoration.spacing` | `divi/spacing` | Inner-element spacing on Text's content — Composable Settings, 5.4.0+ *(VB-verified 2026-05-04)* |
+
+**`divi/spacing` shares one bucket for both module-level and inner-element-level spacing** — distinguished by the dotted-path `groupId`. A `divi/spacing` preset created from the module-level Spacing panel (`module.decoration.spacing`) and one created from a Composable Settings inner-element panel (`title.decoration.spacing`) both land in the same `et_divi_builder_global_presets_d5.group["divi/spacing"].items` map; the user UI surfaces them in the same "Spacing" preset list. The attr nesting under `attrs` MUST mirror the `groupId` path — a `title.decoration.spacing` preset's `attrs` is `{title: {decoration: {spacing: {...}}}}`, NOT `{module: {decoration: {spacing: {...}}}}`.
+
+> Other Composable Settings groups likely follow the same dotted-path pattern but only the three above are VB-verified to date. Treat any new dotted slot key as VB-canonical only after observing it in a VB-saved preset (`feedback_vb_first_verification`).
 
 Multiple attribute presets can be combined on one module:
 ```json
@@ -192,6 +210,108 @@ This stacks oa Heading H2 (size/weight/lineHeight) + oa Heading Light (color) �
 | Dark background heading | `"presetId": ["<size-preset>", "<heading-light>"]` |
 |------------------------|-----------------------------------------------|
 | Dark background body text | `"presetId": ["<text-preset>", "<text-light>"]` |
+
+### Composable Settings — `dynamicOptionGroups` activation flag (5.4.0+) *(VB-verified 2026-05-04)*
+
+Divi 5.4.0 introduced **Composable Settings** — per-element inner styling panels (Design Tab → "Heading Text" → Spacing on a Heading module, Design Tab → "Text" → Spacing on a Text module, etc.). To activate the inner-element panel for a given attribute group, the block must carry a `dynamicOptionGroups` top-level key (sibling of `module`, `title`, `content`, etc.) with a boolean leaf flag.
+
+```json
+{
+  "module": {"decoration": {"spacing": {"desktop": {"value": {"margin": {"top": "70px", "bottom": "70px", "syncVertical": "on", "syncHorizontal": "off"}}}}}},
+  "title": {
+    "innerContent": {"desktop": {"value": "Your Title"}},
+    "decoration": {"spacing": {"desktop": {"value": {"margin": {"top": "60px", "bottom": "60px", "syncVertical": "on", "syncHorizontal": "off"}}}}}
+  },
+  "builderVersion": "5.4.0",
+  "dynamicOptionGroups": {
+    "designTitleText": {"title": {"decoration": {"spacing": true}}}
+  }
+}
+```
+
+The `dynamicOptionGroups` tree mirrors the activated attr path: `designTitleText.title.decoration.spacing = true` activates the inner-element spacing panel under "Heading Text". Without this flag, VB does not surface the values in its UI even though they may render. **The flag travels with VB-saved presets** — preserved in both `attrs` and `styleAttrs`.
+
+**`dynamicOptionGroups` is in the `preset_reassign` reserved-keys list** — strip-inline never removes it (`diviops-agent.php:strip_reserved_keys()`).
+
+### Binding a Composable Settings preset to a block — dotted slot keys *(VB-verified 2026-05-04)*
+
+When a `divi/spacing` (or any Composable Settings) group preset is bound to a block via VB, the block's `groupPreset` map uses the **dotted attribute path as the slot key** (matching the preset's `groupId`):
+
+```json
+"groupPreset": {
+  "title.decoration.spacing": {
+    "presetId": ["<spacing-preset-uuid>"],
+    "groupName": "divi/spacing"
+  }
+}
+```
+
+Both the slot key (`title.decoration.spacing`) and the preset's `groupId` use the same dotted path — they must match for VB to resolve the binding. Multiple Composable Settings slots can coexist on one module:
+
+```json
+"groupPreset": {
+  "designTitleText": {"presetId": ["<font-preset>"], "groupName": "divi/font"},
+  "title.decoration.spacing": {"presetId": ["<spacing-preset>"], "groupName": "divi/spacing"},
+  "module.decoration.spacing": {"presetId": ["<wrapper-spacing-preset>"], "groupName": "divi/spacing"}
+}
+```
+
+### Cascade gotcha — inline-attr stripping behavior on preset apply *(partially VB-verified 2026-05-04, rule incomplete)*
+
+The cascade order `inline > groupPreset > modulePreset > default` is the **resolution rule** when multiple sources have a value. Whether inline attrs are present at all after a VB preset-apply action is a **separate, behavior-dependent question** that we have NOT fully characterized.
+
+**Confirmed observations on a Heading with `title.decoration.spacing.margin`:**
+
+| Step | Inline attr before | Action | Inline attr after | Visible result |
+|---|---|---|---|---|
+| 1 | 60px (set in VB Spacing panel) | Apply MCP-authored preset (73px) via VB dropdown | **Still 60px** (NOT stripped) | 60px (inline wins) |
+| 2 | 60px (still present from step 1) | Apply VB-authored preset (80px) via VB dropdown | **GONE** (stripped) | 80px (groupPreset Pass A wins) |
+
+VB stripped the inline attr in step 2 but not step 1. **Why is unclear.** Possible factors:
+- Step 1 added a NEW group-preset binding (slot was empty); step 2 REPLACED an existing binding
+- The MCP-authored preset (step 1) had `renderAttrs` populated (full-mirror); the VB-authored preset (step 2) had no `renderAttrs` (VB-canonical 2-bucket shape)
+- Some other UI state we haven't isolated
+
+**Treat this as Divi 5.4.0 preset behavior that is not yet fully matured** — verify the inline-strip outcome empirically when the cascade resolution matters. Don't rely on "VB always strips inline" or "VB never strips inline" — both are false in different scenarios.
+
+**Cascade resolution when only Pass A class CSS competes** *(VB-verified 2026-05-04)*. When inline attrs are absent and a VB-saved spacing preset (no `renderAttrs`) is applied:
+- Pass B (instance class `.et_pb_heading_0`) emits NO rule for the inner-element margin
+- Two Pass A rules compete with equal specificity (`0,2,2`):
+  - `.preset--module--divi-heading--<uuid>` (from `modulePreset`)
+  - `.preset--group--divi-heading--divi-spacing--<modhash>--<uuid>` (from `groupPreset`)
+- **The `groupPreset` rule emits AFTER the `modulePreset` rule in the stylesheet**, so it wins by source-order on equal specificity
+- Net effect: `groupPreset` value beats `modulePreset` value, matching the documented cascade order even though it's resolved via stylesheet ordering rather than CSS specificity
+
+**Implication for diviops authoring**: when binding a preset programmatically via `update_module` to a previously-styled instance, **explicitly clear the matching inline attr** (set the path to `null` in the same call). Don't depend on VB's strip-on-apply behavior — it's inconsistent. `diviops_preset_reassign` with `strip_inline=true` is the safe path for batch consolidations: it strips inline only when the inline value deep-equals the new preset's value (preserving intentional divergence) AND the post-swap stack is singular.
+
+### Inner-element vs module-level spacing emission *(VB-verified 2026-05-04)*
+
+Composable Settings nested-spacing emits CSS on a **different DOM selector** than module-level spacing — the two are not redundant:
+
+| Path | Selector (Heading example) | `!important`? |
+|---|---|---|
+| `module.decoration.spacing.margin` | `.et_pb_heading_0` (module wrapper) | yes |
+| `title.decoration.spacing.margin` | `.et_pb_heading_0 .et_pb_heading_container h1...h6` (inner heading element) | no |
+
+| Path | Selector (Text example) | `!important`? |
+|---|---|---|
+| `module.decoration.spacing.padding` | `.et_pb_text_0` (module wrapper) | yes |
+| `content.decoration.spacing.padding` | `.et_pb_text_0 .et_pb_text_inner` (inner text container) | no |
+
+Module-level uses `!important`; nested-element-level does NOT — downstream selectors can override the inner-element rule more easily than the wrapper rule. Keep this in mind when stacking spacing presets that target both layers.
+
+### Known group-bucket inventory *(VB-verified 2026-05-04)*
+
+The `et_divi_builder_global_presets_d5.group` map carries one bucket per `groupName`. VB-confirmed buckets (5.4.0):
+
+| `groupName` | Slot identity (`groupId`) shape | Notes |
+|---|---|---|
+| `divi/font` | Short identifier (`designTitleText`) | Heading/title typography |
+| `divi/font-body` | Short identifier (`designText`) | Body text typography |
+| `divi/button` | Short identifier (`button`) | Button group preset |
+| `divi/spacing` | Dotted attribute path (`module.decoration.spacing`, `title.decoration.spacing`, `content.decoration.spacing`) | Composable Settings spacing — module-level AND inner-element-level share this bucket |
+
+Other group buckets (`divi/border`, etc.) likely exist but are not yet VB-verified in this project. Always observe a VB-saved preset before asserting a new bucket's existence (`feedback_vb_first_verification`).
 
 ### Module-level presets
 
@@ -331,7 +451,7 @@ These are **color modifiers** — stack with a size preset when content is on a 
 | oa Button Secondary | `button-secondary` | `gcid-oa-secondary-500` | `gcid-oa-white` | border: none, radius: `gvid-oa-rounded-xl` |
 | oa Button White | `button-white` | `gcid-oa-white` | `gcid-oa-neutral-900` | border: none, radius: `gvid-oa-rounded-xl` |
 
-All button presets include `button.decoration.button.desktop.value.enable: "on"` (required to activate custom styling).
+All button presets store visual styling at the **sibling-level** paths (`button.decoration.{font, background, border, boxShadow}` + `module.decoration.spacing` for padding) — VB-verified Divi 5.4.0. No `enable: "on"` flag is required at `button.decoration.button.desktop.value` for custom styling to render. Render-relevant keys at that deep path are limited to `enable` (whose `"off"` value triggers a destructive *migration* — never write it without intent), `icon.*` (visible icon configuration), `padding` (icon-spacing gate, not a visible-padding emitter), and `alignment` (deprecated input forwarded to `decoration.sizing.alignment`). The `icon.enable: "off"` setting is what suppresses the default hover arrow on these presets.
 
 **Icon-off + chained spacing group: Divi 5.3.x hover-padding gate (Divi bug, narrow scope).** Group presets for buttons (the `divi/button` / `groupId: button` pattern used by the oa Button presets above) remain the recommended convention. There is **one specific chained-preset configuration** to avoid:
 
@@ -444,6 +564,32 @@ This renders as `rgba(255,255,255,0.05)`. Used by the oa Glass Card preset for s
 - `POST /diviops/v1/preset-cleanup` — Remove orphans, rename, dedup (dry_run default)
 - `POST /diviops/v1/preset-create` — Create a new preset (module or group). Supported module types include `divi/button`, `divi/heading`, `divi/text`, `divi/blurb`, `divi/section`, `divi/row`, `divi/column`, `divi/group`, and any other type Divi tracks in the D5 registry. The `attrs` shape differs by `type`: `module` uses the **full module top-level attrs tree** (e.g. `{module: {decoration: {...}}, content: {...}}`); `group` uses the **fragment for that attribute group only** (e.g. `{title: {decoration: {font: {...}}}}` for a font preset on a heading's designTitleText slot). Response payload returns the created UUID as `preset.id` (nested under a `preset` object)
 - `POST /diviops/v1/preset-update` — Update single preset (name, attrs)
+
+> **MCP-authoring of Composable Settings group presets** *(VB-verified 2026-05-04 except where noted)*:
+> - ✅ **VB recognizes MCP-authored `divi/spacing` group presets with dotted `groupId`** — they appear in VB's preset dropdown for the matching slot
+> - ✅ **VB binds them correctly** to a block via `groupPreset.<dotted-path>.presetId`
+> - ✅ **Pass A preset-class CSS emits with the canonical selector format** (`.preset--group--divi-heading--divi-spacing--<modhash>--<uuid>`) matching VB-authored equivalents
+> - ✅ **Applying the preset doesn't trigger a registry rewrite** — the MCP-written record (including full-mirror `renderAttrs`) survives the VB-side bind unchanged
+> - ✅ **MCP-authored binding round-trips through a VB save unchanged** — verified on a fresh, no-inline Heading bound to `groupPreset["title.decoration.spacing"].presetId: ["yjh59i25br"]` via `replace_section`. Open in VB → save without edits → block markup re-emerges with identical keys/values (only JSON key order differs); rendered class and 80px CSS are preserved. **Implication: MCP can author Composable Settings preset bindings programmatically without depending on the user to "fix" them in VB**, provided the slot key is written in the canonical dotted-flat shape (see write-tool gotcha below).
+> - ⚠️ **<!-- UNVERIFIED --> Whether VB rewrites the preset record on a direct preset edit-and-save** (preset manager → edit preset → save) is **not yet tested**. If VB strips MCP's full-mirror `renderAttrs` on resave, MCP-authored presets become byte-equivalent to VB-authored after the first user-driven preset edit. Test plan: open the preset in VB's preset manager, save without changes, dump and diff against pre-edit.
+> - **Practical implication today**: MCP can author `divi/spacing` group presets and the user can apply them in VB without runtime issues. Just be aware that an inline attr on the block silently neutralizes the binding (see "Cascade gotcha" above) — clear the inline attr in the same write call when binding a preset programmatically.
+
+> **`update_module` literal-dot key syntax for Composable Settings slots** *(verified 2026-05-04)*: by default `diviops_update_module` parses `attrs` keys as dot-notation paths. Composable Settings preset slots use **literal-dot keys** like `groupPreset["title.decoration.spacing"]` where the dots are part of the key, not path separators. Escape inner dots with `\.` to embed them literally:
+>
+> ```jsonc
+> // ✅ CORRECT — backslash-escape the literal dots inside the slot key:
+> {
+>   "groupPreset.title\\.decoration\\.spacing.presetId":  ["yjh59i25br"],
+>   "groupPreset.title\\.decoration\\.spacing.groupName": "divi/spacing"
+> }
+> // produces: "groupPreset": {"title.decoration.spacing": {"presetId": ["yjh59i25br"], "groupName": "divi/spacing"}}
+>
+> // ❌ WRONG — without the escape, dots split the path into nested objects:
+> {"groupPreset.title.decoration.spacing.presetId": ["yjh59i25br"]}
+> // produces: "groupPreset": {"title": {"decoration": {"spacing": {"presetId": [...]}}}} — silently ignored by Divi at render time
+> ```
+>
+> The same pattern applies to all Composable Settings slots (`module\.decoration\.spacing`, `content\.decoration\.spacing`, etc.). Plain paths without literal dots — `modulePreset`, `dynamicOptionGroups.designTitleText.title.decoration.spacing`, `groupPreset.designTitleText.presetId` — work as always; the splitter only collapses `\.` when present, so the change is fully backward compatible.
 - `POST /diviops/v1/preset-reassign` — Rewrite preset refs across pages from `old_uuid` → `new_uuid`. Covers both ref types: **module-level** (`attrs.modulePreset[...]`, stacked array) and **attribute-level** (`attrs.groupPreset.<slot>.presetId`). For group-bucket swaps, also rewrites **registry chain refs** (`attrs.groupPresets.<slot>.presetId` in other presets that pull in `old_uuid`). The `scope` param controls which ref types are walked:
   - `scope: "both"` (default) — auto-selects based on `new_uuid`'s bucket. Module and group identity are disjoint, so there's exactly one valid walk per swap
   - `scope: "module"` — walks `attrs.modulePreset` only. Rejects if `new_uuid` is a group preset

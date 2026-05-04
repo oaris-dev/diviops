@@ -34,11 +34,19 @@ const SAFE_FS_ROOT_OVERRIDE_ENV = 'DIVIOPS_WP_CLI_SAFE_FS_ROOT';
  * DEFAULT-tier commands whose arguments can write/read to arbitrary paths.
  * EXTENDED-tier FS commands (`import`, `eval-file`) are opt-in and not
  * validated here — opting in implies accepting the path-scope risk.
+ *
+ * SCF 6.8.4 introduced `wp scf json export|import` (and `wp acf json …`
+ * aliases). `export` takes `--dir=<directory>` (flag, like `wp export`);
+ * `import` takes a positional `<file>` path (like the legacy `acf import`).
  */
 const FS_SENSITIVE_COMMANDS: readonly string[] = [
   'export',
   'acf export',
   'acf import',
+  'scf json export',
+  'scf json import',
+  'acf json export',
+  'acf json import',
 ];
 
 export interface FsValidationResult {
@@ -91,11 +99,17 @@ export function ensureSafeFsRoot(safeRoot: string): void {
 
 /**
  * Identify which FS-sensitive command a parsed arg vector represents.
- * Returns the canonical prefix ("export", "acf export", "acf import") or
- * null if the args don't match a FS-sensitive command.
+ * Returns the canonical prefix ("export", "acf export", "scf json export"…)
+ * or null if the args don't match a FS-sensitive command.
+ *
+ * Checks 3-, 2-, then 1-word prefixes — longer matches win so that
+ * `scf json export` is identified as the SCF command (not bare `export`)
+ * even though both share the trailing word.
  */
 export function matchFsSensitiveCommand(args: string[]): string | null {
   if (args.length === 0) return null;
+  const threeWord = args.slice(0, 3).join(' ');
+  if (FS_SENSITIVE_COMMANDS.includes(threeWord)) return threeWord;
   const twoWord = args.slice(0, 2).join(' ');
   if (FS_SENSITIVE_COMMANDS.includes(twoWord)) return twoWord;
   const oneWord = args[0];
@@ -361,6 +375,59 @@ export function validateFilesystemFlags(
     // Reject relative positional path — same reason as --dir above. Without
     // this gate, `acf export relative/file.json` would resolve against
     // process.cwd at execution time and escape the safe-root scope.
+    const rel = rejectIfRelative(userPath, cmd, safeRootCanonical);
+    if (rel) return rel;
+    if (!isPathUnderSafeRoot(userPath, safeRootCanonical)) {
+      return {
+        allowed: false,
+        reason:
+          `${cmd} "${userPath}" resolves outside the safe filesystem root ` +
+          `"${safeRootCanonical}". Use a path under the safe root, or set ` +
+          `${UNSAFE_FS_ENV}=1 to disable validation.`,
+      };
+    }
+    return { allowed: true };
+  }
+
+  if (cmd === 'scf json export' || cmd === 'acf json export') {
+    // SCF 6.8.4's `wp scf|acf json export` uses `--dir=<dir>` (or `--stdout`)
+    // for output destination — same flag shape as `wp export`. Reuse the same
+    // extractor; `--filename_format` is `wp export`-only and irrelevant here.
+    const { dir, stdout } = extractExportFlags(args);
+
+    if (stdout) {
+      // Writes JSON to stdout; no FS write to validate.
+      return { allowed: true };
+    }
+
+    if (!dir) {
+      // Let wp-cli surface its own "must specify --dir or --stdout" error
+      // rather than returning a redundant allowlist rejection.
+      return { allowed: true };
+    }
+
+    const rel = rejectIfRelative(dir, `${cmd} --dir`, safeRootCanonical);
+    if (rel) return rel;
+
+    if (!isPathUnderSafeRoot(dir, safeRootCanonical)) {
+      return {
+        allowed: false,
+        reason:
+          `${cmd} --dir="${dir}" resolves outside the safe filesystem root ` +
+          `"${safeRootCanonical}". Use a path under the safe root, or set ` +
+          `${UNSAFE_FS_ENV}=1 to disable validation.`,
+      };
+    }
+    return { allowed: true };
+  }
+
+  if (cmd === 'scf json import' || cmd === 'acf json import') {
+    // `wp scf|acf json import <file>` — positional file path at args[3]
+    // (after the 3-word command prefix). Same safe-root rules as `acf import`.
+    const userPath = extractPositionalAfterPrefix(args, 3);
+    if (!userPath) {
+      return { allowed: true };
+    }
     const rel = rejectIfRelative(userPath, cmd, safeRootCanonical);
     if (rel) return rel;
     if (!isPathUnderSafeRoot(userPath, safeRootCanonical)) {

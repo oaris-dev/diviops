@@ -3,7 +3,7 @@
  * Plugin Name: DiviOps Agent
  * Plugin URI: https://github.com/oaris-dev/diviops
  * Description: REST API bridge for DiviOps — connects Claude Code to your Divi 5 site for AI-powered page building and design management.
- * Version: 1.0.0-beta.43
+ * Version: 1.0.0-beta.45
  * Author: oaris.de
  * Author URI: https://oaris.de
  * Text Domain: diviops-agent
@@ -22,7 +22,7 @@ class DiviOps_Agent {
 	/**
 	 * Plugin version — used for handshake compatibility checks.
 	 */
-	const VERSION = '1.0.0-beta.43';
+	const VERSION = '1.0.0-beta.45';
 
 	/**
 	 * Minimum MCP server version this plugin is compatible with.
@@ -1791,31 +1791,63 @@ class DiviOps_Agent {
 			// ── Button checks (errors + warnings) ───────────────────
 
 			if ( 'divi/button' === $name ) {
-				$btn_enable = self::get_nested_array_value( $attrs, [ 'button', 'decoration', 'button', 'desktop', 'value', 'enable' ] );
-				if ( 'on' === $btn_enable ) {
+				$button_deco       = self::get_nested_array_value( $attrs, [ 'button', 'decoration' ], [] );
+				$button_deco       = is_array( $button_deco ) ? $button_deco : [];
+				$has_sibling_style = isset( $button_deco['border'] ) || isset( $button_deco['background'] )
+					|| isset( $button_deco['font'] ) || isset( $button_deco['boxShadow'] );
+
+				// Warn about unrecognized keys at button.decoration.button.desktop.value.*
+				// Source-verified render-relevant keys at this path (Divi 5.4.0):
+				//   - `enable`   — read by Migration/ComposibleOptionsMigration.php:563
+				//                  ('off' triggers a destructive migration that strips
+				//                  button.decoration). Not a styling input.
+				//   - `icon`     — full icon subtree (settings/placement/onHover/enable);
+				//                  read by ButtonStyle and StyleDeclarations.
+				//   - `padding`  — read as a *gate* by Style/StyleDeclarations.php:73,
+				//                  76-77 to suppress icon-spacing autoinjection. Not a
+				//                  visible-padding emitter; padding for layout lives at
+				//                  module.decoration.spacing.
+				//   - `alignment` — deprecated input (Conversion/DeprecatedAttributeMapping.php:962)
+				//                  forwarded to decoration.sizing.alignment.
+				// Anything outside this set has no render consumer here — parses, saves,
+				// validates clean, and is silently dropped at render. The motivating case
+				// was a button authored with `backgroundColor`, `textColor`, `font` keys
+				// at this depth; canonical styling lives at the sibling-level paths
+				// button.decoration.{font, background, border, boxShadow}.
+				$btn_value_node = self::get_nested_array_value( $attrs, [ 'button', 'decoration', 'button', 'desktop', 'value' ] );
+				if ( is_array( $btn_value_node ) ) {
+					$allowed_keys = array_flip( [ 'enable', 'icon', 'padding', 'alignment' ] );
+					$unrecognized = array_diff_key( $btn_value_node, $allowed_keys );
+					if ( ! empty( $unrecognized ) ) {
+						$keys = array_keys( $unrecognized );
+						sort( $keys );
+						$warnings[] = [
+							'block'   => $name,
+							'index'   => $index,
+							'code'    => 'button_no_render_consumer',
+							'message' => sprintf(
+								'Unrecognized keys at button.decoration.button.desktop.value: [%s]. Render-relevant keys here are limited to enable, icon, padding, alignment. Move visual styling to button.decoration.{font,background,border,boxShadow} and layout padding to module.decoration.spacing.',
+								implode( ', ', $keys )
+							),
+							'path'    => 'button.decoration.button.desktop.value → button.decoration',
+						];
+					}
+				}
+
+				// Warn when custom styling is present but the default hover arrow will show.
+				// Triggers when button has visible customization (sibling-level styling) but
+				// icon.enable !== "off". Without the explicit suppression, Divi's CSS shows
+				// the default arrow on hover. Only fires when the user is clearly customizing,
+				// to avoid noise on default-styled buttons.
+				if ( $has_sibling_style ) {
 					$icon_enable = self::get_nested_array_value( $attrs, [ 'button', 'decoration', 'button', 'desktop', 'value', 'icon', 'enable' ] );
 					if ( 'off' !== $icon_enable ) {
 						$warnings[] = [
 							'block'   => $name,
 							'index'   => $index,
 							'code'    => 'button_missing_icon_enable',
-							'message' => 'Button has enable:"on" but missing icon.enable:"off" — will show arrow icon on hover',
+							'message' => 'Button has custom styling but icon.enable is not "off" — Divi will show the default arrow icon on hover.',
 							'path'    => 'button.decoration.button.desktop.value.icon.enable',
-						];
-					}
-				} else {
-					// Custom border/bg/font styling on button requires enable:"on" to render fully.
-					$button_deco = self::get_nested_array_value( $attrs, [ 'button', 'decoration' ], [] );
-					$button_deco = is_array( $button_deco ) ? $button_deco : [];
-					$has_custom_styling = isset( $button_deco['border'] ) || isset( $button_deco['background'] )
-						|| isset( $button_deco['font'] ) || isset( $button_deco['boxShadow'] );
-					if ( $has_custom_styling ) {
-						$warnings[] = [
-							'block'   => $name,
-							'index'   => $index,
-							'code'    => 'button_missing_enable',
-							'message' => 'Button has custom border/background/font/boxShadow but button.decoration.button.desktop.value.enable is not "on" — custom styling may not render fully',
-							'path'    => 'button.decoration.button.desktop.value.enable',
 						];
 					}
 				}
@@ -5161,8 +5193,51 @@ class DiviOps_Agent {
 	}
 
 	/**
+	 * Split an `update_module` attr path on `.`, treating `\.` as a literal dot in a key segment.
+	 *
+	 * Backslash-escape lets callers express literal-dot keys that some Divi 5 attribute shapes
+	 * require — notably Composable Settings preset slots like `groupPreset["title.decoration.spacing"]`,
+	 * where the slot key is itself a dotted string and must not be split into nested segments.
+	 *
+	 * Examples:
+	 *   "content.decoration.background"            → ["content", "decoration", "background"]
+	 *   "groupPreset.title\\.decoration\\.spacing" → ["groupPreset", "title.decoration.spacing"]
+	 *
+	 * @param string $path Dot-separated attr path; segments may use `\.` to embed a literal dot.
+	 * @return string[]    The split segments with `\.` collapsed back to `.`.
+	 */
+	private static function split_dot_path( $path ) {
+		// Fast path — no escapes possible without a backslash. Avoids the
+		// regex engine entirely on the overwhelmingly common case (every
+		// existing caller writes plain dot-paths).
+		if ( false === strpos( $path, '\\' ) ) {
+			return explode( '.', $path );
+		}
+
+		// Negative lookbehind: split on `.` only when not preceded by `\`.
+		$segments = preg_split( '/(?<!\\\\)\\./', $path );
+		if ( ! is_array( $segments ) ) {
+			// preg_split returns false on PCRE failure (e.g. backtrack limits).
+			// Treat the whole path as a single segment so the caller's write
+			// still lands somewhere visible rather than crashing on null.
+			return array( $path );
+		}
+
+		return array_map(
+			static function ( $segment ) {
+				return str_replace( '\\.', '.', $segment );
+			},
+			$segments
+		);
+	}
+
+	/**
 	 * Update a specific module's attributes by admin label, text content, or auto_index.
 	 * Attrs use dot notation: "content.decoration.headingFont.h2.font.desktop.value.color" => "#ff0000"
+	 *
+	 * For paths whose segments contain literal dots (e.g. Composable Settings preset slots like
+	 * `groupPreset["title.decoration.spacing"]`), escape the inner dots with `\.` —
+	 * `groupPreset.title\\.decoration\\.spacing.presetId` writes the literal-dot key intact.
 	 *
 	 * Targeting modes (in priority order):
 	 * 1. auto_index — match by type:N counter (e.g. "text:5", "icon:3")
@@ -5348,7 +5423,7 @@ class DiviOps_Agent {
 
 		// Apply dot-notation attrs.
 		foreach ( $attrs as $path => $value ) {
-			$keys = explode( '.', $path );
+			$keys = self::split_dot_path( $path );
 			$ref  = &$block_attrs;
 			foreach ( $keys as $i => $key ) {
 				if ( $i === count( $keys ) - 1 ) {

@@ -64,20 +64,18 @@ Font color uses the triple-nested `bodyFont.body.font.*` shape (Font Family A). 
 
 ## `divi/button`
 
-Three silent-failure traps; all three must be avoided for the button to render correctly.
+Three silent-failure traps to avoid.
 
 ```
 <!-- wp:divi/button {
-  "builderVersion": "5.1.1",
+  "builderVersion": "5.4.0",
   "button": {
     "innerContent": {
       "desktop": { "value": { "text": "Get Started", "linkUrl": "#target" } }
     },
     "decoration": {
       "button": {
-        "desktop": {
-          "value": { "enable": "on", "icon": { "enable": "off" } }
-        }
+        "desktop": { "value": { "icon": { "enable": "off" } } }
       }
     }
   }
@@ -86,10 +84,11 @@ Three silent-failure traps; all three must be avoided for the button to render c
 
 - **Content lives on `button.innerContent.*`**, NOT `content.innerContent.*`. Wrong bucket → button shows default "Click Me" label with empty href.
 - **`innerContent.desktop.value` is an object** `{text, linkUrl}`, NOT a plain string. Plain string → empty button.
-- **`button.decoration.button.desktop.value.enable: "on"` is required** for any custom border/bg/font/boxShadow to render. Without it, custom styling is partially or entirely ignored.
 - **`icon.enable: "off"`** suppresses the default hover arrow. Omit and Divi shows an arrow icon on hover.
+- **No `enable: "on"` flag is needed** for inline custom styling to render. VB-verified (Divi 5.4.0): `button.decoration.button.desktop.value.enable` is absent on inline-styled buttons saved by VB. The render path doesn't read it (`Packages/Module/Options/Button/ButtonComponent.php` only consumes `icon.settings`). Writing `enable: "off"` is *destructive* — it triggers a migration that strips `button.decoration` (`Migration/ComposibleOptionsMigration.php:563`).
+- **Don't write visual styling keys at `button.decoration.button.desktop.value.*`** (e.g. `backgroundColor`, `textColor`, `font`). Render-relevant keys at this depth are limited to `enable`, `icon`, `padding` (icon-spacing gate), and `alignment` (deprecated). Visual styling outside that set is silently dropped. Validator rule: `button_no_render_consumer`.
 
-When styling with custom border/background/font, they go on `button.decoration.{border,background,font}` (NOT `module.decoration`). Spacing (padding/margin) stays on `module.decoration.spacing`.
+Custom styling lives on **sibling-level paths**: `button.decoration.{border, background, font, boxShadow}` for visual styling. Padding goes on `module.decoration.spacing` (not `button.decoration.spacing`).
 
 ---
 

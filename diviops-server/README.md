@@ -96,9 +96,9 @@ The server connects via standard WordPress REST API and works with any environme
 
 > **WP-CLI note:** `WP_PATH` keeps the existing Local by Flywheel behavior by running `wp` directly on the host filesystem. For Docker-based environments (DDEV, wp-env, DevKinsta, WordPress Studio), set `WP_CLI_CMD` to the wrapper command instead. When `WP_CLI_CMD` is set, the server executes the wrapper from `WP_PATH` if provided, otherwise from its current working directory. The MCP server still validates the requested WP-CLI subcommand against its allowlist before executing either path.
 
-## Available Tools (57)
+## Available Tools (63)
 
-### Read (27)
+### Read (30)
 | Tool | Description |
 |------|-------------|
 | `diviops_test_connection` | Test WordPress connection and Divi version |
@@ -128,8 +128,11 @@ The server connects via standard WordPress REST API and works with any environme
 | `diviops_variables_used_on_page` | Detect which `gvid-` (numeric/font) IDs a single page emits — the exact set Divi 5.4.0+ uses to scope selective `:root{--gvid-*}` CSS variable emission. Walks the same content stack the frontend assembles (post_content + active TB header/body/footer + appended canvases + presets). `gcid-` colors are out of scope (separate emission path). Use for per-page orphan validation, preflight before bulk variable rename, or to debug why a numeric/font variable doesn't render on a specific page. Read-only |
 | `diviops_list_canvases` | List all canvas pages |
 | `diviops_get_canvas` | Get canvas content |
+| `diviops_scf_status` | Show SCF (Secure Custom Fields) sync status — pending JSON-vs-DB drift across field groups, post types, taxonomies, options pages. Wraps `wp scf json status` |
+| `diviops_scf_list_field_groups` | List all SCF/ACF field groups (post_name = ACF key, post_title, post_status, post_modified). Queries the `acf-field-group` post type via `wp post list` (works on SCF 6.8.4+ and older ACF) |
+| `diviops_scf_get_field_group` | Fetch a single SCF/ACF field-group post by ACF key (`group_abc123` → post_name) or numeric WP post ID. For the parsed/structured field tree, use `diviops_scf_export --field-groups=<key> --stdout` |
 
-### Write (28)
+### Write (31)
 | Tool | Description |
 |------|-------------|
 | `diviops_create_page` | Create a new page with optional Divi content |
@@ -160,6 +163,9 @@ The server connects via standard WordPress REST API and works with any environme
 | `diviops_create_canvas` | Create a canvas page |
 | `diviops_update_canvas` | Update canvas content |
 | `diviops_delete_canvas` | Delete a canvas page |
+| `diviops_scf_export` | Export SCF schema (field groups, post types, taxonomies, options pages) as JSON to a directory under the safe-root, or to stdout. Wraps `wp scf json export` |
+| `diviops_scf_import` | Import SCF schema from a JSON file (mutates DB; idempotent — existing items are updated). Wraps `wp scf json import <file>` |
+| `diviops_scf_sync` | Apply pending JSON-on-disk SCF changes to the DB. Defaults to `dry_run: true` for safety. Wraps `wp scf json sync` |
 
 ### Utility (2)
 | Tool | Description |
@@ -182,7 +188,7 @@ Read-only commands plus non-destructive writes needed for core MCP functionality
 | Post meta | `post meta get`, `post meta list`, `post meta set`, `post meta update` |
 | Post types | `post-type list`, `post-type get` |
 | Taxonomies | `taxonomy list`, `term list`, `term create`, `term update` |
-| ACF / SCF | `acf export`, `acf import`, `acf field-group list`, `acf field-group get` |
+| ACF / SCF | `acf export`, `acf import`, `acf field-group list`, `acf field-group get`, `scf json {status,sync,import,export}` (also aliased as `acf json …` per SCF 6.8.4+) |
 | Users | `user list` |
 | Cache | `cache flush`, `transient delete`, `rewrite flush` |
 | Export | `export` (WXR data export to file) |
@@ -237,12 +243,13 @@ The sentinel grants exactly the extended set above — it does NOT unlock anythi
 
 ### Filesystem flag validation
 
-The three DEFAULT-tier filesystem commands (`wp export`, `acf export <path>`, `acf import <path>`) are second-pass validated against a safe root so wrong-path arguments can't write WXR to the web root or read ACF configs from arbitrary locations.
+The DEFAULT-tier filesystem commands (`wp export`, `acf export <path>`, `acf import <path>`, `scf json export --dir=<path>`, `scf json import <file>`, plus the `acf json …` aliases) are second-pass validated against a safe root so wrong-path arguments can't write WXR / schema JSON to the web root or read configs from arbitrary locations.
 
 - **Safe root**: `<WP_PATH>/.diviops-tmp/` by default (auto-created on first use in host mode). Override with `DIVIOPS_WP_CLI_SAFE_FS_ROOT=/absolute/path`. All path arguments must canonicalize under this directory; symlinks are resolved via `realpath` so a planted symlink inside the safe root pointing outside it is caught.
 - **`wp export` must pass `--dir=<path-under-safe-root>`** (or `--stdout`). Without `--dir`, wp-cli writes to the current working directory; on prod that's typically the web root.
 - **`--filename_format=` must be a filename template**, not a path — separators (`/`, `\`) are rejected so a crafted template can't escape `--dir`'s scope.
 - **`acf export/import`'s positional path** must resolve under the safe root.
+- **`scf json export`'s `--dir=` flag** must resolve under the safe root (or pass `--stdout` for in-memory transfer). **`scf json import`'s positional `<file>` path** must resolve under the safe root.
 - **Wrapper mode (`WP_CLI_CMD`)**: the host-derived safe root doesn't correspond to the wrapper's filesystem (e.g., container paths like `/www/app`), so `DIVIOPS_WP_CLI_SAFE_FS_ROOT` is **required** and must be set to the container-namespace path. FS-sensitive commands are rejected with a clear error if it's missing.
 - **Escape hatch**: `DIVIOPS_WP_CLI_UNSAFE_FS=1` disables validation entirely. Appropriate for trusted single-user local-dev setups that don't want the guard.
 

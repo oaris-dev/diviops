@@ -42,6 +42,22 @@ Read the right file for the task at hand — don't load everything.
 9. **Always use section/row/column structure**: Wrapperless top-level modules lose styling
 10. **Cache invalidation**: All write tools auto-invalidate Divi's CSS cache. If styles appear stale, hard-refresh the browser.
 
+### Verification convention
+
+Skill docs label findings by evidence quality. **Runtime acceptance ≠ VB compatibility** — a path can render correctly via MCP write but get rewritten or rejected on VB save. When citing or extending these docs, preserve the existing tier:
+
+| Marker | Meaning | When to use |
+|---|---|---|
+| **`*(VB-verified YYYY-MM-DD)*`** | User saved the shape in VB; observed in registry/markup as-written | Canonical. Safe to author from MCP and expect VB round-trip. |
+| **`*(verified YYYY-MM-DD)*`** or **`*(empirically verified ...)*`** | Frontend renders correctly OR runtime accepts the shape, but VB round-trip not exercised | Use the path, but flag the limitation. Schema-canonical path may differ. Cross-check `*PresetAttrsMap.php` if possible. |
+| **`<!-- UNVERIFIED -->`** | Neither VB-tested nor render-confirmed | Mark explicitly. Don't ship downstream tooling that depends on it. |
+
+The two real failure modes this prevents (`feedback_schema_canonical_path`, `feedback_vb_first_verification`):
+- A path that renders but is **not VB-editable** — downstream user opens VB, value silently re-resolves to default
+- A path that runtime accepts but **VB rewrites on save** — the very next user save undoes our write
+
+Upgrade tier by VB round-trip: have the user save the shape in VB, then dump the registry/block markup. If the shape is preserved exactly, stamp `(VB-verified DATE)`. If VB rewrote it, document the canonical shape (what VB wrote) and the runtime-permissive variant separately.
+
 ### Design Quality Checklist
 When generating pages, ALWAYS apply:
 - **Entrance animations** on visible modules (`fade`/`slide` with staggered `delay`: 0ms, 150ms, 300ms, 450ms)
@@ -162,7 +178,7 @@ Full attribute paths in [module-formats.md](references/module-formats.md) Tier 3
 
 - **Heading**: explicit `headingLevel` required — omit and Divi renders `<h2>` regardless of semantic intent. Lives at `title.decoration.font.font.desktop.value.headingLevel` (double-`font` nesting, Font Family B). Allowed `"h1"`–`"h6"`. Validator: `heading_missing_level` (warn).
 - **Button content**: lives on `button.innerContent.desktop.value`, NOT `content.innerContent.*`. Must be an **object** `{text, linkUrl}`, not a plain string. Either wrong bucket or string shape → button renders as default "Click Me" with empty href. Validators: `button_content_wrong_bucket` (error), `button_innercontent_string` (error).
-- **Button styling**: `button.decoration.button.desktop.value.enable: "on"` required for ANY custom border/background/font/boxShadow to render fully. Without it, custom styling is silently partial. Pair with `icon.enable: "off"` to suppress the default hover arrow. Validators: `button_missing_enable` (warn), `button_missing_icon_enable` (warn).
+- **Button styling lives at sibling-level paths**: `button.decoration.{font, background, border, boxShadow}` for visual styling, plus `module.decoration.spacing` for padding. **No `enable` flag is required** — VB-verified (Divi 5.4.0, page 1332): inline-styled buttons render correctly with no `button.decoration.button.desktop.value.enable` key. Render-relevant keys at `button.decoration.button.desktop.value.*` are limited to: `enable` (migration trigger — `"off"` causes Divi to strip `button.decoration`; never write without intent), `icon.*` (visible icon config — set `icon.enable: "off"` to suppress the default hover arrow), `padding` (icon-spacing gate, not visible-padding emitter — set layout padding at `module.decoration.spacing` instead), and `alignment` (deprecated input forwarded to `decoration.sizing.alignment`). Anything outside this set (e.g. `backgroundColor`, `textColor`, `font`) has no consumer here — parses, validates, saves, then no-ops at render. Validators: `button_no_render_consumer` (warn — flags unrecognized keys at this depth), `button_missing_icon_enable` (warn — fires when sibling-level styling exists without explicit icon suppression).
 - **Blurb title**: `title.innerContent.desktop.value` is an **object** `{text}`, NOT a plain string. Plain string → title silently absent from rendered HTML. Validator: `blurb_title_string` (error).
 - **Blurb icon**: when `imageIcon.innerContent.desktop.value.icon` is set, `useIcon: "on"` is required — without it the `.et-pb-icon` span renders empty. Validator: `blurb_icon_missing_use_icon` (error).
 - **Body font path**: `content.decoration.bodyFont.body.font.*` (Font Family A, triple-nested). Writing `bodyFont.bodyFont.*` is a silent failure — no renderer consumer, values fall through to defaults (often black text on a dark background → invisible). Validator: `body_font_double_nested` (error).

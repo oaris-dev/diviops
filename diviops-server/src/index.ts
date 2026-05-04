@@ -659,7 +659,7 @@ server.registerTool(
   "diviops_update_module",
   {
     description:
-      'Update specific attributes of a module. Target by auto_index (e.g. "text:5"), admin label, or text content. Uses dot notation for attribute paths. Example: {"content.decoration.headingFont.h2.font.desktop.value.color": "#ff0000"}. Priority: auto_index > label > match_text. Use occurrence with label when duplicates exist.',
+      'Update specific attributes of a module. Target by auto_index (e.g. "text:5"), admin label, or text content. Uses dot notation for attribute paths. Example: {"content.decoration.headingFont.h2.font.desktop.value.color": "#ff0000"}. For paths whose key segments contain literal dots — notably Composable Settings preset slots like groupPreset["title.decoration.spacing"] — escape the inner dots with `\\.` to keep the segment intact: {"groupPreset.title\\\\.decoration\\\\.spacing.presetId": ["uuid"]}. Priority: auto_index > label > match_text. Use occurrence with label when duplicates exist.',
     inputSchema: {
       page_id: z.number().describe("WordPress post/page ID"),
       label: z
@@ -1654,7 +1654,7 @@ server.registerTool(
   "diviops_wp_cli",
   {
     description:
-      "Run a WP-CLI command on the WordPress site. Requires WP_PATH env var (LOCAL_SITE_ID auto-detected from Local by Flywheel), or WP_CLI_CMD for containerized wrappers. Commands validated against a safety allowlist. Default tier covers read ops across options/posts/post-types/taxonomies/users/info/core/db, non-destructive writes (post/term create+update, post meta read/write, cache/rewrite/transient flush), ACF schema ops (export/import/list/get field-group), and WXR export. Extended tier (requires DIVIOPS_WP_CLI_ALLOW env var) adds destructive or bulk-modifying ops: option update, post/post meta/term delete, search-replace, import, plugin activate/deactivate, eval-file. Filesystem-touching commands (`wp export`, `acf export/import`) are additionally constrained: path arguments must resolve under a safe root (defaults to `<WP_PATH>/.diviops-tmp/`, overridable via DIVIOPS_WP_CLI_SAFE_FS_ROOT, disable via DIVIOPS_WP_CLI_UNSAFE_FS=1); `wp export` requires an explicit `--dir=<path>` (or `--stdout`). In WP_CLI_CMD wrapper mode, DIVIOPS_WP_CLI_SAFE_FS_ROOT is required for FS-sensitive commands. Use --format=json for structured output. Full allowlist + tier rationale + filesystem semantics in the MCP server README.",
+      "Run a WP-CLI command on the WordPress site. Requires WP_PATH env var (LOCAL_SITE_ID auto-detected from Local by Flywheel), or WP_CLI_CMD for containerized wrappers. Commands validated against a safety allowlist. Default tier covers read ops across options/posts/post-types/taxonomies/users/info/core/db, non-destructive writes (post/term create+update, post meta read/write, cache/rewrite/transient flush), ACF/SCF schema ops (`acf export/import/field-group list/get` plus SCF 6.8.4+ `scf json {status,sync,import,export}` and the `acf json …` aliases), and WXR export. Extended tier (requires DIVIOPS_WP_CLI_ALLOW env var) adds destructive or bulk-modifying ops: option update, post/post meta/term delete, search-replace, import, plugin activate/deactivate, eval-file. Filesystem-touching commands (`wp export`, `acf export/import`, `scf|acf json export/import`) are additionally constrained: path arguments must resolve under a safe root (defaults to `<WP_PATH>/.diviops-tmp/`, overridable via DIVIOPS_WP_CLI_SAFE_FS_ROOT, disable via DIVIOPS_WP_CLI_UNSAFE_FS=1); `wp export` and `scf json export` require an explicit `--dir=<path>` (or `--stdout`). In WP_CLI_CMD wrapper mode, DIVIOPS_WP_CLI_SAFE_FS_ROOT is required for FS-sensitive commands. Prefer the typed `diviops_scf_*` wrappers for SCF round-trips — they're easier to invoke and accept the same safe-root scoping. Use --format=json for structured output. Full allowlist + tier rationale + filesystem semantics in the MCP server README.",
     inputSchema: {
       command: z
         .string()
@@ -1676,6 +1676,332 @@ server.registerTool(
     }
 
     const result = await wpCli.run(command);
+    const output = result.success
+      ? result.output
+      : `Error: ${result.error}\n${result.output}`;
+    return { content: [{ type: "text" as const, text: output }] };
+  },
+);
+
+// ── SCF (Secure Custom Fields / ACF) wrappers ───────────────────────
+//
+// Typed wrappers over SCF 6.8.4+'s `wp scf json {status,sync,import,export}`
+// CLI family (also reachable as `wp acf json …`). The plugin file at
+// wp-content/plugins/secure-custom-fields/src/CLI/JsonCommand.php is the
+// upstream source of truth for flag shapes — keep these wrappers aligned.
+
+function ensureWpCli(): { ok: true } | { ok: false; text: string } {
+  if (!wpCli) {
+    return {
+      ok: false,
+      text:
+        "WP-CLI not configured. Set WP_PATH (Local by Flywheel auto-detect) " +
+        "or WP_CLI_CMD (containerized wrappers) to enable SCF round-trip tools.",
+    };
+  }
+  return { ok: true };
+}
+
+function pushScfFlag(args: string[], name: string, value: string | undefined): void {
+  if (!value) return;
+  // Each `--name=value` becomes a single argv entry — execFile handles spaces
+  // and quotes inside the value transparently. No string concatenation, no
+  // parseCommand round-trip, so values like "Bob's Group" or filenames with
+  // spaces flow through verbatim.
+  args.push(`--${name}=${value}`);
+}
+
+server.registerTool(
+  "diviops_scf_status",
+  {
+    description:
+      "Show SCF (Secure Custom Fields) sync status — how many field groups, post types, taxonomies, and options pages have JSON-on-disk newer than the database (or absent from DB). Read-only. Wraps `wp scf json status`. Requires SCF 6.8.4+ and WP_PATH or WP_CLI_CMD.",
+    inputSchema: {
+      type: z
+        .enum(["field-group", "post-type", "taxonomy", "options-page"])
+        .optional()
+        .describe(
+          "Limit to a single item type. Defaults to all types. options-page requires ACF PRO.",
+        ),
+      detailed: z
+        .boolean()
+        .optional()
+        .describe(
+          "List the individual pending items (key/title/type/action) instead of just counts.",
+        ),
+    },
+  },
+  async ({ type, detailed }) => {
+    const gate = ensureWpCli();
+    if (!gate.ok) {
+      return { content: [{ type: "text" as const, text: gate.text }] };
+    }
+    const args = ["scf", "json", "status", "--format=json"];
+    pushScfFlag(args, "type", type);
+    if (detailed) args.push("--detailed");
+    const result = await wpCli!.runArgs(args);
+    const output = result.success
+      ? result.output
+      : `Error: ${result.error}\n${result.output}`;
+    return { content: [{ type: "text" as const, text: output }] };
+  },
+);
+
+server.registerTool(
+  "diviops_scf_export",
+  {
+    description:
+      "Export SCF field groups, post types, taxonomies, and options pages as JSON — to a directory under the safe-root (`<WP_PATH>/.diviops-tmp/` by default, override via DIVIOPS_WP_CLI_SAFE_FS_ROOT) or to stdout. Wraps `wp scf json export`. Either `dir` or `stdout: true` is required. Filters can be combined; without filters, all items are exported. Note: SCF writes a fixed filename `acf-export-YYYY-MM-DD.json` inside `dir` — two exports on the same day silently overwrite. Copy/rename if you're archiving baselines.",
+    inputSchema: {
+      dir: z
+        .string()
+        .optional()
+        .describe(
+          "Absolute output directory under the WP-CLI safe-root. Mutually exclusive with `stdout`. SCF writes a single `acf-export-YYYY-MM-DD.json` file inside this dir.",
+        ),
+      stdout: z
+        .boolean()
+        .optional()
+        .describe(
+          "Print JSON to stdout instead of writing a file. Mutually exclusive with `dir`.",
+        ),
+      field_groups: z
+        .string()
+        .optional()
+        .describe(
+          "Comma-separated field-group ACF keys (`group_abc123`) or admin titles (`My Field Group`). NOT WP post slugs — SCF matches against the def's `key` field or its `title` (case-insensitive). Use `diviops_scf_list_field_groups` to discover keys (post_name column).",
+        ),
+      post_types: z
+        .string()
+        .optional()
+        .describe(
+          "Comma-separated SCF post-type def keys (`post_type_xxx`) or admin titles (`Programm`). IMPORTANT: this is the SCF def's identifier, NOT the registered post-type slug (`event`, `book`). The registered slug is what `wp post list` and REST URLs use, but SCF's filter matches against the def's `key` field or its `title`. To discover def keys, run `diviops_scf_export --stdout` (no filter) and inspect the top-level entries with `parent='post-type'`.",
+        ),
+      taxonomies: z
+        .string()
+        .optional()
+        .describe(
+          "Comma-separated SCF taxonomy def keys (`taxonomy_xxx`) or admin titles. Same caveat as `post_types`: NOT the registered taxonomy slug — the SCF def's `key` or `title`. Discover via `diviops_scf_export --stdout`.",
+        ),
+      options_pages: z
+        .string()
+        .optional()
+        .describe(
+          "Comma-separated options-page def keys or admin titles. Requires ACF PRO.",
+        ),
+    },
+  },
+  async ({ dir, stdout, field_groups, post_types, taxonomies, options_pages }) => {
+    const gate = ensureWpCli();
+    if (!gate.ok) {
+      return { content: [{ type: "text" as const, text: gate.text }] };
+    }
+    if (!dir && !stdout) {
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: "Error: pass either `dir` (absolute path under DIVIOPS_WP_CLI_SAFE_FS_ROOT) or `stdout: true`.",
+          },
+        ],
+      };
+    }
+    if (dir && stdout) {
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: "Error: `dir` and `stdout` are mutually exclusive — pick one.",
+          },
+        ],
+      };
+    }
+    const args = ["scf", "json", "export"];
+    if (stdout) args.push("--stdout");
+    pushScfFlag(args, "dir", dir);
+    pushScfFlag(args, "field-groups", field_groups);
+    pushScfFlag(args, "post-types", post_types);
+    pushScfFlag(args, "taxonomies", taxonomies);
+    pushScfFlag(args, "options-pages", options_pages);
+    const result = await wpCli!.runArgs(args);
+    const output = result.success
+      ? result.output
+      : `Error: ${result.error}\n${result.output}`;
+    return { content: [{ type: "text" as const, text: output }] };
+  },
+);
+
+server.registerTool(
+  "diviops_scf_import",
+  {
+    description:
+      "Import SCF field groups, post types, taxonomies, options pages from a JSON file. Mutates the database. File path must resolve under the safe-root (`<WP_PATH>/.diviops-tmp/` by default, override via DIVIOPS_WP_CLI_SAFE_FS_ROOT). Idempotent — existing items with matching keys are updated. Wraps `wp scf json import <file>`.",
+    inputSchema: {
+      file: z
+        .string()
+        .describe(
+          "Absolute path to the .json file to import. Must resolve under DIVIOPS_WP_CLI_SAFE_FS_ROOT.",
+        ),
+    },
+  },
+  async ({ file }) => {
+    const gate = ensureWpCli();
+    if (!gate.ok) {
+      return { content: [{ type: "text" as const, text: gate.text }] };
+    }
+    const result = await wpCli!.runArgs(["scf", "json", "import", file]);
+    const output = result.success
+      ? result.output
+      : `Error: ${result.error}\n${result.output}`;
+    return { content: [{ type: "text" as const, text: output }] };
+  },
+);
+
+server.registerTool(
+  "diviops_scf_sync",
+  {
+    description:
+      "Apply pending JSON-on-disk SCF changes to the database. Reads JSON files from the theme/plugin acf-json directory and creates/updates DB entries. Defaults to `dry_run: true` for safety — caller must opt in to mutation. Wraps `wp scf json sync`.",
+    inputSchema: {
+      type: z
+        .enum(["field-group", "post-type", "taxonomy", "options-page"])
+        .optional()
+        .describe("Limit sync to a single item type."),
+      key: z
+        .string()
+        .optional()
+        .describe("Sync only the item with this ACF key (e.g. `group_abc123`)."),
+      dry_run: z
+        .boolean()
+        .optional()
+        .default(true)
+        .describe(
+          "Preview pending changes without mutating the database. Defaults to true. Pass `false` to commit.",
+        ),
+    },
+  },
+  async ({ type, key, dry_run }) => {
+    const gate = ensureWpCli();
+    if (!gate.ok) {
+      return { content: [{ type: "text" as const, text: gate.text }] };
+    }
+    const args = ["scf", "json", "sync"];
+    pushScfFlag(args, "type", type);
+    pushScfFlag(args, "key", key);
+    if (dry_run !== false) args.push("--dry-run");
+    const result = await wpCli!.runArgs(args);
+    const output = result.success
+      ? result.output
+      : `Error: ${result.error}\n${result.output}`;
+    return { content: [{ type: "text" as const, text: output }] };
+  },
+);
+
+server.registerTool(
+  "diviops_scf_list_field_groups",
+  {
+    description:
+      "List all SCF/ACF field groups in the database (post_name = ACF key, post_title, post_status, post_modified). Read-only. Queries the underlying `acf-field-group` post type via `wp post list` — works on both SCF 6.8.4+ (which dropped the legacy `wp acf field-group …` family in favor of the `wp scf json` namespace) and older ACF installs.",
+  },
+  async () => {
+    const gate = ensureWpCli();
+    if (!gate.ok) {
+      return { content: [{ type: "text" as const, text: gate.text }] };
+    }
+    const result = await wpCli!.runArgs([
+      "post",
+      "list",
+      "--post_type=acf-field-group",
+      "--post_status=any",
+      "--fields=ID,post_name,post_title,post_status,post_modified",
+      "--format=json",
+    ]);
+    const output = result.success
+      ? result.output
+      : `Error: ${result.error}\n${result.output}`;
+    return { content: [{ type: "text" as const, text: output }] };
+  },
+);
+
+server.registerTool(
+  "diviops_scf_get_field_group",
+  {
+    description:
+      "Fetch a single SCF/ACF field group from the `acf-field-group` post type — by ACF key (`group_abc123`, looked up via `post_name`) or by numeric WP post ID. Returns the WP post fields (post_name, post_title, post_content with serialized fields blob, post_status, post_modified). For the parsed/structured field tree including nested fields, use `diviops_scf_export --field-groups=<key> --stdout` instead. Read-only. SCF 6.8.4 dropped the legacy `wp acf field-group get` command, so this wrapper queries the post type directly via `wp post`.",
+    inputSchema: {
+      key: z
+        .string()
+        .describe(
+          "ACF field-group key (`group_abc123`, matched against post_name) or numeric WP post ID.",
+        ),
+    },
+  },
+  async ({ key }) => {
+    const gate = ensureWpCli();
+    if (!gate.ok) {
+      return { content: [{ type: "text" as const, text: gate.text }] };
+    }
+    // If the input looks like a numeric ID, hand it to `wp post get` directly.
+    // Otherwise treat it as an ACF key and resolve via post_name first.
+    const isNumericId = /^\d+$/.test(key);
+    if (isNumericId) {
+      const result = await wpCli!.runArgs([
+        "post",
+        "get",
+        key,
+        "--format=json",
+      ]);
+      const output = result.success
+        ? result.output
+        : `Error: ${result.error}\n${result.output}`;
+      return { content: [{ type: "text" as const, text: output }] };
+    }
+    // Resolve ACF key → post ID via `wp post list --name=<key>`. Single-row
+    // lookup; returns [] if the key isn't found.
+    const lookup = await wpCli!.runArgs([
+      "post",
+      "list",
+      "--post_type=acf-field-group",
+      "--post_status=any",
+      `--name=${key}`,
+      "--fields=ID",
+      "--format=json",
+    ]);
+    if (!lookup.success) {
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: `Error looking up field-group key "${key}": ${lookup.error}\n${lookup.output}`,
+          },
+        ],
+      };
+    }
+    let postId: string | null = null;
+    try {
+      const rows = JSON.parse(lookup.output) as Array<{ ID: number }>;
+      if (Array.isArray(rows) && rows.length > 0) {
+        postId = String(rows[0].ID);
+      }
+    } catch {
+      // Fall through — postId stays null, return a clear "not found" error.
+    }
+    if (!postId) {
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: `No field-group found for key "${key}". Use diviops_scf_list_field_groups to see available keys (post_name field).`,
+          },
+        ],
+      };
+    }
+    const result = await wpCli!.runArgs([
+      "post",
+      "get",
+      postId,
+      "--format=json",
+    ]);
     const output = result.success
       ? result.output
       : `Error: ${result.error}\n${result.output}`;

@@ -293,8 +293,7 @@ Need a semantic name? Register it inside Divi as a `gvid-*` / `gcid-*` in the Va
 |--------|-----------------|--------------|--------------------------|
 | **Heading** | Explicit heading level required | `title.decoration.font.font.desktop.value.headingLevel: "h1"` | omitting → renders as `<h2>` |
 | **Button** | Content bucket & shape | `button.innerContent.desktop.value: {text, linkUrl}` | `content.innerContent.*` OR plain string → default "Click Me" |
-| **Button** | Custom styling needs enable flag | `button.decoration.button.desktop.value.enable: "on"` | omitting → custom border/bg/font partially ignored |
-| **Button** | Border/bg/font on button root | `button.decoration.{border,background,font}` | `module.decoration.border` |
+| **Button** | Border/bg/font on button root | `button.decoration.{border,background,font}` (sibling-level — VB-verified Divi 5.4.0; NO `enable: "on"` flag required) | Visual styling at `button.decoration.button.desktop.value.{backgroundColor,textColor,font,...}` (silent foot-gun: render-relevant keys at this depth are limited to `enable`/`icon`/`padding`/`alignment`) OR `module.decoration.border` |
 | **Button** | Sizing on button element (5.1.1+) | `button.decoration.sizing` | `module.decoration.sizing` |
 | **Button** | Alignment inside sizing (5.1.1+) | `button.decoration.sizing.desktop.value.alignment` | `module.advanced.alignment` (schema only, not saved) |
 | **Button** | Icon enable required | `button.decoration.button.desktop.value.icon.enable: "off"` | omitting `icon.enable` → hover arrow icon |
