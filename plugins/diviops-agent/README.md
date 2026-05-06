@@ -63,6 +63,8 @@ Base: `/wp-json/diviops/v1/`
 |----------|--------|-------------|
 | `/page/create` | POST | Create new page |
 | `/page/update-content/{id}` | POST | Full content rewrite |
+| `/page/trash/{id}` | POST | Trash (default) or permanently delete (`force=true`) a page; idempotent; supports `dry_run` |
+| `/page/update-status/{id}` | POST | Update post_status (publish/draft/private/pending/future). `future` requires `date_gmt` (ISO 8601 UTC); supports `dry_run` |
 | `/section/append/{id}` | POST | Append section to page |
 | `/section/replace/{id}` | POST | Replace section by label |
 | `/section/remove/{id}` | POST | Remove section by label |

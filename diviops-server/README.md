@@ -96,7 +96,7 @@ The server connects via standard WordPress REST API and works with any environme
 
 > **WP-CLI note:** `WP_PATH` keeps the existing Local by Flywheel behavior by running `wp` directly on the host filesystem. For Docker-based environments (DDEV, wp-env, DevKinsta, WordPress Studio), set `WP_CLI_CMD` to the wrapper command instead. When `WP_CLI_CMD` is set, the server executes the wrapper from `WP_PATH` if provided, otherwise from its current working directory. The MCP server still validates the requested WP-CLI subcommand against its allowlist before executing either path.
 
-## Available Tools (63)
+## Available Tools (65)
 
 ### Read (30)
 | Tool | Description |
@@ -132,11 +132,13 @@ The server connects via standard WordPress REST API and works with any environme
 | `diviops_scf_field_group_list` | List all SCF/ACF field groups (post_name = ACF key, post_title, post_status, post_modified). Queries the `acf-field-group` post type via `wp post list` (works on SCF 6.8.4+ and older ACF) |
 | `diviops_scf_field_group_get` | Fetch a single SCF/ACF field-group post by ACF key (`group_abc123` → post_name) or numeric WP post ID. For the parsed/structured field tree, use `diviops_scf_export --field-groups=<key> --stdout` |
 
-### Write (31)
+### Write (33)
 | Tool | Description |
 |------|-------------|
 | `diviops_page_create` | Create a new page with optional Divi content |
 | `diviops_page_update_content` | Full page content rewrite |
+| `diviops_page_trash` | Trash (default) or permanently delete (`force=true`) a page. Idempotent on already-trashed posts. Supports `dry_run` |
+| `diviops_page_update_status` | Update post_status (publish/draft/private/pending/future). `future` requires `date_gmt` (ISO 8601 UTC); `publish` clears stale future dates so re-publishing takes effect immediately. Supports `dry_run` |
 | `diviops_section_append` | Append a section to existing page (start or end) |
 | `diviops_section_replace` | Replace a section by admin label |
 | `diviops_section_remove` | Remove a section by admin label |

@@ -913,6 +913,88 @@ server.registerTool(
   },
 );
 
+server.registerTool(
+  "diviops_page_trash",
+  {
+    description:
+      "Trash or permanently delete a page/post. Defaults to trash (reversible via WP Admin → Trash). Pass force=true to permanently delete (wp_delete_post — irreversible). Idempotent: trashing an already-trashed post is a no-op. Pass dry_run=true to preview without mutating. Replaces wp-cli `post delete --force=0|1` routing for AI-agent callers (typed input, deterministic envelope).",
+    inputSchema: {
+      post_id: z.number().int().describe("WordPress post/page ID"),
+      force: z
+        .boolean()
+        .optional()
+        .default(false)
+        .describe(
+          "When true, permanently delete (skips trash). Default false moves to trash.",
+        ),
+      dry_run: z
+        .boolean()
+        .optional()
+        .default(false)
+        .describe(
+          "When true, return the change plan without mutating state.",
+        ),
+    },
+  },
+  async ({ post_id, force, dry_run }) => {
+    const result = await wp.request(`/page/trash/${post_id}`, {
+      method: "POST",
+      body: {
+        force: force ?? false,
+        dry_run: dry_run ?? false,
+      },
+    });
+    return {
+      content: [
+        { type: "text" as const, text: JSON.stringify(result) },
+      ],
+    };
+  },
+);
+
+server.registerTool(
+  "diviops_page_update_status",
+  {
+    description:
+      "Update a page's post_status. Valid statuses: publish, draft, private, pending, future. status='future' requires date_gmt (ISO 8601 UTC, must be in the future) — server writes both post_date_gmt and the site-tz post_date so WP's scheduler picks it up. status='publish' on a previously-scheduled post clears the future date so it publishes immediately. Idempotent: same-status update is a no-op. Pass dry_run=true to preview. Replaces wp-cli `post update --post_status=...` routing.",
+    inputSchema: {
+      post_id: z.number().int().describe("WordPress post/page ID"),
+      status: z
+        .enum(["publish", "draft", "private", "pending", "future"])
+        .describe("Target post status"),
+      date_gmt: z
+        .string()
+        .optional()
+        .describe(
+          "Required when status='future'. ISO 8601 UTC datetime (e.g. '2026-06-01T09:00:00Z'). Must be in the future.",
+        ),
+      dry_run: z
+        .boolean()
+        .optional()
+        .default(false)
+        .describe(
+          "When true, return the change plan without mutating state.",
+        ),
+    },
+  },
+  async ({ post_id, status, date_gmt, dry_run }) => {
+    const body: Record<string, any> = {
+      status,
+      dry_run: dry_run ?? false,
+    };
+    if (date_gmt) body.date_gmt = date_gmt;
+    const result = await wp.request(`/page/update-status/${post_id}`, {
+      method: "POST",
+      body,
+    });
+    return {
+      content: [
+        { type: "text" as const, text: JSON.stringify(result) },
+      ],
+    };
+  },
+);
+
 // ── Preset Tools ────────────────────────────────────────────────────
 
 server.registerTool(

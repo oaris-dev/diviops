@@ -3,7 +3,7 @@
  * Plugin Name: DiviOps Agent
  * Plugin URI: https://github.com/oaris-dev/diviops
  * Description: REST API bridge for DiviOps — connects Claude Code to your Divi 5 site for AI-powered page building and design management.
- * Version: 1.0.0
+ * Version: 1.1.0
  * Author: oaris.de
  * Author URI: https://oaris.de
  * Text Domain: diviops-agent
@@ -59,12 +59,12 @@ class DiviOps_Agent {
 	/**
 	 * Plugin version — used for handshake compatibility checks.
 	 */
-	const VERSION = '1.0.0';
+	const VERSION = '1.1.0';
 
 	/**
 	 * Minimum MCP server version this plugin is compatible with.
 	 */
-	const MIN_SERVER_VERSION = '1.0.0';
+	const MIN_SERVER_VERSION = '1.1.0';
 
 	/**
 	 * REST namespace for all endpoints.
@@ -573,6 +573,53 @@ class DiviOps_Agent {
 			'args'                => [
 				'id'       => [ 'required' => true ],
 				'template' => [ 'required' => false, 'type' => 'string' ],
+			],
+		] );
+
+		register_rest_route( self::REST_NAMESPACE, '/page/trash/(?P<id>\d+)', [
+			'methods'             => 'POST',
+			'callback'            => [ __CLASS__, 'page_trash' ],
+			'permission_callback' => [ __CLASS__, 'check_write_permission' ],
+			'args'                => [
+				'id'      => [ 'required' => true ],
+				'force'   => [
+					'required'    => false,
+					'type'        => 'boolean',
+					'default'     => false,
+					'description' => 'When true, permanently delete (wp_delete_post). Default false moves to trash.',
+				],
+				'dry_run' => [
+					'required'    => false,
+					'type'        => 'boolean',
+					'default'     => false,
+					'description' => 'When true, return the change plan without mutating state.',
+				],
+			],
+		] );
+
+		register_rest_route( self::REST_NAMESPACE, '/page/update-status/(?P<id>\d+)', [
+			'methods'             => 'POST',
+			'callback'            => [ __CLASS__, 'page_update_status' ],
+			'permission_callback' => [ __CLASS__, 'check_write_permission' ],
+			'args'                => [
+				'id'       => [ 'required' => true ],
+				'status'   => [
+					'required'    => true,
+					'type'        => 'string',
+					'enum'        => [ 'publish', 'draft', 'private', 'pending', 'future' ],
+					'description' => 'Target post status.',
+				],
+				'date_gmt' => [
+					'required'    => false,
+					'type'        => 'string',
+					'description' => 'Required when status="future" (ISO 8601 UTC). Future dates only.',
+				],
+				'dry_run'  => [
+					'required'    => false,
+					'type'        => 'boolean',
+					'default'     => false,
+					'description' => 'When true, return the change plan without mutating state.',
+				],
 			],
 		] );
 
