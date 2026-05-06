@@ -31,11 +31,11 @@ Read the right file for the task at hand — don't load everything.
 
 ## Workflow Best Practices
 
-1. **Build incrementally**: `create_page` → `append_section` × N
+1. **Build incrementally**: `create_page` → `section_append` × N
 2. **Always label sections**: `meta.adminLabel` on every section
 3. **Label key modules**: Add admin labels to modules you might edit later
-4. **Validate before saving**: Use `diviops_validate_blocks` before `diviops_update_page_content`, `diviops_update_tb_layout`, or `diviops_save_to_library`
-5. **Use `diviops_find_icon`**: Don't guess icon codes — search by keyword
+4. **Validate before saving**: Use `diviops_validate_blocks` before `diviops_page_update_content`, `diviops_tb_layout_update`, or `diviops_library_save`
+5. **Use `diviops_meta_find_icon`**: Don't guess icon codes — search by keyword
 6. **Prefer VB-native**: Use Divi attributes over CSS whenever possible
 7. **Font inheritance**: Set global fonts via theme options, skip explicit `family` on modules
 8. **Use semantic HTML**: Set `elementType` for SEO/accessibility (`header`, `nav`, `main`, `article`, `footer`)
@@ -132,14 +132,14 @@ Run this only when you want the full token + preset setup for a site. **Not requ
 This is a real commitment: ~72 API calls for tokens alone, plus ~24 `diviops_preset_create` calls to seed the oa preset catalog. Bootstrap once you're sure you want design-system consistency across many pages on this site.
 
 **Step 1 — Audit existing site:**
-1. `diviops_list_variables` with `prefix: "gcid-oa-"` — check for oa color tokens
-2. `diviops_list_variables` with `prefix: "gvid-oa-"` — check for oa number tokens
+1. `diviops_variable_list` with `prefix: "gcid-oa-"` — check for oa color tokens
+2. `diviops_variable_list` with `prefix: "gvid-oa-"` — check for oa number tokens
 3. `diviops_preset_audit` — check for oa-prefixed presets
 
 **Step 2 — Create tokens (if missing):**
 1. Ask user for brand colors: primary, secondary, neutral (name + hex base)
 2. Generate shade scales (50-950) for each family
-3. Create color tokens via `diviops_create_variable` — ~35 calls
+3. Create color tokens via `diviops_variable_create` — ~35 calls
 4. Create number tokens (font sizes, spacings, radii, line heights) — ~37 calls (~72 total)
 
 **Step 3 — Create presets (if missing):**
@@ -153,7 +153,7 @@ Use `diviops_preset_create` to write each preset to the D5 registry programmatic
 
 **Step 4 — Generate manifest:**
 1. Match preset names to role keys (e.g. "oa Heading H1" → `heading-h1`)
-2. Confirm token counts from `diviops_list_variables`
+2. Confirm token counts from `diviops_variable_list`
 3. Write `.claude/design-system.json` (see [presets.md](references/presets.md) for schema)
 
 **Step 5 — Generate project docs (optional):**
@@ -178,7 +178,7 @@ Full attribute paths in [module-formats.md](references/module-formats.md) Tier 3
 
 - **Heading**: explicit `headingLevel` required — omit and Divi renders `<h2>` regardless of semantic intent. Lives at `title.decoration.font.font.desktop.value.headingLevel` (double-`font` nesting, Font Family B). Allowed `"h1"`–`"h6"`. Validator: `heading_missing_level` (warn).
 - **Button content**: lives on `button.innerContent.desktop.value`, NOT `content.innerContent.*`. Must be an **object** `{text, linkUrl}`, not a plain string. Either wrong bucket or string shape → button renders as default "Click Me" with empty href. Validators: `button_content_wrong_bucket` (error), `button_innercontent_string` (error).
-- **Button styling lives at sibling-level paths**: `button.decoration.{font, background, border, boxShadow}` for visual styling, plus `module.decoration.spacing` for padding. **No `enable` flag is required** — VB-verified (Divi 5.4.0, page 1332): inline-styled buttons render correctly with no `button.decoration.button.desktop.value.enable` key. Render-relevant keys at `button.decoration.button.desktop.value.*` are limited to: `enable` (migration trigger — `"off"` causes Divi to strip `button.decoration`; never write without intent), `icon.*` (visible icon config — set `icon.enable: "off"` to suppress the default hover arrow), `padding` (icon-spacing gate, not visible-padding emitter — set layout padding at `module.decoration.spacing` instead), and `alignment` (deprecated input forwarded to `decoration.sizing.alignment`). Anything outside this set (e.g. `backgroundColor`, `textColor`, `font`) has no consumer here — parses, validates, saves, then no-ops at render. Validators: `button_no_render_consumer` (warn — flags unrecognized keys at this depth), `button_missing_icon_enable` (warn — fires when sibling-level styling exists without explicit icon suppression).
+- **Button styling lives at sibling-level paths**: `button.decoration.{font, background, border, boxShadow}` for visual styling. Padding is **scope-dependent**: `module.decoration.spacing.padding` for inline buttons and `divi/button` module presets, `button.decoration.spacing.padding` for `divi/button` group presets (the `presetGroup` render path at `ButtonModule.php:633-644` merges `button.decoration.spacing` into module spacing via `array_replace_recursive`). **No `enable` flag is required** — VB-verified (Divi 5.4.0, page 1332): inline-styled buttons render correctly with no `button.decoration.button.desktop.value.enable` key. Render-relevant keys at `button.decoration.button.desktop.value.*` are limited to: `enable` (migration trigger — `"off"` causes Divi to strip `button.decoration`; never write without intent), `icon.*` (visible icon config — set `icon.enable: "off"` to suppress the default hover arrow), `padding` (icon-spacing gate, **not** visible-padding emitter — does not emit visible padding CSS, but does flip the hover-gate at `StyleDeclarations.php:153-160`; required as gate-bypass on every `divi/button` group preset that doesn't carry padding here — affects nearly every button on a fresh Divi 5 site, see [presets.md → Hover-padding gate on Button group presets](references/presets.md#hover-padding-gate-on-button-group-presets-broad-scope-upstream-tracked)), and `alignment` (deprecated input forwarded to `decoration.sizing.alignment`). Anything outside this set (e.g. `backgroundColor`, `textColor`, `font`) has no consumer here — parses, validates, saves, then no-ops at render. Validators: `button_no_render_consumer` (warn — flags unrecognized keys at this depth), `button_missing_icon_enable` (warn — fires when sibling-level styling exists without explicit icon suppression).
 - **Blurb title**: `title.innerContent.desktop.value` is an **object** `{text}`, NOT a plain string. Plain string → title silently absent from rendered HTML. Validator: `blurb_title_string` (error).
 - **Blurb icon**: when `imageIcon.innerContent.desktop.value.icon` is set, `useIcon: "on"` is required — without it the `.et-pb-icon` span renders empty. Validator: `blurb_icon_missing_use_icon` (error).
 - **Body font path**: `content.decoration.bodyFont.body.font.*` (Font Family A, triple-nested). Writing `bodyFont.bodyFont.*` is a silent failure — no renderer consumer, values fall through to defaults (often black text on a dark background → invisible). Validator: `body_font_double_nested` (error).
@@ -250,7 +250,7 @@ Manage headers, footers, and body templates per page/post type.
 Key points:
 - Templates use `et_template` post type with separate `et_header_layout` / `et_footer_layout` posts
 - Assignment via `_et_use_on` condition meta (e.g. `singular:post_type:page:id:243`)
-- `diviops_create_tb_template` handles the full recipe: layout posts + template + link to master
+- `diviops_tb_template_create` handles the full recipe: layout posts + template + link to master
 - Layout content is standard Divi block markup — same format as pages
 - **Critical**: `_et_pb_use_divi_5: on` required on all layout posts (handled by `initialize_divi_page_meta`)
 
@@ -272,7 +272,7 @@ Divi 5 stores module presets in `builder_global_presets_d5`. See [presets.md](re
 Key points:
 - Presets provide default styles per module type — modules inherit without explicit attrs
 - Referenced in blocks via `"modulePreset": ["preset-uuid"]` or `["default"]`
-- Preset management endpoints: `preset-audit`, `preset-cleanup`, `preset-update`, `preset-delete`
+- Preset management endpoints: `preset/audit`, `preset/cleanup`, `preset/update`, `preset/delete`
 
 ## Known Limitations
 
@@ -280,4 +280,4 @@ Key points:
 - Button hover has hardcoded CSS: `.et_pb_button:hover { padding: .3em 2em .3em .7em }` — use CSS override
 - `divi/link` module has rendering issues — use `divi/text` with `elementType: "li"` for nav items instead
 - Icon module: `icon.decoration.border` and `icon.decoration.background` render correctly but are not editable in VB settings panel — use `module.decoration.border` and `module.decoration.background` instead
-- Large pages (50+ modules) need slim layout mode — `diviops_get_page_layout` returns targeting metadata only by default
+- Large pages (50+ modules) need slim layout mode — `diviops_page_get_layout` returns targeting metadata only by default

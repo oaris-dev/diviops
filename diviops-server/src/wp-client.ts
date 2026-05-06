@@ -32,7 +32,7 @@ import {
  *   `0022` into emitted CSS).
  *
  * Under-escape (#409 fix). One form produced when an agent transcribes
- * `get_section` markup (which emits inner quotes as `&quot;` HTML entities) and
+ * `section_get` markup (which emits inner quotes as `&quot;` HTML entities) and
  * a layer in the agent → MCP → WP pipeline strips one level of escaping:
  *   - bare `"` (1 byte) — the inner quote loses its `\` prefix and prematurely
  *     terminates the OUTER block-attrs string at parse time. The WP block
@@ -74,8 +74,8 @@ function normalizeQuoteEscapes(s: string): string {
  */
 const BLOCK_CONTENT_KEYS = new Set([
   'content',         // update_page_content, render_preview, validate_blocks,
-                     // append_section, replace_section, update_tb_layout,
-                     // save_to_library, create_page
+                     // section_append, section_replace, update_tb_layout,
+                     // library_save, create_page
   'attrs',           // update_module — attr values embedded in block JSON
   'header_content',  // create_tb_template
   'footer_content',  // create_tb_template
@@ -189,7 +189,7 @@ export class WPClient {
   async testConnection(): Promise<{ ok: boolean; message: string }> {
     try {
       const result = await this.request<{ builder: { version: string } }>(
-        '/settings'
+        '/schema/settings'
       );
       return {
         ok: true,

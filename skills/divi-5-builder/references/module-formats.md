@@ -237,7 +237,7 @@ Divi theme CSS (base visual defaults: font-size, color, line-height, margins)
 
 ## Attribute Tree Layout: Top-Level vs `module.*`
 
-Divi's block `attrs` object splits across two tree levels, and **which level is authoritative is per-group** — there is no uniform rule. Writing to the wrong level causes `diviops_update_module` to return `success`, but Divi reads from the other path, so the write is silently ignored on render. The VB re-render shows the old value; the tool reports no error. If you don't read-back verify, this burns debug time before you notice.
+Divi's block `attrs` object splits across two tree levels, and **which level is authoritative is per-group** — there is no uniform rule. Writing to the wrong level causes `diviops_module_update` to return `success`, but Divi reads from the other path, so the write is silently ignored on render. The VB re-render shows the old value; the tool reports no error. If you don't read-back verify, this burns debug time before you notice.
 
 **Known top-level keys** (siblings of `module` — write here, NOT under `module.*`):
 
@@ -263,8 +263,8 @@ Divi's block `attrs` object splits across two tree levels, and **which level is 
 
 **Verification pattern** — when in doubt, read back after write:
 
-1. `diviops_update_module` → returns `success`
-2. `diviops_get_page_layout` → fetch the same block
+1. `diviops_module_update` → returns `success`
+2. `diviops_page_get_layout` → fetch the same block
 3. Confirm the value landed at your target path. If it landed at a different path, or isn't present at all, you picked the wrong level.
 
 The module renderer reads from the authoritative location per the tables above. Mismatches fall through to the pre-existing value (or the group default) — which is why the VB still shows the old state even though the tool claimed success.
@@ -293,7 +293,8 @@ Need a semantic name? Register it inside Divi as a `gvid-*` / `gcid-*` in the Va
 |--------|-----------------|--------------|--------------------------|
 | **Heading** | Explicit heading level required | `title.decoration.font.font.desktop.value.headingLevel: "h1"` | omitting → renders as `<h2>` |
 | **Button** | Content bucket & shape | `button.innerContent.desktop.value: {text, linkUrl}` | `content.innerContent.*` OR plain string → default "Click Me" |
-| **Button** | Border/bg/font on button root | `button.decoration.{border,background,font}` (sibling-level — VB-verified Divi 5.4.0; NO `enable: "on"` flag required) | Visual styling at `button.decoration.button.desktop.value.{backgroundColor,textColor,font,...}` (silent foot-gun: render-relevant keys at this depth are limited to `enable`/`icon`/`padding`/`alignment`) OR `module.decoration.border` |
+| **Button** | Border/bg/font on button root | `button.decoration.{border,background,font}` (sibling-level — VB-verified Divi 5.4.0; NO `enable: "on"` flag required) | `module.decoration.border` OR visual styling at `button.decoration.button.desktop.value.{backgroundColor,textColor,font,...}` — see footnote[^button-deep-path] |
+| **Button** | Padding on button (scope-dependent) | `module.decoration.spacing.padding` (inline / `divi/button` module preset) — `button.decoration.spacing.padding` (`divi/button` group preset; `presetGroup` render path merges it into module spacing at `ButtonModule.php:633-644`) | `button.decoration.button.desktop.value.padding` — that path is an icon-spacing gate, **not** a visible-padding emitter; values do not emit visible CSS (see footnote[^button-deep-path]). Required as gate-bypass on every `divi/button` group preset that doesn't carry padding here, otherwise the hover-gate clobbers visible padding — see [presets.md → Hover-padding gate on Button group presets](presets.md#hover-padding-gate-on-button-group-presets-broad-scope-upstream-tracked) |
 | **Button** | Sizing on button element (5.1.1+) | `button.decoration.sizing` | `module.decoration.sizing` |
 | **Button** | Alignment inside sizing (5.1.1+) | `button.decoration.sizing.desktop.value.alignment` | `module.advanced.alignment` (schema only, not saved) |
 | **Button** | Icon enable required | `button.decoration.button.desktop.value.icon.enable: "off"` | omitting `icon.enable` → hover arrow icon |
@@ -329,3 +330,5 @@ The Pro version includes per-module element maps (elements, innerContent shapes,
 - Plus: Full Composite Example, Advanced Module Attributes (boxShadow, filters, transform, position, sticky, visibility, transition, scroll, animation, order), Global Color Variables, Loop & Dynamic Content, Interactions
 
 Upgrade to Pro: https://diviops.com
+
+[^button-deep-path]: Render-relevant keys at `button.decoration.button.desktop.value.*` are limited to `enable` (migration trigger — `"off"` causes Divi to strip `button.decoration`; never write without intent), `icon.*` (visible icon configuration), `padding` (icon-spacing gate — does **not** emit visible padding CSS, but values do flip the hover-gate behavior at `StyleDeclarations.php:153-160`; required as gate-bypass on every `divi/button` group preset that doesn't carry padding here, see [presets.md → Hover-padding gate on Button group presets](presets.md#hover-padding-gate-on-button-group-presets-broad-scope-upstream-tracked)), and `alignment` (deprecated, forwarded to `decoration.sizing.alignment`). Anything else (e.g. `backgroundColor`, `textColor`, `font`) parses, validates, saves, then no-ops at render. VB-verified Divi 5.4.0.

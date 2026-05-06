@@ -102,7 +102,7 @@ const server = new McpServer({
 // ── Read Tools ───────────────────────────────────────────────────────
 
 server.registerTool(
-  "diviops_list_pages",
+  "diviops_page_list",
   {
     description:
       "List pages/posts in the WordPress site. Returns title, ID, URL, status, and whether each page uses Divi builder.",
@@ -121,7 +121,7 @@ server.registerTool(
     },
   },
   async ({ post_type, per_page, page }) => {
-    const result = await wp.request("/pages", {
+    const result = await wp.request("/page/list", {
       params: {
         post_type: post_type ?? "page",
         per_page: String(per_page ?? 20),
@@ -137,7 +137,7 @@ server.registerTool(
 );
 
 server.registerTool(
-  "diviops_get_page",
+  "diviops_page_get",
   {
     description:
       "Get detailed info about a specific page including its raw Divi block content.",
@@ -146,7 +146,7 @@ server.registerTool(
     },
   },
   async ({ page_id }) => {
-    const result = await wp.request(`/page/${page_id}`);
+    const result = await wp.request(`/page/get/${page_id}`);
     return {
       content: [
         { type: "text" as const, text: JSON.stringify(result) },
@@ -156,7 +156,7 @@ server.registerTool(
 );
 
 server.registerTool(
-  "diviops_get_page_layout",
+  "diviops_page_get_layout",
   {
     description:
       "Get the parsed block tree for a page. Returns slim targeting metadata by default (block names, admin labels, text previews, auto_index). Use full: true for complete attrs (warning: can be very large on complex pages).",
@@ -172,7 +172,7 @@ server.registerTool(
     },
   },
   async ({ page_id, full }) => {
-    const result = await wp.request(`/page/${page_id}/layout`, {
+    const result = await wp.request(`/page/get-layout/${page_id}`, {
       params: full ? { full: "true" } : {},
     });
     return {
@@ -184,13 +184,13 @@ server.registerTool(
 );
 
 server.registerTool(
-  "diviops_list_modules",
+  "diviops_schema_list_modules",
   {
     description:
       "List all available Divi modules (block types) with their names, titles, and categories. Use this to discover what modules can be used in layouts.",
   },
   async () => {
-    const result = await wp.request("/modules");
+    const result = await wp.request("/schema/modules");
     return {
       content: [
         { type: "text" as const, text: JSON.stringify(result) },
@@ -200,7 +200,7 @@ server.registerTool(
 );
 
 server.registerTool(
-  "diviops_get_module_schema",
+  "diviops_schema_get_module",
   {
     description:
       "Get the attribute schema for a Divi module. Returns optimized schema by default (~70% smaller) with content-relevant fields only. Use raw: true for the full schema including CSS selectors and VB metadata.",
@@ -219,7 +219,7 @@ server.registerTool(
   },
   async ({ module_name, raw }) => {
     const result = await wp.request(
-      `/module/${encodeURIComponent(module_name)}`,
+      `/schema/module/${encodeURIComponent(module_name)}`,
     );
     const output = raw ? result : optimizeSchema(result as Record<string, any>);
     return {
@@ -231,13 +231,13 @@ server.registerTool(
 );
 
 server.registerTool(
-  "diviops_get_settings",
+  "diviops_schema_get_settings",
   {
     description:
       "Get Divi site settings including theme options, site info, and builder version. Useful for understanding the site context before generating content.",
   },
   async () => {
-    const result = await wp.request("/settings");
+    const result = await wp.request("/schema/settings");
     return {
       content: [
         { type: "text" as const, text: JSON.stringify(result) },
@@ -247,13 +247,13 @@ server.registerTool(
 );
 
 server.registerTool(
-  "diviops_get_global_colors",
+  "diviops_global_color_list",
   {
     description:
       "Get the global color palette defined in Divi. Returns all global colors that can be referenced by modules.",
   },
   async () => {
-    const result = await wp.request("/global-colors");
+    const result = await wp.request("/global-color/list");
     return {
       content: [
         { type: "text" as const, text: JSON.stringify(result) },
@@ -263,10 +263,10 @@ server.registerTool(
 );
 
 server.registerTool(
-  "diviops_add_global_color",
+  "diviops_global_color_create",
   {
     description:
-      "Add a new global color to Divi's palette. Server mints a fresh `gcid-<uuid>` ID and writes to the et_global_data option in the canonical Divi shape `{color, folder, label, lastUpdated, status, usedInPosts}`. The color appears in the VB color picker after save and can be referenced via `$variable({type:color,value:{name:gcid-...}})$` tokens. Note: Divi's AI Agent bundle has a Zod schema gap that drops `label` on its own writes — our PHP path goes around that bug by writing directly to the option. CONCURRENCY: this is a read-modify-write on a single WP option with no conflict detection. If a Visual Builder session holds stale global data, its next save can clobber colors written here in the interim. Coordinate writes when VB sessions are active, or have the user reload VB after MCP color writes.",
+      "Add a new global color to Divi's palette. The plugin mints a fresh `gcid-<uuid>` ID (the server forwards the color entry without an id and the WP-side handler generates one) and writes to the et_global_data option in the canonical Divi shape `{color, folder, label, lastUpdated, status, usedInPosts}`. The color appears in the VB color picker after save and can be referenced via `$variable({type:color,value:{name:gcid-...}})$` tokens. Note: Divi's AI Agent bundle has a Zod schema gap that drops `label` on its own writes — our PHP path goes around that bug by writing directly to the option. CONCURRENCY: this is a read-modify-write on a single WP option with no conflict detection. If a Visual Builder session holds stale global data, its next save can clobber colors written here in the interim. Coordinate writes when VB sessions are active, or have the user reload VB after MCP color writes.",
     inputSchema: {
       color: z
         .string()
@@ -291,7 +291,7 @@ server.registerTool(
     if (label !== undefined) colorEntry.label = label;
     if (folder !== undefined) colorEntry.folder = folder;
     if (status) colorEntry.status = status;
-    const result = await wp.request("/global-colors", {
+    const result = await wp.request("/global-color/upsert", {
       method: "POST",
       body: { colors: [colorEntry], mode: "merge" },
     });
@@ -300,14 +300,14 @@ server.registerTool(
 );
 
 server.registerTool(
-  "diviops_update_global_color",
+  "diviops_global_color_update",
   {
     description:
-      "Update an existing global color by gcid. Only provided fields are updated; omitted fields are preserved. The lastUpdated timestamp is bumped on every write. Use diviops_get_global_colors first to find the gcid for a color. CONCURRENCY: same VB-session race caveat as diviops_add_global_color — the write is read-modify-write on a single WP option, so an active VB session's next save can clobber this update.",
+      "Update an existing global color by gcid. Only provided fields are updated; omitted fields are preserved. The lastUpdated timestamp is bumped on every write. Use diviops_global_color_list first to find the gcid for a color. CONCURRENCY: same VB-session race caveat as diviops_global_color_create — the write is read-modify-write on a single WP option, so an active VB session's next save can clobber this update.",
     inputSchema: {
       gcid: z
         .string()
-        .describe('Global color ID, e.g. "gcid-abc123..." (must start with "gcid-"). Get from diviops_get_global_colors.'),
+        .describe('Global color ID, e.g. "gcid-abc123..." (must start with "gcid-"). Get from diviops_global_color_list.'),
       color: z
         .string()
         .optional()
@@ -332,7 +332,7 @@ server.registerTool(
     if (label !== undefined) colorEntry.label = label;
     if (folder !== undefined) colorEntry.folder = folder;
     if (status) colorEntry.status = status;
-    const result = await wp.request("/global-colors", {
+    const result = await wp.request("/global-color/upsert", {
       method: "POST",
       body: { colors: [colorEntry], mode: "merge" },
     });
@@ -341,10 +341,10 @@ server.registerTool(
 );
 
 server.registerTool(
-  "diviops_delete_global_color",
+  "diviops_global_color_delete",
   {
     description:
-      "Delete a global color from the registry by gcid. Refuses by default if the color is tracked as referenced by any post (per Divi's `usedInPosts` index — pass `force: true` to delete anyway; orphan refs will render as invalid CSS until pages are re-saved through VB). Always refuses to delete the 5 customizer-bound defaults (gcid-primary-color, gcid-secondary-color, gcid-heading-color, gcid-body-color, gcid-link-color) regardless of force — those must be edited via WP Customizer. CONCURRENCY: same VB-session race caveat as diviops_add_global_color — an active VB session's next save can re-introduce a color we just deleted if the session held stale data.",
+      "Delete a global color from the registry by gcid. Refuses by default if the color is tracked as referenced by any post (per Divi's `usedInPosts` index — pass `force: true` to delete anyway; orphan refs will render as invalid CSS until pages are re-saved through VB). Always refuses to delete the 5 customizer-bound defaults (gcid-primary-color, gcid-secondary-color, gcid-heading-color, gcid-body-color, gcid-link-color) regardless of force — those must be edited via WP Customizer. CONCURRENCY: same VB-session race caveat as diviops_global_color_create — an active VB session's next save can re-introduce a color we just deleted if the session held stale data.",
     inputSchema: {
       gcid: z
         .string()
@@ -359,7 +359,7 @@ server.registerTool(
   async ({ gcid, force }) => {
     const body: Record<string, any> = { gcid };
     if (force) body.force = true;
-    const result = await wp.request("/global-color-delete", {
+    const result = await wp.request("/global-color/delete", {
       method: "POST",
       body,
     });
@@ -368,12 +368,12 @@ server.registerTool(
 );
 
 server.registerTool(
-  "diviops_get_global_fonts",
+  "diviops_global_font_list",
   {
     description: "Get the global font definitions from Divi settings.",
   },
   async () => {
-    const result = await wp.request("/global-fonts");
+    const result = await wp.request("/global-font/list");
     return {
       content: [
         { type: "text" as const, text: JSON.stringify(result) },
@@ -383,7 +383,7 @@ server.registerTool(
 );
 
 server.registerTool(
-  "diviops_find_icon",
+  "diviops_meta_find_icon",
   {
     description:
       "Search for icons by keyword. Returns matching icons with unicode, type (fa/divi), and weight. Use the returned unicode/type/weight in Blurb icon or Icon module attributes.",
@@ -407,7 +407,7 @@ server.registerTool(
   },
   async ({ query, type, limit }) => {
     const result = await wp.request(
-      `/icons/search?q=${encodeURIComponent(query)}&type=${type ?? "all"}&limit=${limit ?? 10}`,
+      `/meta/find-icon?q=${encodeURIComponent(query)}&type=${type ?? "all"}&limit=${limit ?? 10}`,
     );
     return {
       content: [
@@ -420,7 +420,7 @@ server.registerTool(
 // ── Write Tools ──────────────────────────────────────────────────────
 
 server.registerTool(
-  "diviops_update_page_content",
+  "diviops_page_update_content",
   {
     description:
       "Update the content of a page with Divi block markup. The content should be valid WordPress block markup using divi/* blocks. IMPORTANT: This overwrites the entire page content.",
@@ -435,8 +435,8 @@ server.registerTool(
   },
   async ({ page_id, content }) => {
     const hits = findForeignVarRefs(content, "content");
-    if (hits.length > 0) return isolationErrorResult("diviops_update_page_content", hits);
-    const result = await wp.request(`/page/${page_id}/content`, {
+    if (hits.length > 0) return isolationErrorResult("diviops_page_update_content", hits);
+    const result = await wp.request(`/page/update-content/${page_id}`, {
       method: "POST",
       body: { content },
     });
@@ -480,7 +480,7 @@ server.registerTool(
     },
   },
   async ({ content }) => {
-    const result = await wp.request("/validate", {
+    const result = await wp.request("/validate/blocks", {
       method: "POST",
       body: { content },
     });
@@ -493,7 +493,7 @@ server.registerTool(
 );
 
 server.registerTool(
-  "diviops_append_section",
+  "diviops_section_append",
   {
     description:
       "Append a Divi section to an existing page without overwriting other content. Use this to incrementally build pages.",
@@ -513,8 +513,8 @@ server.registerTool(
   },
   async ({ page_id, content, position }) => {
     const hits = findForeignVarRefs(content, "content");
-    if (hits.length > 0) return isolationErrorResult("diviops_append_section", hits);
-    const result = await wp.request(`/page/${page_id}/append`, {
+    if (hits.length > 0) return isolationErrorResult("diviops_section_append", hits);
+    const result = await wp.request(`/section/append/${page_id}`, {
       method: "POST",
       body: { content, position: position ?? "end" },
     });
@@ -527,7 +527,7 @@ server.registerTool(
 );
 
 server.registerTool(
-  "diviops_replace_section",
+  "diviops_section_replace",
   {
     description:
       "Replace a section on a page. Target by admin label OR text content. Use occurrence when multiple sections match.",
@@ -557,11 +557,11 @@ server.registerTool(
   },
   async ({ page_id, label, match_text, content, occurrence }) => {
     const hits = findForeignVarRefs(content, "content");
-    if (hits.length > 0) return isolationErrorResult("diviops_replace_section", hits);
+    if (hits.length > 0) return isolationErrorResult("diviops_section_replace", hits);
     const body: Record<string, any> = { content, occurrence };
     if (label) body.label = label;
     if (match_text) body.match_text = match_text;
-    const result = await wp.request(`/page/${page_id}/replace-section`, {
+    const result = await wp.request(`/section/replace/${page_id}`, {
       method: "POST",
       body,
     });
@@ -574,7 +574,7 @@ server.registerTool(
 );
 
 server.registerTool(
-  "diviops_remove_section",
+  "diviops_section_remove",
   {
     description:
       "Remove a section from a page. Target by admin label OR text content. Use occurrence when multiple sections match.",
@@ -603,7 +603,7 @@ server.registerTool(
     const body: Record<string, any> = { occurrence };
     if (label) body.label = label;
     if (match_text) body.match_text = match_text;
-    const result = await wp.request(`/page/${page_id}/remove-section`, {
+    const result = await wp.request(`/section/remove/${page_id}`, {
       method: "POST",
       body,
     });
@@ -616,7 +616,7 @@ server.registerTool(
 );
 
 server.registerTool(
-  "diviops_get_section",
+  "diviops_section_get",
   {
     description:
       "Get the raw block markup of a section. Target by admin label OR text content. Use occurrence when multiple sections match. Returns total_matches warning when duplicates exist.",
@@ -646,7 +646,7 @@ server.registerTool(
     if (label) params.label = label;
     if (match_text) params.match_text = match_text;
     const qs = new URLSearchParams(params).toString();
-    const result = await wp.request(`/page/${page_id}/get-section?${qs}`);
+    const result = await wp.request(`/section/get/${page_id}?${qs}`);
     return {
       content: [
         { type: "text" as const, text: JSON.stringify(result) },
@@ -656,7 +656,7 @@ server.registerTool(
 );
 
 server.registerTool(
-  "diviops_update_module",
+  "diviops_module_update",
   {
     description:
       'Update specific attributes of a module. Target by auto_index (e.g. "text:5"), admin label, or text content. Uses dot notation for attribute paths. Example: {"content.decoration.headingFont.h2.font.desktop.value.color": "#ff0000"}. For paths whose key segments contain literal dots — notably Composable Settings preset slots like groupPreset["title.decoration.spacing"] — escape the inner dots with `\\.` to keep the segment intact: {"groupPreset.title\\\\.decoration\\\\.spacing.presetId": ["uuid"]}. Priority: auto_index > label > match_text. Use occurrence with label when duplicates exist.',
@@ -676,7 +676,7 @@ server.registerTool(
         .string()
         .optional()
         .describe(
-          'Auto-index target in "type:N" format (e.g. "text:5", "icon:3"). Get from diviops_get_page_layout. Takes priority over label/match_text.',
+          'Auto-index target in "type:N" format (e.g. "text:5", "icon:3"). Get from diviops_page_get_layout. Takes priority over label/match_text.',
         ),
       occurrence: z
         .number()
@@ -694,13 +694,13 @@ server.registerTool(
   },
   async ({ page_id, label, match_text, auto_index, occurrence, attrs }) => {
     const hits = scanAttrsForForeignVarRefs(attrs);
-    if (hits.length > 0) return isolationErrorResult("diviops_update_module", hits);
+    if (hits.length > 0) return isolationErrorResult("diviops_module_update", hits);
     const body: Record<string, any> = { attrs };
     if (auto_index) body.auto_index = auto_index;
     if (label) body.label = label;
     if (match_text) body.match_text = match_text;
     if (occurrence > 1) body.occurrence = occurrence;
-    const result = await wp.request(`/page/${page_id}/update-module`, {
+    const result = await wp.request(`/module/update/${page_id}`, {
       method: "POST",
       body,
     });
@@ -713,7 +713,7 @@ server.registerTool(
 );
 
 server.registerTool(
-  "diviops_move_module",
+  "diviops_module_move",
   {
     description:
       'Move a module to a new position on the page. Specify source and target blocks using auto_index (e.g. "text:3"), admin label, or text content. Position "before" or "after" the target. Works with any block type including sections, rows, and modules. Both blocks are found in the original content, so auto_index values refer to positions before the move.',
@@ -791,7 +791,7 @@ server.registerTool(
     if (target_match_text) body.target_match_text = target_match_text;
     if (target_auto_index) body.target_auto_index = target_auto_index;
     if (target_occurrence > 1) body.target_occurrence = target_occurrence;
-    const result = await wp.request(`/page/${page_id}/move-module`, {
+    const result = await wp.request(`/module/move/${page_id}`, {
       method: "POST",
       body,
     });
@@ -804,10 +804,10 @@ server.registerTool(
 );
 
 server.registerTool(
-  "diviops_lock_module",
+  "diviops_module_lock",
   {
     description:
-      'Lock a module so VB users cannot edit it. Sets attrs.locked = {desktop: {value: "on"}} per Divi\'s per-breakpoint convention (verified via VB-save probe). Locked modules render normally on frontend; only VB-side editing is gated. Same targeting pattern as diviops_update_module — pick one of label / match_text / auto_index. Use diviops_unlock_module to reverse.',
+      'Lock a module so VB users cannot edit it. Sets attrs.locked = {desktop: {value: "on"}} per Divi\'s per-breakpoint convention (verified via VB-save probe). Locked modules render normally on frontend; only VB-side editing is gated. Same targeting pattern as diviops_module_update — pick one of label / match_text / auto_index. Use diviops_module_unlock to reverse.',
     inputSchema: {
       page_id: z.number().describe("WordPress post/page ID"),
       label: z.string().optional().describe("Admin label of the module to lock (exact match)"),
@@ -822,16 +822,16 @@ server.registerTool(
     if (match_text) body.match_text = match_text;
     if (auto_index) body.auto_index = auto_index;
     if (occurrence && occurrence > 1) body.occurrence = occurrence;
-    const result = await wp.request(`/page/${page_id}/lock-module`, { method: "POST", body });
+    const result = await wp.request(`/module/lock/${page_id}`, { method: "POST", body });
     return { content: [{ type: "text" as const, text: JSON.stringify(result) }] };
   },
 );
 
 server.registerTool(
-  "diviops_unlock_module",
+  "diviops_module_unlock",
   {
     description:
-      "Unlock a module by removing attrs.locked entirely. Matches Divi VB's convention: unlocked = attribute absent (NOT {value: 'off'}) — VB doesn't write a falsy value on unlock, it removes the field. Same targeting pattern as diviops_lock_module.",
+      "Unlock a module by removing attrs.locked entirely. Matches Divi VB's convention: unlocked = attribute absent (NOT {value: 'off'}) — VB doesn't write a falsy value on unlock, it removes the field. Same targeting pattern as diviops_module_lock.",
     inputSchema: {
       page_id: z.number().describe("WordPress post/page ID"),
       label: z.string().optional().describe("Admin label of the module to unlock (exact match)"),
@@ -846,16 +846,16 @@ server.registerTool(
     if (match_text) body.match_text = match_text;
     if (auto_index) body.auto_index = auto_index;
     if (occurrence && occurrence > 1) body.occurrence = occurrence;
-    const result = await wp.request(`/page/${page_id}/unlock-module`, { method: "POST", body });
+    const result = await wp.request(`/module/unlock/${page_id}`, { method: "POST", body });
     return { content: [{ type: "text" as const, text: JSON.stringify(result) }] };
   },
 );
 
 server.registerTool(
-  "diviops_clone_module",
+  "diviops_module_clone",
   {
     description:
-      'Clone a module by deep-copying its block JSON and inserting it next to the source within the same parent container. Position controls before/after placement (default "after"). Module IDs are reassigned by Divi at render time from the block tree position, so the clone gets fresh IDs automatically. Same targeting pattern as diviops_lock_module.',
+      'Clone a module by deep-copying its block JSON and inserting it next to the source within the same parent container. Position controls before/after placement (default "after"). Module IDs are reassigned by Divi at render time from the block tree position, so the clone gets fresh IDs automatically. Same targeting pattern as diviops_module_lock.',
     inputSchema: {
       page_id: z.number().describe("WordPress post/page ID"),
       label: z.string().optional().describe("Admin label of the module to clone (exact match)"),
@@ -872,13 +872,13 @@ server.registerTool(
     if (auto_index) body.auto_index = auto_index;
     if (occurrence && occurrence > 1) body.occurrence = occurrence;
     if (position) body.position = position;
-    const result = await wp.request(`/page/${page_id}/clone-module`, { method: "POST", body });
+    const result = await wp.request(`/module/clone/${page_id}`, { method: "POST", body });
     return { content: [{ type: "text" as const, text: JSON.stringify(result) }] };
   },
 );
 
 server.registerTool(
-  "diviops_create_page",
+  "diviops_page_create",
   {
     description:
       "Create a new WordPress page, optionally with Divi block content.",
@@ -899,7 +899,7 @@ server.registerTool(
   async ({ title, content, status }) => {
     if (content) {
       const hits = findForeignVarRefs(content, "content");
-      if (hits.length > 0) return isolationErrorResult("diviops_create_page", hits);
+      if (hits.length > 0) return isolationErrorResult("diviops_page_create", hits);
     }
     const result = await wp.request("/page/create", {
       method: "POST",
@@ -922,7 +922,7 @@ server.registerTool(
       "Audit all Divi presets (module + group). Each entry reports `block_ref_count` (page-content refs via modulePreset / groupPreset block markup), `group_ref_count` (in-registry chain refs from other presets — module presets via top-level `groupPresets.<slot>.presetId`, group presets via `attrs.groupPreset.<slot>.presetId`), and `referenced` (true if either > 0). Group presets that are chain-referenced also expose `referenced_by_presets` (UUIDs of the presets that wire them in — typically module presets, but type-agnostic). Use this before deleting — orphan-cleanup based only on page refs would silently wipe load-bearing chain-wired group presets (font, border, box-shadow, spacing, button). Also reports `orphan_default_pointers`: per-bucket `default` pointers that reference a UUID no longer present in `items[]` (caused by past unsafe deletes). Render-safe but blocks Divi's lazy recreate-on-VB-use path; clear via diviops_preset_set_default with unset=true on the affected module/group.",
   },
   async () => {
-    const result = await wp.request("/preset-audit");
+    const result = await wp.request("/preset/audit");
     return {
       content: [
         { type: "text" as const, text: JSON.stringify(result) },
@@ -977,7 +977,7 @@ server.registerTool(
     if (action) body.action = action;
     if (prefix) body.prefix = prefix;
     if (action === "remove_orphans" && scope) body.scope = scope;
-    const result = await wp.request("/preset-cleanup", {
+    const result = await wp.request("/preset/cleanup", {
       method: "POST",
       body,
     });
@@ -1017,7 +1017,7 @@ server.registerTool(
     if (name) body.name = name;
     if (attrs) body.attrs = attrs;
     if (typeof priority === "number") body.priority = priority;
-    const result = await wp.request("/preset-update", {
+    const result = await wp.request("/preset/update", {
       method: "POST",
       body,
     });
@@ -1047,7 +1047,7 @@ server.registerTool(
   async ({ preset_id, force }) => {
     const body: Record<string, unknown> = { preset_id };
     if (force !== undefined) body.force = force;
-    const result = await wp.request("/preset-delete", {
+    const result = await wp.request("/preset/delete", {
       method: "POST",
       body,
     });
@@ -1126,7 +1126,7 @@ server.registerTool(
     if (primary_attr_name) body.primary_attr_name = primary_attr_name;
     if (make_default) body.make_default = true;
     if (typeof priority === "number") body.priority = priority;
-    const result = await wp.request("/preset-create", { method: "POST", body });
+    const result = await wp.request("/preset/create", { method: "POST", body });
     return {
       content: [
         { type: "text" as const, text: JSON.stringify(result) },
@@ -1187,7 +1187,7 @@ server.registerTool(
       scope,
     };
     if (page_ids) body.page_ids = page_ids;
-    const result = await wp.request("/preset-reassign", {
+    const result = await wp.request("/preset/reassign", {
       method: "POST",
       body,
     });
@@ -1206,7 +1206,7 @@ server.registerTool(
       "Scan page content for modulePreset UUIDs that are not in the D5 registry. Categorizes as dangling orphans (preset was deleted, reference remains) or D4-legacy candidates (preset exists in the legacy builder_global_presets_ng option but not in D5). Use before diviops_preset_reassign to identify stale UUIDs for consolidation.",
   },
   async () => {
-    const result = await wp.request("/preset-scan-orphans");
+    const result = await wp.request("/preset/scan-orphans");
     return {
       content: [
         { type: "text" as const, text: JSON.stringify(result) },
@@ -1253,7 +1253,7 @@ server.registerTool(
     if (type !== undefined) body.type = type;
     if (module !== undefined) body.module = module;
     if (unset) body.unset = true;
-    const result = await wp.request("/preset-set-default", {
+    const result = await wp.request("/preset/set-default", {
       method: "POST",
       body,
     });
@@ -1268,7 +1268,7 @@ server.registerTool(
 // ── Library Tools ───────────────────────────────────────────────────
 
 server.registerTool(
-  "diviops_list_library",
+  "diviops_library_list",
   {
     description:
       "List saved Divi Library items. Filter by layout_type (section, row, module) and scope (global, non_global).",
@@ -1295,7 +1295,7 @@ server.registerTool(
     if (layout_type) params.layout_type = layout_type;
     if (scope) params.scope = scope;
     if (per_page) params.per_page = String(per_page);
-    const result = await wp.request("/library", { params });
+    const result = await wp.request("/library/items", { params });
     return {
       content: [
         { type: "text" as const, text: JSON.stringify(result) },
@@ -1305,16 +1305,16 @@ server.registerTool(
 );
 
 server.registerTool(
-  "diviops_get_library_item",
+  "diviops_library_get",
   {
     description:
-      "Get a Divi Library item's content by ID. Returns the raw block markup that can be used with diviops_append_section or diviops_update_page_content.",
+      "Get a Divi Library item's content by ID. Returns the raw block markup that can be used with diviops_section_append or diviops_page_update_content.",
     inputSchema: {
       item_id: z.number().describe("Library item ID"),
     },
   },
   async ({ item_id }) => {
-    const result = await wp.request(`/library/${item_id}`);
+    const result = await wp.request(`/library/item/${item_id}`);
     return {
       content: [
         { type: "text" as const, text: JSON.stringify(result) },
@@ -1324,7 +1324,7 @@ server.registerTool(
 );
 
 server.registerTool(
-  "diviops_save_to_library",
+  "diviops_library_save",
   {
     description:
       'Save Divi block markup to the Divi Library for reuse. Saved items appear in the VB\'s "Add From Library" panel.',
@@ -1368,7 +1368,7 @@ server.registerTool(
 // ── Theme Builder Tools ─────────────────────────────────────────────
 
 server.registerTool(
-  "diviops_list_tb_templates",
+  "diviops_tb_template_list",
   {
     description:
       "List all Theme Builder templates with their conditions, layout IDs, and enabled status. Shows which template applies to which pages/post types.",
@@ -1386,7 +1386,7 @@ server.registerTool(
     const params: Record<string, string> = {};
     if (per_page) params.per_page = String(per_page);
     if (page) params.page = String(page);
-    const result = await wp.request("/theme-builder/templates", { params });
+    const result = await wp.request("/theme-builder/template/list", { params });
     return {
       content: [
         { type: "text" as const, text: JSON.stringify(result) },
@@ -1396,10 +1396,10 @@ server.registerTool(
 );
 
 server.registerTool(
-  "diviops_get_tb_layout",
+  "diviops_tb_layout_get",
   {
     description:
-      "Get a Theme Builder layout's block markup content (header, body, or footer). Use the layout IDs from diviops_list_tb_templates.",
+      "Get a Theme Builder layout's block markup content (header, body, or footer). Use the layout IDs from diviops_tb_template_list.",
     inputSchema: {
       layout_id: z
         .number()
@@ -1409,7 +1409,7 @@ server.registerTool(
     },
   },
   async ({ layout_id }) => {
-    const result = await wp.request(`/theme-builder/layout/${layout_id}`);
+    const result = await wp.request(`/theme-builder/layout/get/${layout_id}`);
     return {
       content: [
         { type: "text" as const, text: JSON.stringify(result) },
@@ -1419,7 +1419,7 @@ server.registerTool(
 );
 
 server.registerTool(
-  "diviops_update_tb_layout",
+  "diviops_tb_layout_update",
   {
     description:
       "Update a Theme Builder layout's block markup (header, body, or footer). Replaces the full content.",
@@ -1429,7 +1429,7 @@ server.registerTool(
     },
   },
   async ({ layout_id, content }) => {
-    const result = await wp.request(`/theme-builder/layout/${layout_id}`, {
+    const result = await wp.request(`/theme-builder/layout/update/${layout_id}`, {
       method: "PUT",
       body: { content },
     });
@@ -1442,7 +1442,7 @@ server.registerTool(
 );
 
 server.registerTool(
-  "diviops_create_tb_template",
+  "diviops_tb_template_create",
   {
     description:
       "Create a Theme Builder template with custom header and/or footer. Automatically creates layout posts, sets conditions, and links to Theme Builder.",
@@ -1470,7 +1470,7 @@ server.registerTool(
     },
   },
   async ({ title, condition, header_content, footer_content }) => {
-    const result = await wp.request("/theme-builder/template", {
+    const result = await wp.request("/theme-builder/template/create", {
       method: "POST",
       body: { title, condition, header_content, footer_content },
     });
@@ -1485,7 +1485,7 @@ server.registerTool(
 // ── Canvas Tools ────────────────────────────────────────────────────
 
 server.registerTool(
-  "diviops_create_canvas",
+  "diviops_canvas_create",
   {
     description:
       "Create a canvas (off-canvas workspace) linked to a page. Used for popups, off-canvas menus, modals. Content uses standard Divi block markup.",
@@ -1539,7 +1539,7 @@ server.registerTool(
 );
 
 server.registerTool(
-  "diviops_list_canvases",
+  "diviops_canvas_list",
   {
     description:
       "List canvases (off-canvas workspaces). Filter by parent page or list all.",
@@ -1562,7 +1562,7 @@ server.registerTool(
     const params: Record<string, string> = {};
     if (parent_page_id) params.parent_page_id = String(parent_page_id);
     if (per_page) params.per_page = String(per_page);
-    const result = await wp.request("/canvases", { params });
+    const result = await wp.request("/canvas/list", { params });
     return {
       content: [
         { type: "text" as const, text: JSON.stringify(result) },
@@ -1572,17 +1572,17 @@ server.registerTool(
 );
 
 server.registerTool(
-  "diviops_get_canvas",
+  "diviops_canvas_get",
   {
     description: "Get a canvas's block content and metadata.",
     inputSchema: {
       canvas_post_id: z
         .number()
-        .describe("Canvas post ID (from diviops_list_canvases)"),
+        .describe("Canvas post ID (from diviops_canvas_list)"),
     },
   },
   async ({ canvas_post_id }) => {
-    const result = await wp.request(`/canvas/${canvas_post_id}`);
+    const result = await wp.request(`/canvas/get/${canvas_post_id}`);
     return {
       content: [
         { type: "text" as const, text: JSON.stringify(result) },
@@ -1592,7 +1592,7 @@ server.registerTool(
 );
 
 server.registerTool(
-  "diviops_update_canvas",
+  "diviops_canvas_update",
   {
     description:
       "Update a canvas's content and/or metadata. Content replaces the entire canvas.",
@@ -1616,7 +1616,7 @@ server.registerTool(
     if (title !== undefined) body.title = title;
     if (append_to_main !== undefined) body.append_to_main = append_to_main;
     if (z_index !== undefined) body.z_index = z_index;
-    const result = await wp.request(`/canvas/${canvas_post_id}`, {
+    const result = await wp.request(`/canvas/update/${canvas_post_id}`, {
       method: "POST",
       body,
     });
@@ -1629,7 +1629,7 @@ server.registerTool(
 );
 
 server.registerTool(
-  "diviops_delete_canvas",
+  "diviops_canvas_delete",
   {
     description: "Delete a canvas. This permanently removes the canvas post.",
     inputSchema: {
@@ -1637,8 +1637,8 @@ server.registerTool(
     },
   },
   async ({ canvas_post_id }) => {
-    const result = await wp.request(`/canvas/${canvas_post_id}`, {
-      method: "DELETE",
+    const result = await wp.request(`/canvas/delete/${canvas_post_id}`, {
+      method: "POST",
     });
     return {
       content: [
@@ -1651,7 +1651,7 @@ server.registerTool(
 // ── WP-CLI ──────────────────────────────────────────────────────────
 
 server.registerTool(
-  "diviops_wp_cli",
+  "diviops_meta_wp_cli",
   {
     description:
       "Run a WP-CLI command on the WordPress site. Requires WP_PATH env var (LOCAL_SITE_ID auto-detected from Local by Flywheel), or WP_CLI_CMD for containerized wrappers. Commands validated against a safety allowlist. Default tier covers read ops across options/posts/post-types/taxonomies/users/info/core/db, non-destructive writes (post/term create+update, post meta read/write, cache/rewrite/transient flush), ACF/SCF schema ops (`acf export/import/field-group list/get` plus SCF 6.8.4+ `scf json {status,sync,import,export}` and the `acf json …` aliases), and WXR export. Extended tier (requires DIVIOPS_WP_CLI_ALLOW env var) adds destructive or bulk-modifying ops: option update, post/post meta/term delete, search-replace, import, plugin activate/deactivate, eval-file. Filesystem-touching commands (`wp export`, `acf export/import`, `scf|acf json export/import`) are additionally constrained: path arguments must resolve under a safe root (defaults to `<WP_PATH>/.diviops-tmp/`, overridable via DIVIOPS_WP_CLI_SAFE_FS_ROOT, disable via DIVIOPS_WP_CLI_UNSAFE_FS=1); `wp export` and `scf json export` require an explicit `--dir=<path>` (or `--stdout`). In WP_CLI_CMD wrapper mode, DIVIOPS_WP_CLI_SAFE_FS_ROOT is required for FS-sensitive commands. Prefer the typed `diviops_scf_*` wrappers for SCF round-trips — they're easier to invoke and accept the same safe-root scoping. Use --format=json for structured output. Full allowlist + tier rationale + filesystem semantics in the MCP server README.",
@@ -1769,7 +1769,7 @@ server.registerTool(
         .string()
         .optional()
         .describe(
-          "Comma-separated field-group ACF keys (`group_abc123`) or admin titles (`My Field Group`). NOT WP post slugs — SCF matches against the def's `key` field or its `title` (case-insensitive). Use `diviops_scf_list_field_groups` to discover keys (post_name column).",
+          "Comma-separated field-group ACF keys (`group_abc123`) or admin titles (`My Field Group`). NOT WP post slugs — SCF matches against the def's `key` field or its `title` (case-insensitive). Use `diviops_scf_field_group_list` to discover keys (post_name column).",
         ),
       post_types: z
         .string()
@@ -1898,7 +1898,7 @@ server.registerTool(
 );
 
 server.registerTool(
-  "diviops_scf_list_field_groups",
+  "diviops_scf_field_group_list",
   {
     description:
       "List all SCF/ACF field groups in the database (post_name = ACF key, post_title, post_status, post_modified). Read-only. Queries the underlying `acf-field-group` post type via `wp post list` — works on both SCF 6.8.4+ (which dropped the legacy `wp acf field-group …` family in favor of the `wp scf json` namespace) and older ACF installs.",
@@ -1924,7 +1924,7 @@ server.registerTool(
 );
 
 server.registerTool(
-  "diviops_scf_get_field_group",
+  "diviops_scf_field_group_get",
   {
     description:
       "Fetch a single SCF/ACF field group from the `acf-field-group` post type — by ACF key (`group_abc123`, looked up via `post_name`) or by numeric WP post ID. Returns the WP post fields (post_name, post_title, post_content with serialized fields blob, post_status, post_modified). For the parsed/structured field tree including nested fields, use `diviops_scf_export --field-groups=<key> --stdout` instead. Read-only. SCF 6.8.4 dropped the legacy `wp acf field-group get` command, so this wrapper queries the post type directly via `wp post`.",
@@ -1991,7 +1991,7 @@ server.registerTool(
         content: [
           {
             type: "text" as const,
-            text: `No field-group found for key "${key}". Use diviops_scf_list_field_groups to see available keys (post_name field).`,
+            text: `No field-group found for key "${key}". Expected an ACF key (e.g. "group_5f8a1b2c3d4e5") or a numeric WP post ID (e.g. "287"). Use diviops_scf_field_group_list to see available keys (post_name field).`,
           },
         ],
       };
@@ -2012,7 +2012,7 @@ server.registerTool(
 // ── Connection ──────────────────────────────────────────────────────
 
 server.registerTool(
-  "diviops_test_connection",
+  "diviops_meta_ping",
   {
     description:
       "Test the connection to the WordPress site and verify the Divi MCP plugin is active.",
@@ -2028,7 +2028,7 @@ server.registerTool(
 );
 
 server.registerTool(
-  "diviops_server_info",
+  "diviops_meta_info",
   {
     description:
       "Returns DiviOps MCP server identity, version, license type, and available capabilities.",
@@ -2139,8 +2139,8 @@ Attributes are JSON in the block comment. Structure:
 - \`divi/cta\` — Call to action blocks
 
 ## Tips
-1. Always use \`diviops_get_module_schema\` to check exact attribute names before building markup.
-2. Use \`diviops_get_page_layout\` on existing pages to learn the format from real examples.
+1. Always use \`diviops_schema_get_module\` to check exact attribute names before building markup.
+2. Use \`diviops_page_get_layout\` on existing pages to learn the format from real examples.
 3. Use \`diviops_render_preview\` to validate markup before saving.
 `;
 
@@ -2168,7 +2168,7 @@ const templates = loadTemplates();
 
 // Register a list tool so Claude can discover available templates
 server.registerTool(
-  "diviops_list_templates",
+  "diviops_template_list",
   {
     description:
       "List available Divi page section templates. Each template contains verified block markup patterns that can be used as a base for page generation.",
@@ -2187,7 +2187,7 @@ server.registerTool(
 );
 
 server.registerTool(
-  "diviops_get_template",
+  "diviops_template_get",
   {
     description:
       "Get a specific Divi template with verified block markup, customizable variables, and usage notes. Use this to generate pages based on proven patterns.",
@@ -2223,7 +2223,7 @@ server.registerTool(
 // ── Variable Manager CRUD ─────────────────────────────────────────────
 
 server.registerTool(
-  "diviops_list_variables",
+  "diviops_variable_list",
   {
     description:
       "List all design token variables from the Divi Variable Manager. Colors (gcid-*) come from et_global_data, numbers/strings/etc (gvid-*) from et_divi_global_variables. Filter by type or ID prefix.",
@@ -2244,7 +2244,7 @@ server.registerTool(
     const params: Record<string, string> = {};
     if (type) params.type = type;
     if (prefix) params.prefix = prefix;
-    const result = await wp.request("/variables", { params });
+    const result = await wp.request("/variable/list", { params });
     return {
       content: [
         { type: "text" as const, text: JSON.stringify(result) },
@@ -2254,7 +2254,7 @@ server.registerTool(
 );
 
 server.registerTool(
-  "diviops_create_variable",
+  "diviops_variable_create",
   {
     description:
       'Create a design token variable in the Divi Variable Manager. Colors (type "colors") use gcid-* IDs and hex values. Numbers/strings/etc use gvid-* IDs. For type="numbers" fluid tokens, pass min+max shorthand (anchors default to 320px/1920px) or explicit targets — server generates arithmetically-correct clamp() formulas. All-px inputs emit px (safe default, root-agnostic). Rem inputs OR rem output require explicit opt-in: pass output_unit="rem" (accepts the 1rem=16px default) or root_font_size_px:N (declares your site\'s actual root font-size for correct rem emission on non-16px-root sites). Mutually exclusive with value.',
@@ -2345,10 +2345,10 @@ server.registerTool(
 );
 
 server.registerTool(
-  "diviops_create_fluid_system",
+  "diviops_variable_create_fluid_system",
   {
     description:
-      "Batch-emit a fluid typography + spacing + radius variable set in one call — mirrors Divi 5.4.0's Variable Generator Modal at the algorithm level (clamp() math is identical to diviops_create_variable's fluid mode) but layers profile-selectable anchors over it. Each category is independent and optional. Use for: (1) bootstrapping a design system in one call instead of 20+ individual diviops_create_variable invocations; (2) mirroring ET's variable layout so your tokens coexist with VB-generated ones in the Variable Manager; (3) deterministic preflight via dry_run before committing the registry change. By default, refuses to overwrite existing IDs (returns them in `skipped`) — pass overwrite=true to update in place. Persists in a single atomic write to the variable registry; mid-batch failures roll back cleanly.",
+      "Batch-emit a fluid typography + spacing + radius variable set in one call — mirrors Divi 5.4.0's Variable Generator Modal at the algorithm level (clamp() math is identical to diviops_variable_create's fluid mode) but layers profile-selectable anchors over it. Each category is independent and optional. Use for: (1) bootstrapping a design system in one call instead of 20+ individual diviops_variable_create invocations; (2) mirroring ET's variable layout so your tokens coexist with VB-generated ones in the Variable Manager; (3) deterministic preflight via dry_run before committing the registry change. By default, refuses to overwrite existing IDs (returns them in `skipped`) — pass overwrite=true to update in place. Persists in a single atomic write to the variable registry; mid-batch failures roll back cleanly.",
     inputSchema: {
       profile: z
         .enum(["divi-default", "wide", "custom"])
@@ -2545,7 +2545,7 @@ server.registerTool(
     if (root_font_size_px !== undefined) body.root_font_size_px = root_font_size_px;
     if (dry_run !== undefined) body.dry_run = dry_run;
     if (overwrite !== undefined) body.overwrite = overwrite;
-    const result = await wp.request("/variables-create-fluid-system", {
+    const result = await wp.request("/variable/create-fluid-system", {
       method: "POST",
       body,
     });
@@ -2558,10 +2558,10 @@ server.registerTool(
 );
 
 server.registerTool(
-  "diviops_delete_variable",
+  "diviops_variable_delete",
   {
     description:
-      "Delete a design token variable by ID. Auto-detects storage from ID prefix (gcid-* = colors, gvid-* = numbers/strings/etc). Returns HTTP 409 when live references exist unless force=true — run diviops_variables_scan_orphans to see where the references live. Returns HTTP 403 for Divi's customizer-bound defaults (gcid-primary-color, gcid-secondary-color, gcid-heading-color, gcid-body-color, gcid-link-color); those are managed via WP Customizer theme options and can't be deleted via this tool.",
+      "Delete a design token variable by ID. Auto-detects storage from ID prefix (gcid-* = colors, gvid-* = numbers/strings/etc). Returns HTTP 409 when live references exist unless force=true — run diviops_variable_scan_orphans to see where the references live. Returns HTTP 403 for Divi's customizer-bound defaults (gcid-primary-color, gcid-secondary-color, gcid-heading-color, gcid-body-color, gcid-link-color); those are managed via WP Customizer theme options and can't be deleted via this tool.",
     inputSchema: {
       id: z
         .string()
@@ -2573,7 +2573,7 @@ server.registerTool(
         .optional()
         .default(false)
         .describe(
-          "Delete even if live references exist. Orphans will remain in page/preset content and render as invalid CSS on the frontend — run diviops_variables_scan_orphans afterwards to audit.",
+          "Delete even if live references exist. Orphans will remain in page/preset content and render as invalid CSS on the frontend — run diviops_variable_scan_orphans afterwards to audit.",
         ),
     },
   },
@@ -2591,13 +2591,13 @@ server.registerTool(
 );
 
 server.registerTool(
-  "diviops_variables_scan_orphans",
+  "diviops_variable_scan_orphans",
   {
     description:
       "Scan pages, Theme Builder layouts (header/body/footer), Divi Library items, canvas pages, and the preset registry for gvid-/gcid- references that have no backing entry in the Variable Manager (orphans), plus variables defined but referenced nowhere (unused). Orphans render as invalid CSS on the frontend — the $variable()$ resolver falls through with no fallback. Use after a deletion with force=true, or periodically as a hygiene check. Symmetric to diviops_preset_scan_orphans.",
   },
   async () => {
-    const result = await wp.request("/variables-scan-orphans");
+    const result = await wp.request("/variable/scan-orphans");
     return {
       content: [
         { type: "text" as const, text: JSON.stringify(result) },
@@ -2607,10 +2607,10 @@ server.registerTool(
 );
 
 server.registerTool(
-  "diviops_variables_used_on_page",
+  "diviops_variable_used_on_page",
   {
     description:
-      "Detect which numeric/font variable IDs a single page actually emits — the exact set Divi 5.4.0+ uses to scope selective `:root{--gvid-*}` CSS variable emission. Walks the same content stack the frontend assembles: post_content + active Theme Builder header/body/footer template content + appended canvas content (interaction targets etc.), plus presets referenced by that content. NOTE: this is `gvid-*` only — color variables (`gcid-*`) are emitted via a separate path (`GlobalData` color block) that is NOT scoped per-page in 5.4.0; this tool returns gvid IDs only. Use for per-page orphan validation (complements global diviops_variables_scan_orphans), preflight before bulk variable rename (know which pages are affected), or to debug why a numeric/font variable doesn't render on a specific page. Read-only. Returns variable_ids (sorted, deduped), count, and the tb_template_ids resolved for that post.",
+      "Detect which numeric/font variable IDs a single page actually emits — the exact set Divi 5.4.0+ uses to scope selective `:root{--gvid-*}` CSS variable emission. Walks the same content stack the frontend assembles: post_content + active Theme Builder header/body/footer template content + appended canvas content (interaction targets etc.), plus presets referenced by that content. NOTE: this is `gvid-*` only — color variables (`gcid-*`) are emitted via a separate path (`GlobalData` color block) that is NOT scoped per-page in 5.4.0; this tool returns gvid IDs only. Use for per-page orphan validation (complements global diviops_variable_scan_orphans), preflight before bulk variable rename (know which pages are affected), or to debug why a numeric/font variable doesn't render on a specific page. Read-only. Returns variable_ids (sorted, deduped), count, and the tb_template_ids resolved for that post.",
     inputSchema: {
       post_id: z
         .number()
@@ -2622,7 +2622,7 @@ server.registerTool(
     },
   },
   async ({ post_id }) => {
-    const result = await wp.request(`/variables-used-on-page/${post_id}`);
+    const result = await wp.request(`/variable/used-on-page/${post_id}`);
     return {
       content: [
         { type: "text" as const, text: JSON.stringify(result) },
@@ -2632,7 +2632,7 @@ server.registerTool(
 );
 
 server.registerTool(
-  "diviops_flush_static_cache",
+  "diviops_meta_flush_cache",
   {
     description:
       "Flush Divi's compiled static CSS cache under wp-content/et-cache/. wp cache flush does NOT touch these files — the frontend can keep serving stale CSS after a preset/variable/module mutation until the cache is cleared. Delegates to Divi's native ET_Core_PageResource::remove_static_resources when available (response backend: \"divi_native\"), which additionally clears Theme Builder CSS scattered across other post dirs, archive/taxonomy/home/notfound CSS, the object cache, module features cache, post features cache, Google Fonts cache, dynamic assets cache, and post meta caches. Falls back to a targeted filesystem walk of numeric-named et-cache subdirs when the Divi class is absent (backend: \"fs_fallback\"). Provide exactly one selector — no site-wide default to prevent accidental full flush. Idempotent: missing cache root returns 200 with empty list.",
@@ -2667,7 +2667,7 @@ server.registerTool(
     if (post_id !== undefined) body.post_id = post_id;
     if (all) body.all = true;
     if (after !== undefined) body.after = after;
-    const result = await wp.request("/flush-static-cache", {
+    const result = await wp.request("/meta/flush-cache", {
       method: "POST",
       body,
     });

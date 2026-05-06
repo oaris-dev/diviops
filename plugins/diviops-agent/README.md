@@ -33,57 +33,64 @@ Base: `/wp-json/diviops/v1/`
 | Endpoint | Method | Description |
 |----------|--------|-------------|
 | `/handshake` | POST | Version + capabilities handshake for MCP server pairing (plugin version, Divi version, registered capabilities). POST because it takes a required `mcp_server_version` body param |
-| `/pages` | GET | List pages with Divi status |
-| `/page/{id}` | GET | Get page details + raw content |
-| `/page/{id}/layout` | GET | Parsed block tree with auto-index, text preview, admin labels |
-| `/page/{id}/get-section?label=` | GET | Section markup by admin label |
-| `/modules` | GET | List all Divi modules |
-| `/module/{name}` | GET | Module attribute schema |
-| `/settings` | GET | Divi theme settings |
-| `/global-colors` | GET | Global color palette |
-| `/global-fonts` | GET | Global font definitions |
-| `/icons/search?q=&type=&limit=` | GET | Search 1,989 icons by keyword |
-| `/presets` | GET | All presets (D5 + legacy) |
-| `/preset-audit` | GET | Preset analysis with referenced/unreferenced breakdown + `orphan_default_pointers` (per-bucket `default` pointers referencing UUIDs missing from `items[]`) |
-| `/preset-scan-orphans` | GET | List preset UUIDs referenced in pages but missing from the D5 registry (dangling vs D4-legacy) |
-| `/variables` | GET | List design token variables (filter by type, prefix) |
-| `/variables-scan-orphans` | GET | List variable IDs referenced in pages but not defined in the registry |
-| `/canvases` | GET | List canvas items (reusable block containers) |
-| `/canvas/{id}` | GET | Get canvas content |
-| `/library` | GET | List Divi Library items (filter by type, scope) |
-| `/library/{id}` | GET | Get library item content |
+| `/page/list` | GET | List pages with Divi status |
+| `/page/get/{id}` | GET | Get page details + raw content |
+| `/page/get-layout/{id}` | GET | Parsed block tree with auto-index, text preview, admin labels |
+| `/section/get/{id}?label=` | GET | Section markup by admin label |
+| `/schema/modules` | GET | List all Divi modules |
+| `/schema/module/{name}` | GET | Module attribute schema |
+| `/schema/settings` | GET | Divi theme settings |
+| `/global-color/list` | GET | Global color palette |
+| `/global-font/list` | GET | Global font definitions |
+| `/meta/find-icon?q=&type=&limit=` | GET | Search 1,989 icons by keyword |
+| `/preset/list` | GET | All presets (D5 + legacy) |
+| `/preset/audit` | GET | Preset analysis with referenced/unreferenced breakdown + `orphan_default_pointers` (per-bucket `default` pointers referencing UUIDs missing from `items[]`) |
+| `/preset/scan-orphans` | GET | List preset UUIDs referenced in pages but missing from the D5 registry (dangling vs D4-legacy) |
+| `/variable/list` | GET | List design token variables (filter by type, prefix) |
+| `/variable/scan-orphans` | GET | Scan variable refs across pages, Theme Builder layouts, Divi Library items, canvas pages, and the preset registry. Reports both orphans (`gvid-`/`gcid-` refs missing from the registry) and unused variables (defined but never referenced — deletion candidates) |
+| `/variable/used-on-page/{id}` | GET | Detect which gvid- variable IDs a single page emits (post_content + active TB layouts + canvases + presets) |
+| `/canvas/list` | GET | List canvas items (reusable block containers) |
+| `/canvas/get/{id}` | GET | Get canvas content |
+| `/library/items` | GET | List Divi Library items (filter by type, scope) |
+| `/library/item/{id}` | GET | Get library item content |
 | `/render` | POST | Render block markup to HTML (read-only, no state change) |
-| `/validate` | POST | Validate block markup structure + known pitfalls (read-only) |
-| `/theme-builder/templates` | GET | List Theme Builder templates with conditions |
-| `/theme-builder/layout/{id}` | GET | Get Theme Builder layout content |
+| `/validate/blocks` | POST | Validate block markup structure + known pitfalls (read-only) |
+| `/theme-builder/template/list` | GET | List Theme Builder templates with conditions |
+| `/theme-builder/layout/get/{id}` | GET | Get Theme Builder layout content |
 
 ### Write
 | Endpoint | Method | Description |
 |----------|--------|-------------|
 | `/page/create` | POST | Create new page |
-| `/page/{id}/content` | POST | Full content rewrite |
-| `/page/{id}/append` | POST | Append section |
-| `/page/{id}/replace-section` | POST | Replace section by label |
-| `/page/{id}/remove-section` | POST | Remove section by label |
-| `/page/{id}/update-module` | POST | Update module attrs by label or text match |
-| `/page/{id}/move-module` | POST | Move a block before/after another block |
-| `/page/{id}/meta` | POST | Set page template/meta |
-| `/global-colors` | POST | Update global color palette |
+| `/page/update-content/{id}` | POST | Full content rewrite |
+| `/section/append/{id}` | POST | Append section to page |
+| `/section/replace/{id}` | POST | Replace section by label |
+| `/section/remove/{id}` | POST | Remove section by label |
+| `/module/update/{id}` | POST | Update module attrs by label or text match |
+| `/module/move/{id}` | POST | Move a block before/after another block |
+| `/module/lock/{id}` | POST | Lock a module so VB users cannot edit it |
+| `/module/unlock/{id}` | POST | Unlock a module by removing `attrs.locked` |
+| `/module/clone/{id}` | POST | Deep-copy a module + insert next to source within the same parent |
+| `/page/set-meta/{id}` | POST | Set page template/meta |
+| `/global-color/upsert` | POST | Upsert global color palette (create + update via single bulk write) |
+| `/global-color/delete` | POST | Delete a global color by gcid (auto-protects customizer defaults) |
 | `/theme-options` | POST | Update theme customizer options |
-| `/preset-create` | POST | Create a module or group preset in the D5 registry |
-| `/preset-reassign` | POST | Rewrite preset UUID refs across page content + (for group-bucket swaps) registry chains. Supports `scope: "module" \| "group" \| "both"` (default `"both"`); dry-run default with explicit `mode: "apply"` to commit |
-| `/preset-cleanup` | POST | Remove spam/duplicate presets, bulk rename |
-| `/preset-update` | POST | Update a single preset (name, attrs) |
-| `/preset-delete` | POST | Delete a preset by ID. Refuses with `409 preset_is_default` if the target is the registered default for its bucket; pass `force=true` to delete and clear the `default` pointer in the same write |
+| `/preset/create` | POST | Create a module or group preset in the D5 registry |
+| `/preset/reassign` | POST | Rewrite preset UUID refs across page content + (for group-bucket swaps) registry chains. Supports `scope: "module" \| "group" \| "both"` (default `"both"`); dry-run default with explicit `mode: "apply"` to commit |
+| `/preset/cleanup` | POST | Remove spam/duplicate presets, bulk rename |
+| `/preset/update` | POST | Update a single preset (name, attrs) |
+| `/preset/delete` | POST | Delete a preset by ID. Refuses with `409 preset_is_default` if the target is the registered default for its bucket; pass `force=true` to delete and clear the `default` pointer in the same write |
+| `/preset/set-default` | POST | Set or clear the per-module/group default preset pointer (preset_id mode walks both buckets; bucket-addressed mode requires `type` + `module` + `unset=true` to clear orphan pointers) |
 | `/variable/create` | POST | Create a design token variable (colors or numbers/strings/etc) |
+| `/variable/create-fluid-system` | POST | Batch-emit a fluid typography + spacing + radius variable set (single atomic write) |
 | `/variable/delete` | POST | Delete a variable by ID |
 | `/canvas/create` | POST | Create a new canvas item |
-| `/canvas/{id}` | POST | Update canvas content |
-| `/canvas/{id}` | DELETE | Delete a canvas |
+| `/canvas/update/{id}` | POST | Update canvas content |
+| `/canvas/delete/{id}` | POST | Delete a canvas |
 | `/library/save` | POST | Save block markup to Divi Library |
-| `/theme-builder/layout/{id}` | PUT | Update Theme Builder layout content |
-| `/theme-builder/template` | POST | Create Theme Builder template with conditions |
-| `/flush-static-cache` | POST | Flush Divi's compiled CSS cache at `wp-content/et-cache/` after preset / variable / module mutations (required because `wp cache flush` doesn't invalidate this on-disk cache) |
+| `/theme-builder/layout/update/{id}` | PUT | Update Theme Builder layout content |
+| `/theme-builder/template/create` | POST | Create Theme Builder template with conditions |
+| `/meta/flush-cache` | POST | Flush Divi's compiled CSS cache at `wp-content/et-cache/` after preset / variable / module mutations (required because `wp cache flush` doesn't invalidate this on-disk cache) |
 
 ### Authentication & Permissions
 
@@ -91,23 +98,23 @@ All endpoints require Application Password authentication (Basic Auth). Three pe
 
 | Tier | WP Capability | Endpoints |
 |------|--------------|-----------|
-| **Read** | `edit_posts` | All GET endpoints, `/render`, `/validate` |
+| **Read** | `edit_posts` | Most GET endpoints, `/render`, `/validate/blocks` |
 | **Write** | `edit_pages` | Page creation and content modification |
-| **Admin** | `manage_options` | Theme options, preset cleanup/update/delete, library save |
+| **Admin** | `manage_options` | Theme options, preset audit/cleanup/update/delete, library save, variable management, scan-orphans (variable + preset) |
 
 If Divi is not active, all endpoints return `503 divi_unavailable`.
 
-### Module Targeting (update-module)
+### Module Targeting (module/update)
 Three ways to target a module for editing:
 
 | Method | Parameter | Works for |
 |--------|-----------|-----------|
 | Admin label | `label: "Hero Heading"` | Manually labeled modules |
 | Text content | `match_text: "Kitas"` | Modules with text (case-insensitive substring) |
-| Auto-index | Use `get_page_layout` to find `auto_index` like `icon:5` | All modules including icons, dividers, images |
+| Auto-index | Call `GET /page/get-layout/{id}` to find `auto_index` like `icon:5` | All modules including icons, dividers, images |
 
 ### Page Layout Response
-`/page/{id}/layout` returns per module:
+`/page/get-layout/{id}` returns per module:
 - `admin_label` — manual label if set
 - `text_preview` — first 50 chars of content text
 - `auto_index` — `type:count` (e.g. `text:3`, `icon:5`, `group:9`)

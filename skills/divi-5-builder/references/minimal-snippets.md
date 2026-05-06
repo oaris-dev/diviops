@@ -86,9 +86,9 @@ Three silent-failure traps to avoid.
 - **`innerContent.desktop.value` is an object** `{text, linkUrl}`, NOT a plain string. Plain string → empty button.
 - **`icon.enable: "off"`** suppresses the default hover arrow. Omit and Divi shows an arrow icon on hover.
 - **No `enable: "on"` flag is needed** for inline custom styling to render. VB-verified (Divi 5.4.0): `button.decoration.button.desktop.value.enable` is absent on inline-styled buttons saved by VB. The render path doesn't read it (`Packages/Module/Options/Button/ButtonComponent.php` only consumes `icon.settings`). Writing `enable: "off"` is *destructive* — it triggers a migration that strips `button.decoration` (`Migration/ComposibleOptionsMigration.php:563`).
-- **Don't write visual styling keys at `button.decoration.button.desktop.value.*`** (e.g. `backgroundColor`, `textColor`, `font`). Render-relevant keys at this depth are limited to `enable`, `icon`, `padding` (icon-spacing gate), and `alignment` (deprecated). Visual styling outside that set is silently dropped. Validator rule: `button_no_render_consumer`.
+- **Don't write visual styling keys at `button.decoration.button.desktop.value.*`** (e.g. `backgroundColor`, `textColor`, `font`). Render-relevant keys at this depth are limited to `enable`, `icon`, `padding` (icon-spacing gate, **not** visible-padding emitter — but required as gate-bypass on every `divi/button` group preset that doesn't carry padding here, otherwise the hover-gate clobbers the visible padding; see [presets.md](presets.md#hover-padding-gate-on-button-group-presets-broad-scope-upstream-tracked)), and `alignment` (deprecated). Visual styling outside that set is silently dropped. Validator rule: `button_no_render_consumer`.
 
-Custom styling lives on **sibling-level paths**: `button.decoration.{border, background, font, boxShadow}` for visual styling. Padding goes on `module.decoration.spacing` (not `button.decoration.spacing`).
+Custom styling lives on **sibling-level paths**: `button.decoration.{border, background, font, boxShadow}` for visual styling. Padding is **scope-dependent**: `module.decoration.spacing.padding` for inline buttons / `divi/button` module presets, `button.decoration.spacing.padding` for `divi/button` group presets (the `presetGroup` render path at `ButtonModule.php:633-644` merges the latter into module spacing via `array_replace_recursive`).
 
 ---
 
@@ -123,7 +123,7 @@ Two silent-failure traps — title shape and icon-mode flag.
 - **Title is an object** `{text}`, NOT a plain string. Plain string → title silently absent from rendered HTML.
 - **`useIcon: "on"` is required** when `icon` is set. Without it, the `.et-pb-icon` span renders empty — icon absent.
 - Default title tag is `<h4>`. Override via `title.decoration.font.font.desktop.value.headingLevel` (same double-`font` shape as Heading).
-- Icon `unicode` is a raw unicode character (e.g. `"\uf0e7"` for FontAwesome bolt, `""` for Divi built-in). Get live icon codes from `diviops_find_icon`.
+- Icon `unicode` is a raw unicode character (e.g. `"\uf0e7"` for FontAwesome bolt, `""` for Divi built-in). Get live icon codes from `diviops_meta_find_icon`.
 - Swap to image mode: omit `useIcon` and set `imageIcon.innerContent.desktop.value` to `{src, id, alt, titleText}`.
 
 ---

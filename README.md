@@ -17,7 +17,7 @@ Get from zero to generating Divi 5 pages with Claude Code in ~15 minutes.
 1. Download `diviops-agent.zip` from the dist repo root (`oaris-dev/diviops` or `oaris-dev/diviops-internal`) — it ships at the top level of each dist repo
 2. Go to **WP Admin → Plugins → Add New → Upload Plugin**
 3. Upload `diviops-agent.zip` and activate it
-4. Verify: visit `http://your-site.local/wp-json/diviops/v1/settings` — you should get a 401 (auth required)
+4. Verify: visit `http://your-site.local/wp-json/diviops/v1/schema/settings` — you should get a 401 (auth required)
 
 > **If Divi is not active**, authenticated requests return `503 divi_unavailable`. Unauthenticated requests return 401 first.
 
@@ -48,7 +48,7 @@ claude mcp add diviops-mysite \
   -- npx @diviops/mcp-server
 ```
 
-### With WP-CLI (Local by Flywheel — enables the `diviops_wp_cli` tool)
+### With WP-CLI (Local by Flywheel — enables the `diviops_meta_wp_cli` tool)
 
 ```bash
 claude mcp add diviops-mysite \
@@ -120,7 +120,7 @@ claude mcp add diviops-mysite --env KEY=VALUE ... -- npx @diviops/mcp-server
 Restart Claude Code (or open a new window), then run:
 
 ```
-Use diviops_test_connection to verify the MCP is working.
+Use diviops_meta_ping to verify the MCP is working.
 ```
 
 You should see your site URL, WordPress version, and Divi version.
@@ -128,7 +128,7 @@ You should see your site URL, WordPress version, and Divi version.
 Then try:
 
 ```
-Use diviops_list_pages to show all pages.
+Use diviops_page_list to show all pages.
 ```
 
 > **If tools don't appear**: Check `claude mcp list` output. The `npx` command must be reachable on your `PATH` (it ships with Node.js, which provides `npm`/`npx`). `npx` then fetches and runs the `@diviops/mcp-server` package on demand.
@@ -191,9 +191,9 @@ Always start here regardless of project state:
 
 ```
 Audit my site's design system state. Check for existing oa-* tokens by
-running diviops_list_variables twice: once with prefix gcid-oa- (type: colors)
+running diviops_variable_list twice: once with prefix gcid-oa- (type: colors)
 and once with prefix gvid-oa- (type: numbers), and check oa presets with
-diviops_preset_audit. Also check diviops_get_global_colors for any existing brand
+diviops_preset_audit. Also check diviops_global_color_list for any existing brand
 colors. Tell me what exists, what's missing, and which bootstrap phase I
 should start from.
 ```
@@ -223,7 +223,7 @@ Then continue to **Create Presets** below.
 Your site already has brand colors but they're not in the oa namespace. Adopt them:
 
 ```
-My site already has brand colors set up (check diviops_get_global_colors).
+My site already has brand colors set up (check diviops_global_color_list).
 Adopt these into the oa design system:
 - Map the primary brand color → gcid-oa-primary family (generate 50-950 shades)
 - Map the secondary brand color → gcid-oa-secondary family
@@ -337,7 +337,7 @@ The Free distribution (this repo) and the Pro distribution share the same plugin
 | Skill: Advanced attributes (boxShadow, filters, transform, sticky, transition, scroll, animation) | — | ✓ |
 | Skill: `$variable()$` per-module binding examples (loop content, global color tokens) and Interactions reference | — | ✓ |
 
-**Practical difference.** The Free skill is enough to generate pages using universal decoration patterns plus runtime lookups via `diviops_get_module_schema`. Pro adds verified per-module maps, which cuts schema-lookup round-trips and reduces silent-fail risk on quirks only documented in the full maps — e.g., Toggle's `closedTitle.decoration.font.*` (closed-state title styling; without it you'd target the open state only) or Video's `overlay.decoration.background` (the correct background target — not `module.decoration.background`).
+**Practical difference.** The Free skill is enough to generate pages using universal decoration patterns plus runtime lookups via `diviops_schema_get_module`. Pro adds verified per-module maps, which cuts schema-lookup round-trips and reduces silent-fail risk on quirks only documented in the full maps — e.g., Toggle's `closedTitle.decoration.font.*` (closed-state title styling; without it you'd target the open state only) or Video's `overlay.decoration.background` (the correct background target — not `module.decoration.background`).
 
 No feature gating in the MCP server or the WordPress plugin — all 48 tools are available in both distributions.
 
@@ -369,7 +369,7 @@ Four ways to target modules for editing:
 
 ## WP-CLI Security
 
-The `diviops_wp_cli` tool validates every command against a safety allowlist. Default allowlist covers read-only commands (options, posts, taxonomies, users, ACF field groups, cron/plugin/theme/menu info) plus non-destructive writes (post/term/post-meta create and update, ACF schema export/import, cache flush, transient delete, rewrite flush, WXR export).
+The `diviops_meta_wp_cli` tool validates every command against a safety allowlist. Default allowlist covers read-only commands (options, posts, taxonomies, users, ACF field groups, cron/plugin/theme/menu info) plus non-destructive writes (post/term/post-meta create and update, ACF schema export/import, cache flush, transient delete, rewrite flush, WXR export).
 
 **Extended commands** (opt-in via `DIVIOPS_WP_CLI_ALLOW`):
 

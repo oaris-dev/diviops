@@ -49,9 +49,9 @@ Variables are stored in the Divi Variable Manager. 6 native types:
 **Storage byte forms (Divi 5.3.x).** Inside block-attrs JSON the inner quotes of `$variable({...})$` payloads can be stored as `\"` (2-byte VB-canonical) or `"` (6-byte JSON unicode escape). Both decode identically through Divi's outer block-attrs parse. Three pathological forms can leak in via callers and silently break renders or block parsing:
 - `\\u0022` (7 bytes) — extra backslash; produced when a caller passes the 6-byte form through an extra JSON encoding layer (over-escape, render-only failure on certain attr paths like `module.decoration.background.color`, `spacing.margin`, `border.styles.color`, `layout.columnGap` — leaks literal `0022` into CSS)
 - `\u005cu0022` (11 bytes) — backslash itself unicode-encoded (over-escape, same render-only failure mode); the form observed in the wild on Divi 5.3.x mass-corruption events
-- bare `"` (1 byte) — under-escape; produced when an agent transcribes `get_section` markup (which emits inner quotes as `&quot;` HTML entities) and a layer in the agent → MCP → WP pipeline strips one level of escaping. The bare quote prematurely terminates the OUTER block-attrs string at parse time — the WP block parser silently drops ALL attrs from the affected module. Section appears to save (`success: true`) but renders empty / broken.
+- bare `"` (1 byte) — under-escape; produced when an agent transcribes `section_get` markup (which emits inner quotes as `&quot;` HTML entities) and a layer in the agent → MCP → WP pipeline strips one level of escaping. The bare quote prematurely terminates the OUTER block-attrs string at parse time — the WP block parser silently drops ALL attrs from the affected module. Section appears to save (`success: true`) but renders empty / broken.
 
-**MCP write tools normalize all three pathological forms inside `$variable(...)$` token regions** (`diviops-server/src/wp-client.ts`) — a `diviops_get_section → diviops_replace_section` round-trip on legacy broken bytes self-heals. Bytes outside token regions are preserved (so a string-variable value or a code sample documenting the broken form round-trips unchanged). The normalizer runs in two passes: first collapses over-escaped forms to canonical `\"`, then escapes any remaining bare `"` (a negative lookbehind skips already-canonical `\"` so the second pass is idempotent). For non-MCP-touched content (e.g., direct DB writes or custom PHP that bypasses the MCP), recover with a two-target `str_replace` that handles both pathological over-escape forms:
+**MCP write tools normalize all three pathological forms inside `$variable(...)$` token regions** (`diviops-server/src/wp-client.ts`) — a `diviops_section_get → diviops_section_replace` round-trip on legacy broken bytes self-heals. Bytes outside token regions are preserved (so a string-variable value or a code sample documenting the broken form round-trips unchanged). The normalizer runs in two passes: first collapses over-escaped forms to canonical `\"`, then escapes any remaining bare `"` (a negative lookbehind skips already-canonical `\"` so the second pass is idempotent). For non-MCP-touched content (e.g., direct DB writes or custom PHP that bypasses the MCP), recover with a two-target `str_replace` that handles both pathological over-escape forms:
 
 ```php
 $new = str_replace(
@@ -67,7 +67,7 @@ clean_post_cache($id);
 
 **`wp_update_post` hazard (custom PHP / eval-files / non-MCP REST endpoints).** WP's `wp_insert_post` / `wp_update_post` runs `wp_unslash()` on `post_content`, stripping one level of backslashes from ALL `\uXXXX` escapes — not just variable-token quotes: `"` (variable expression `"`), `<` / `>` (HTML `<` / `>` in `content.innerContent`), `&` (HTML `&`), `/` (`/`). All become `u0022` / `u003c` / etc. (no leading backslash) — variable expressions silently fail to resolve and HTML tags render as literal text (e.g. `<p>` becomes the visible string `u003cpu003e`). Damage is irreversible without a pre-`wp_update_post` revision. **When writing variable-token-bearing markup from PHP, bypass `wp_update_post` — write directly via `$wpdb->update($wpdb->posts, ['post_content' => $new], ['ID' => $id], ['%s'], ['%d'])` followed by `clean_post_cache($id)`.** The diviops-agent plugin uses `wp_slash()` to compensate at REST endpoints; that path is safe. Recovery regex for stripped-backslash damage (run on storage): `preg_replace('/(?<!\\\\)u0022/', '\\u0022', $content)` — the negative lookbehind avoids double-prefixing already-correct tokens.
 
-**VB round-trip pitfall (Divi 5.3.x).** When a user opens a section in the Visual Builder and saves, Divi may double-escape `"` inner quotes inside `$variable(...)$` payloads on certain attr paths (heading/text background, border, spacing) — `"` becomes `"` (over-escaped) in storage. Resolved variable expression then reads `$variable({"type":...})$` which fails Divi's inner JSON parse and renders empty / leaks literal `0022` into CSS. Symptom: variable token loses its background/border/margin and falls through to defaults after a VB save. Recovery: rewrite the section via `diviops_replace_section` (the MCP normalizer fixes it on write), or hand-fix the attrs option in VB. No reliable workaround at user-edit time — the VB save itself is the corrupting layer.
+**VB round-trip pitfall (Divi 5.3.x).** When a user opens a section in the Visual Builder and saves, Divi may double-escape `"` inner quotes inside `$variable(...)$` payloads on certain attr paths (heading/text background, border, spacing) — `"` becomes `"` (over-escaped) in storage. Resolved variable expression then reads `$variable({"type":...})$` which fails Divi's inner JSON parse and renders empty / leaks literal `0022` into CSS. Symptom: variable token loses its background/border/margin and falls through to defaults after a VB save. Recovery: rewrite the section via `diviops_section_replace` (the MCP normalizer fixes it on write), or hand-fix the attrs option in VB. No reliable workaround at user-edit time — the VB save itself is the corrupting layer.
 
 ### Preset Types
 
@@ -282,7 +282,7 @@ VB stripped the inline attr in step 2 but not step 1. **Why is unclear.** Possib
 - **The `groupPreset` rule emits AFTER the `modulePreset` rule in the stylesheet**, so it wins by source-order on equal specificity
 - Net effect: `groupPreset` value beats `modulePreset` value, matching the documented cascade order even though it's resolved via stylesheet ordering rather than CSS specificity
 
-**Implication for diviops authoring**: when binding a preset programmatically via `update_module` to a previously-styled instance, **explicitly clear the matching inline attr** (set the path to `null` in the same call). Don't depend on VB's strip-on-apply behavior — it's inconsistent. `diviops_preset_reassign` with `strip_inline=true` is the safe path for batch consolidations: it strips inline only when the inline value deep-equals the new preset's value (preserving intentional divergence) AND the post-swap stack is singular.
+**Implication for diviops authoring**: when binding a preset programmatically via `module_update` to a previously-styled instance, **explicitly clear the matching inline attr** (set the path to `null` in the same call). Don't depend on VB's strip-on-apply behavior — it's inconsistent. `diviops_preset_reassign` with `strip_inline=true` is the safe path for batch consolidations: it strips inline only when the inline value deep-equals the new preset's value (preserving intentional divergence) AND the post-swap stack is singular.
 
 ### Inner-element vs module-level spacing emission *(VB-verified 2026-05-04)*
 
@@ -328,7 +328,7 @@ Instance inline attrs > attribute-level preset (`groupPreset`) > module-level pr
 
 ## oa Design System — Design Tokens
 
-> **Token names are canonical; values are reference.** The token names (`gcid-oa-primary-500`, `gvid-oa-size-h1`) and structure (3 color families, 15 font sizes, 13 spacings, 6 radii) are the canonical target every project should create during bootstrap. The hex/clamp values below are from a reference project — your project's actual values depend on its brand colors and are set during bootstrap Step 2. Inspect live values via `diviops_list_variables`.
+> **Token names are canonical; values are reference.** The token names (`gcid-oa-primary-500`, `gvid-oa-size-h1`) and structure (3 color families, 15 font sizes, 13 spacings, 6 radii) are the canonical target every project should create during bootstrap. The hex/clamp values below are from a reference project — your project's actual values depend on its brand colors and are set during bootstrap Step 2. Inspect live values via `diviops_variable_list`.
 
 ### Naming convention
 All tokens use the `oa` prefix for filterability and collision avoidance.
@@ -451,20 +451,28 @@ These are **color modifiers** — stack with a size preset when content is on a 
 | oa Button Secondary | `button-secondary` | `gcid-oa-secondary-500` | `gcid-oa-white` | border: none, radius: `gvid-oa-rounded-xl` |
 | oa Button White | `button-white` | `gcid-oa-white` | `gcid-oa-neutral-900` | border: none, radius: `gvid-oa-rounded-xl` |
 
-All button presets store visual styling at the **sibling-level** paths (`button.decoration.{font, background, border, boxShadow}` + `module.decoration.spacing` for padding) — VB-verified Divi 5.4.0. No `enable: "on"` flag is required at `button.decoration.button.desktop.value` for custom styling to render. Render-relevant keys at that deep path are limited to `enable` (whose `"off"` value triggers a destructive *migration* — never write it without intent), `icon.*` (visible icon configuration), `padding` (icon-spacing gate, not a visible-padding emitter), and `alignment` (deprecated input forwarded to `decoration.sizing.alignment`). The `icon.enable: "off"` setting is what suppresses the default hover arrow on these presets.
+All button presets store visual styling at the **sibling-level** paths (`button.decoration.{font, background, border, boxShadow}`) — VB-verified Divi 5.4.0. **Padding lives on a scope-dependent path:** `module.decoration.spacing.padding` for inline buttons and `divi/button` module presets, `button.decoration.spacing.padding` for `divi/button` group presets (the `presetGroup` render path at `ButtonModule.php:633-644` merges the latter into module spacing via `array_replace_recursive`). No `enable: "on"` flag is required at `button.decoration.button.desktop.value` for custom styling to render. Render-relevant keys at that deep path are limited to `enable` (whose `"off"` value triggers a destructive *migration* — never write it without intent), `icon.*` (visible icon configuration), `padding` (icon-spacing gate, **not** a visible-padding emitter), and `alignment` (deprecated input forwarded to `decoration.sizing.alignment`). The `icon.enable: "off"` setting is what suppresses the default hover arrow on these presets.
 
-**Icon-off + chained spacing group: Divi 5.3.x hover-padding gate (Divi bug, narrow scope).** Group presets for buttons (the `divi/button` / `groupId: button` pattern used by the oa Button presets above) remain the recommended convention. There is **one specific chained-preset configuration** to avoid:
+### Hover-padding gate on Button group presets — broad scope, upstream-tracked
 
-> A `divi/button` group preset that sets `button.decoration.button.desktop.value.icon.enable: "off"` (suppress the default arrow), **chained alongside** a separate `divi/spacing` group preset that supplies the padding.
+> **Scope correction (2026-05-04):** earlier framing called this a "narrow icon-off + chained-spacing-group" bug. **It is not narrow.** Empirically verified on Divi 5.4.0 via `file_put_contents` instrumentation of `spacing_icon_hover_style_declaration`: the gate misfires for **every `divi/button` group preset's Pass-A render** that doesn't carry `button.decoration.button.desktop.value.padding`, regardless of icon state, regardless of whether spacing is chained. Including Divi's auto-applied bucket-default group preset, which means **nearly every button on a fresh Divi 5 site** is affected unless workaround is applied. Tracked at the upstream-tracking issue (re-test on every Divi theme bump).
 
-That combination trips a hover-padding fallback at `Packages/Module/Options/Button/Style/StyleDeclarations.php:158-160` (`spacing_icon_hover_style_declaration`). The gate emits `:hover{padding:0.3em 1em !important}` against the group-preset selector and clobbers the spacing on hover. Source trace: gate reads `$args['attr']['desktop']['value']['padding']` per the hover-specific merge at `ButtonStyle.php:357-361` (the parallel non-hover merge at lines 322-326 feeds `spacing_icon_style_declaration`, which doesn't gate on padding), fed from `$button_affecting_attrs` rebuilt at `ButtonModule.php:633-644, 650-658` from `attrs.button.decoration.spacing` only — `attrs.module.decoration.spacing` (the spacing chained from a sibling group preset) is invisible at this pass.
+**The bug.** The gate at `Packages/Module/Options/Button/Style/StyleDeclarations.php:158-170` (`spacing_icon_hover_style_declaration`) emits `:hover{padding:0.3em 1em !important}` against the group-preset selector when `'off' === $enable && ! $has_desktop_padding`. For `presetGroup` Pass-A renders, `attrsFilter` at `ButtonModule.php:842` calls `ModuleUtils::remove_button_icon_attr_value` to strip the `icon` key (ET's stated reason: icon styles need spacing-group attrs unavailable at preset level). With `attrValue.icon` stripped, the gate falls through to `defaultAttrValue.icon.enable` — which in the Pass-A pipeline arrives as the literal string `"off"`, NOT from `_all_modules_default_render_attributes.php` (which has `"on"` at lines 436-448). Source of the synthesized `"off"` default is unidentified inside ET's render pipeline. The gate fires, the rule emits with selector `body #page-container .et_pb_section .preset--group--divi-button--divi-button--{token}--{presetId}:hover` (specificity `0,3,2`), and at hover it outranks the module preset's longhand padding rule (`0,2,0`) → padding collapses to ~`4.2px / 14px`.
 
-The general pattern of buttons-as-`groupPreset.button` is fine — the bug is specifically about **where padding lives** when icon is disabled, not about group-vs-module bucket.
+**The bypass.** Add ONE single-corner value to the group preset's `button.decoration.button.desktop.value.padding`. Any single corner — value irrelevant; just flips `$has_desktop_padding` to `true` and the gate skips. Visible padding still comes from `module.decoration.spacing.padding` (module-preset path) or `button.decoration.spacing.padding` (group-preset path); the bypass corner has no rendering effect.
 
-**Three workable patterns when icon is disabled** (any one avoids the gate):
+**The cleanest site-wide fix:** patch the bucket-default `divi/button` group preset (whatever Divi flagged `is_default: true` on this bucket — typically named "Button 1" with id around `xi0l0od6dn`) to carry the bypass corner once. One preset edit fixes every plain `modulePreset`-only button on the site without per-button bindings. Skip if the site uses custom `groupPreset.button` bindings on every button (then apply per-preset).
 
-1. **Padding inline on the instance** — set `attrs.module.decoration.spacing.padding` on each button instance. The per-instance render pass merges it correctly. Empirically verified clean on Divi 5.3.3.
-2. **Padding inside the button group preset itself** (preferred for consolidation) — write `button.decoration.button.desktop.value.padding` directly on the `divi/button` group preset rather than chaining a separate `divi/spacing` preset. See the MCP recipe below for the exact attrs (Divi's VB does not currently draw a Spacing sub-panel under "Design → Button" even though the Composable Settings registry flags it, so this attr is reachable only via MCP). Any single corner is sufficient to make `$has_desktop_padding` true and bypass the gate at line 158 (the check OR's top/right/bottom/left at lines 153-156) — the 162-170 branch only fires on cross-breakpoint partials (empty desktop padding + non-empty current-breakpoint padding), not single-breakpoint partials. Populate all four corners anyway for consistent rendering:
+**Workable patterns** (any one avoids the gate, listed in order of preference):
+
+0. **Site-wide bucket-default bypass** *(strongly preferred for production sites)* — patch the `divi/button` bucket-default group preset (the one with `is_default: true`) to carry a single corner: `button.decoration.button.desktop.value.padding.top: "0px"`. Eliminates the gate rule from per-post CSS for every plain `modulePreset`-only button site-wide. Single preset edit, zero per-button changes, zero rendering-side effects (the corner value never paints — it's gate-bypass only). Does not affect buttons that explicitly bind a custom `groupPreset.button` (those use their own preset, which separately needs the bypass — see pattern 2).
+
+1. **Padding inline on the instance** — set `attrs.module.decoration.spacing.padding` on each button instance. The per-instance render pass merges it correctly. Empirically verified clean on Divi 5.3.3. Use when patterns 0 and 2 aren't viable (e.g. one-off override on a specific button).
+2. **Padding inside the button group preset itself** (preferred for consolidation, **two-attr recipe**) — write padding on the `divi/button` group preset rather than chaining a separate `divi/spacing` preset. **Two attrs, two distinct roles** (VB-verified Divi 5.4.0):
+    - **Visible-emit:** `button.decoration.spacing.desktop.value.padding` — the `spacing` styleProp pass at `ButtonModule.php:660-689` reads this in `presetGroup` mode (merged into module spacing via `array_replace_recursive` at lines 633-644) and emits the actual `padding: …` declarations against `_wrapper preset…, _wrapper preset…:hover`. This is what paints the button.
+    - **Gate-bypass:** `button.decoration.button.desktop.value.padding` — any single corner makes `$has_desktop_padding` true at `StyleDeclarations.php:153-156` and skips the hover-gate's `0.3em 1em !important` fallback at line 160. Values here never emit visible CSS — they only flip the gate.
+
+   **Both are required** when `icon.enable: "off"` and the visible padding lives in this preset. Writing only the deep-path attr produces a button with no visible padding (the recipe values are silently dropped — the spacing styleProp pass never sees them); writing only `button.decoration.spacing.padding` triggers the hover-gate and clobbers it on hover. Write the same per-corner values to both paths so the gate-bypass and the emitter agree:
 
 ```json
 {
@@ -484,13 +492,27 @@ The general pattern of buttons-as-`groupPreset.button` is fine — the bug is sp
             }
           }
         }
+      },
+      "spacing": {
+        "desktop": {
+          "value": {
+            "padding": {
+              "top": "$variable({\"type\":\"content\",\"value\":{\"name\":\"gvid-oa-space-2\",\"settings\":{}}})$",
+              "bottom": "$variable({\"type\":\"content\",\"value\":{\"name\":\"gvid-oa-space-2\",\"settings\":{}}})$",
+              "left": "$variable({\"type\":\"content\",\"value\":{\"name\":\"gvid-oa-space-4\",\"settings\":{}}})$",
+              "right": "$variable({\"type\":\"content\",\"value\":{\"name\":\"gvid-oa-space-4\",\"settings\":{}}})$",
+              "syncVertical": "on",
+              "syncHorizontal": "on"
+            }
+          }
+        }
       }
     }
   }
 }
 ```
 
-   The alternative path `button.decoration.spacing.desktop.value.padding` also satisfies the gate, but emits a duplicate padding rule via the spacing styleProp pass — prefer the `button.decoration.button.*` form to keep one source of truth. Pair with `diviops_flush_static_cache` for any pages referencing the preset; the gate's `!important` rule lives in the per-post compiled CSS at `wp-content/et-cache/{post_id}/`, not in the preset JSON.
+   Pair with `diviops_meta_flush_cache` for any pages referencing the preset; the gate's `!important` rule (and the visible-emit rule) live in the per-post compiled CSS at `wp-content/et-cache/{post_id}/`, not in the preset JSON. (Note: Divi's VB does not currently draw a Spacing sub-panel under "Design → Button" for the deep-path attr even though the Composable Settings registry flags it, so the gate-bypass slot is reachable only via MCP. The visible-emit slot at `button.decoration.spacing.padding` is reachable from VB's standard Spacing panel under the button group.)
 
 3. **Fold to a module preset** — when an entire button "look" is unique to one design context and won't be reused as a `groupPreset.button`, save it as a `divi/button` module preset (single inline-attrs bag, referenced via `modulePreset` not `groupPreset`). The module-preset render pass merges all scopes correctly and the gate never trips. Heavier than patterns 1 or 2; reach for it only when group-preset reuse isn't a goal.
 
@@ -558,23 +580,23 @@ This renders as `rgba(255,255,255,0.05)`. Used by the oa Glass Card preset for s
 
 ### MCP Endpoints for Presets
 
-- `GET /diviops/v1/presets` — Read all presets (D5 + legacy)
-- `GET /diviops/v1/preset-audit` — Audit with referenced/unreferenced analysis
-- `GET /diviops/v1/preset-scan-orphans` — List UUIDs referenced in pages but missing from the D5 registry; separates dangling orphans from D4-legacy candidates
-- `POST /diviops/v1/preset-cleanup` — Remove orphans, rename, dedup (dry_run default)
-- `POST /diviops/v1/preset-create` — Create a new preset (module or group). Supported module types include `divi/button`, `divi/heading`, `divi/text`, `divi/blurb`, `divi/section`, `divi/row`, `divi/column`, `divi/group`, and any other type Divi tracks in the D5 registry. The `attrs` shape differs by `type`: `module` uses the **full module top-level attrs tree** (e.g. `{module: {decoration: {...}}, content: {...}}`); `group` uses the **fragment for that attribute group only** (e.g. `{title: {decoration: {font: {...}}}}` for a font preset on a heading's designTitleText slot). Response payload returns the created UUID as `preset.id` (nested under a `preset` object)
-- `POST /diviops/v1/preset-update` — Update single preset (name, attrs)
+- `GET /diviops/v1/preset/list` — Read all presets (D5 + legacy)
+- `GET /diviops/v1/preset/audit` — Audit with referenced/unreferenced analysis
+- `GET /diviops/v1/preset/scan-orphans` — List UUIDs referenced in pages but missing from the D5 registry; separates dangling orphans from D4-legacy candidates
+- `POST /diviops/v1/preset/cleanup` — Remove orphans, rename, dedup (dry_run default)
+- `POST /diviops/v1/preset/create` — Create a new preset (module or group). Supported module types include `divi/button`, `divi/heading`, `divi/text`, `divi/blurb`, `divi/section`, `divi/row`, `divi/column`, `divi/group`, and any other type Divi tracks in the D5 registry. The `attrs` shape differs by `type`: `module` uses the **full module top-level attrs tree** (e.g. `{module: {decoration: {...}}, content: {...}}`); `group` uses the **fragment for that attribute group only** (e.g. `{title: {decoration: {font: {...}}}}` for a font preset on a heading's designTitleText slot). Response payload returns the created UUID as `preset.id` (nested under a `preset` object)
+- `POST /diviops/v1/preset/update` — Update single preset (name, attrs)
 
 > **MCP-authoring of Composable Settings group presets** *(VB-verified 2026-05-04 except where noted)*:
 > - ✅ **VB recognizes MCP-authored `divi/spacing` group presets with dotted `groupId`** — they appear in VB's preset dropdown for the matching slot
 > - ✅ **VB binds them correctly** to a block via `groupPreset.<dotted-path>.presetId`
 > - ✅ **Pass A preset-class CSS emits with the canonical selector format** (`.preset--group--divi-heading--divi-spacing--<modhash>--<uuid>`) matching VB-authored equivalents
 > - ✅ **Applying the preset doesn't trigger a registry rewrite** — the MCP-written record (including full-mirror `renderAttrs`) survives the VB-side bind unchanged
-> - ✅ **MCP-authored binding round-trips through a VB save unchanged** — verified on a fresh, no-inline Heading bound to `groupPreset["title.decoration.spacing"].presetId: ["yjh59i25br"]` via `replace_section`. Open in VB → save without edits → block markup re-emerges with identical keys/values (only JSON key order differs); rendered class and 80px CSS are preserved. **Implication: MCP can author Composable Settings preset bindings programmatically without depending on the user to "fix" them in VB**, provided the slot key is written in the canonical dotted-flat shape (see write-tool gotcha below).
+> - ✅ **MCP-authored binding round-trips through a VB save unchanged** — verified on a fresh, no-inline Heading bound to `groupPreset["title.decoration.spacing"].presetId: ["yjh59i25br"]` via `section_replace`. Open in VB → save without edits → block markup re-emerges with identical keys/values (only JSON key order differs); rendered class and 80px CSS are preserved. **Implication: MCP can author Composable Settings preset bindings programmatically without depending on the user to "fix" them in VB**, provided the slot key is written in the canonical dotted-flat shape (see write-tool gotcha below).
 > - ⚠️ **<!-- UNVERIFIED --> Whether VB rewrites the preset record on a direct preset edit-and-save** (preset manager → edit preset → save) is **not yet tested**. If VB strips MCP's full-mirror `renderAttrs` on resave, MCP-authored presets become byte-equivalent to VB-authored after the first user-driven preset edit. Test plan: open the preset in VB's preset manager, save without changes, dump and diff against pre-edit.
 > - **Practical implication today**: MCP can author `divi/spacing` group presets and the user can apply them in VB without runtime issues. Just be aware that an inline attr on the block silently neutralizes the binding (see "Cascade gotcha" above) — clear the inline attr in the same write call when binding a preset programmatically.
 
-> **`update_module` literal-dot key syntax for Composable Settings slots** *(verified 2026-05-04)*: by default `diviops_update_module` parses `attrs` keys as dot-notation paths. Composable Settings preset slots use **literal-dot keys** like `groupPreset["title.decoration.spacing"]` where the dots are part of the key, not path separators. Escape inner dots with `\.` to embed them literally:
+> **`module_update` literal-dot key syntax for Composable Settings slots** *(verified 2026-05-04)*: by default `diviops_module_update` parses `attrs` keys as dot-notation paths. Composable Settings preset slots use **literal-dot keys** like `groupPreset["title.decoration.spacing"]` where the dots are part of the key, not path separators. Escape inner dots with `\.` to embed them literally:
 >
 > ```jsonc
 > // ✅ CORRECT — backslash-escape the literal dots inside the slot key:
@@ -590,7 +612,7 @@ This renders as `rgba(255,255,255,0.05)`. Used by the oa Glass Card preset for s
 > ```
 >
 > The same pattern applies to all Composable Settings slots (`module\.decoration\.spacing`, `content\.decoration\.spacing`, etc.). Plain paths without literal dots — `modulePreset`, `dynamicOptionGroups.designTitleText.title.decoration.spacing`, `groupPreset.designTitleText.presetId` — work as always; the splitter only collapses `\.` when present, so the change is fully backward compatible.
-- `POST /diviops/v1/preset-reassign` — Rewrite preset refs across pages from `old_uuid` → `new_uuid`. Covers both ref types: **module-level** (`attrs.modulePreset[...]`, stacked array) and **attribute-level** (`attrs.groupPreset.<slot>.presetId`). For group-bucket swaps, also rewrites **registry chain refs** (`attrs.groupPresets.<slot>.presetId` in other presets that pull in `old_uuid`). The `scope` param controls which ref types are walked:
+- `POST /diviops/v1/preset/reassign` — Rewrite preset refs across pages from `old_uuid` → `new_uuid`. Covers both ref types: **module-level** (`attrs.modulePreset[...]`, stacked array) and **attribute-level** (`attrs.groupPreset.<slot>.presetId`). For group-bucket swaps, also rewrites **registry chain refs** (`attrs.groupPresets.<slot>.presetId` in other presets that pull in `old_uuid`). The `scope` param controls which ref types are walked:
   - `scope: "both"` (default) — auto-selects based on `new_uuid`'s bucket. Module and group identity are disjoint, so there's exactly one valid walk per swap
   - `scope: "module"` — walks `attrs.modulePreset` only. Rejects if `new_uuid` is a group preset
   - `scope: "group"` — walks `attrs.groupPreset.<slot>.presetId` + registry chain refs. Rejects if `new_uuid` is a module preset
@@ -598,7 +620,7 @@ This renders as `rgba(255,255,255,0.05)`. Used by the oa Glass Card preset for s
   - Dry-run by default. **`modulePreset` array-form (`["uuid"]`) and `groupPreset.<slot>.presetId` scalar+array forms are both rewritten; legacy single-string `attrs.modulePreset: "uuid"` (D4-migrated content) is not rewritten — normalize to array form first if needed.**
   - `strip_inline: true` (default) — module-scope only. Recursively walks `attrs` and removes only the **per-attribute leaf values** that deep-equal the new preset's value at the same path; unrelated branches (admin label, custom CSS classes, `meta.*`, `dynamicOptionGroups`, etc.) are preserved. Inline-strip only fires when the post-swap `modulePreset` stack is singular `[new_uuid]` — stacked presets keep inline so other presets in the stack can't silently override through the freshly-stripped fields. **Group-scope inline strip is not yet implemented**; when requested with `scope: "group"` the `summary.strip_advisory` field notes the skip and UUID swaps proceed unchanged
   - Response `summary` fields: `scope` (effective scope — `"module"` or `"group"` — resolved from the input `scope` + `new_uuid` bucket), `uuid_swaps` (total page-ref swaps), `module_swaps` / `group_swaps` (breakdown), `chain_swaps` (registry chain refs rewritten), `inline_stripped`, `details[]` (per-page breakdown with `module_swaps`/`group_swaps` subtotals + `modules[]` listing `ref_type`, `slot`, `action`), `chain_details[]` (per-registry-preset breakdown when chains were rewritten)
-- `POST /diviops/v1/preset-delete` — Delete single preset
+- `POST /diviops/v1/preset/delete` — Delete single preset
 
 ### Consolidation workflow
 
@@ -611,13 +633,13 @@ Typical flow for normalizing repeated styling into a reusable preset, **when mod
 
 **Purely-inline modules (no existing UUID)** have no automated batch migration path today. `diviops_preset_reassign` keys off `old_uuid`, so modules with no `modulePreset` entry can't be batch-attached to a freshly-created preset. The manual workflow:
 
-1. `diviops_get_page` (or `diviops_get_page_layout`) — find the inline modules to consolidate; pick one as the seed
+1. `diviops_page_get` (or `diviops_page_get_layout`) — find the inline modules to consolidate; pick one as the seed
 2. `diviops_preset_create` — create the preset using the seed module's inline attrs → the new preset UUID comes back as `preset.id` in the response
-3. For each previously-inline module, call `diviops_update_module` with `attrs: { modulePreset: ["<preset.id>"] }` to attach the preset reference. Inline attrs that duplicate the preset's values can be cleared in the same call by setting them to `null`, or left in place (inline wins over preset, so duplicates are harmless but redundant)
+3. For each previously-inline module, call `diviops_module_update` with `attrs: { modulePreset: ["<preset.id>"] }` to attach the preset reference. Inline attrs that duplicate the preset's values can be cleared in the same call by setting them to `null`, or left in place (inline wins over preset, so duplicates are harmless but redundant)
 
 A future tool (`preset_attach_inline` or similar) could automate step 3 by attribute-shape matching across pages — not implemented today.
 
-**Attribute-level (`groupPreset`) consolidation** across pages is now supported directly by `diviops_preset_reassign` — pass a group-bucket `new_uuid` (with scope=`"both"` default) and the tool walks `attrs.groupPreset.<slot>.presetId` in page content plus `attrs.groupPresets.<slot>.presetId` registry chain refs in one call. Inline-strip for group scope is not yet implemented; UUID swaps happen, inline attrs are untouched (the summary includes a `strip_advisory` note when this applies). Manual follow-up with `diviops_update_module` is still required if you want to clear redundant inline attrs on the matching slot's decoration subtree.
+**Attribute-level (`groupPreset`) consolidation** across pages is now supported directly by `diviops_preset_reassign` — pass a group-bucket `new_uuid` (with scope=`"both"` default) and the tool walks `attrs.groupPreset.<slot>.presetId` in page content plus `attrs.groupPresets.<slot>.presetId` registry chain refs in one call. Inline-strip for group scope is not yet implemented; UUID swaps happen, inline attrs are untouched (the summary includes a `strip_advisory` note when this applies). Manual follow-up with `diviops_module_update` is still required if you want to clear redundant inline attrs on the matching slot's decoration subtree.
 
 ### When to Use Presets vs Inline Styles
 
