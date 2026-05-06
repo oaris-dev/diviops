@@ -32,7 +32,7 @@ Base: `/wp-json/diviops/v1/`
 ### Read
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/handshake` | POST | Version + capabilities handshake for MCP server pairing (plugin version, Divi version, registered capabilities). POST because it takes a required `mcp_server_version` body param |
+| `/handshake` | POST | Per-tool capability handshake. Returns `plugin_version`, `divi.version`, and a `capabilities` map keyed by tool slug (e.g. `preset_set_default: true`). Replaces the pre-1.2.0 global version-floor gate (#486). POST because it takes a required `mcp_server_version` body param |
 | `/page/list` | GET | List pages with Divi status |
 | `/page/get/{id}` | GET | Get page details + raw content |
 | `/page/get-layout/{id}` | GET | Parsed block tree with auto-index, text preview, admin labels |

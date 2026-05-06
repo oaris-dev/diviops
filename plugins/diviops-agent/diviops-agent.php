@@ -3,7 +3,7 @@
  * Plugin Name: DiviOps Agent
  * Plugin URI: https://github.com/oaris-dev/diviops
  * Description: REST API bridge for DiviOps — connects Claude Code to your Divi 5 site for AI-powered page building and design management.
- * Version: 1.1.0
+ * Version: 1.2.0
  * Author: oaris.de
  * Author URI: https://oaris.de
  * Text Domain: diviops-agent
@@ -57,14 +57,66 @@ class DiviOps_Agent {
 	use DiviOps_Agent_Variable;
 
 	/**
-	 * Plugin version — used for handshake compatibility checks.
+	 * Plugin version — surfaced in /handshake for self-diagnosis only;
+	 * server no longer gates on it (capability map is the gate).
 	 */
-	const VERSION = '1.1.0';
+	const VERSION = '1.2.0';
 
 	/**
 	 * Minimum MCP server version this plugin is compatible with.
 	 */
 	const MIN_SERVER_VERSION = '1.1.0';
+
+	/**
+	 * Per-tool capability map emitted by /handshake.
+	 *
+	 * Each key is a post-rename MCP tool name slug (without the
+	 * `diviops_` prefix). The server's `requireCapability(<key>)`
+	 * gate at every plugin-touching tool entry compares against this
+	 * list. Tools the server adds in newer releases that aren't yet
+	 * in this list will fail fast on older plugins with an "upgrade
+	 * the diviops-agent plugin" hint, while every other tool keeps
+	 * working — no global version floor.
+	 *
+	 * Server-local tools (wp-cli wrappers, in-memory templates,
+	 * meta_ping/meta_info) don't appear here; the server skips the
+	 * capability check for them.
+	 *
+	 * Maintenance: any new route added below must add its capability
+	 * key here in the same PR.
+	 */
+	const CAPABILITIES = [
+		// canvas
+		'canvas_create', 'canvas_delete', 'canvas_get', 'canvas_list', 'canvas_update',
+		// global colors / fonts
+		'global_color_create', 'global_color_delete', 'global_color_list', 'global_color_update',
+		'global_font_list',
+		// library
+		'library_get', 'library_list', 'library_save',
+		// meta
+		'meta_find_icon', 'meta_flush_cache',
+		// module
+		'module_clone', 'module_lock', 'module_move', 'module_unlock', 'module_update',
+		// page
+		'page_create', 'page_get', 'page_get_layout', 'page_list',
+		'page_trash', 'page_update_content', 'page_update_status',
+		// preset
+		'preset_audit', 'preset_cleanup', 'preset_create', 'preset_delete',
+		'preset_reassign', 'preset_scan_orphans', 'preset_set_default', 'preset_update',
+		// render
+		'render_preview',
+		// schema
+		'schema_get_module', 'schema_get_settings', 'schema_list_modules',
+		// section
+		'section_append', 'section_get', 'section_remove', 'section_replace',
+		// theme builder
+		'tb_layout_get', 'tb_layout_update', 'tb_template_create', 'tb_template_list',
+		// validate
+		'validate_blocks',
+		// variable
+		'variable_create', 'variable_create_fluid_system', 'variable_delete',
+		'variable_list', 'variable_scan_orphans', 'variable_used_on_page',
+	];
 
 	/**
 	 * REST namespace for all endpoints.

@@ -5,11 +5,7 @@
  * Generate one at: WP Admin → Users → Your Profile → Application Passwords.
  */
 
-import {
-  MIN_PLUGIN_VERSION,
-  compareVersions,
-  type HandshakeResult,
-} from './compatibility.js';
+import { type HandshakeResult } from './compatibility.js';
 
 /**
  * Normalize quote-escape pathologies inside `$variable(...)$` token regions only.
@@ -204,12 +200,17 @@ export class WPClient {
   }
 
   /**
-   * Perform version handshake with the WP plugin.
+   * Perform a capability handshake with the WP plugin.
    *
-   * Verifies that the plugin version is compatible with this server.
-   * Throws on:
-   * - Network errors or any non-2xx HTTP response (401/403/426/503).
-   * - Plugin version below {@link MIN_PLUGIN_VERSION}.
+   * As of #486 there is no global plugin-version floor — compatibility is
+   * decided per-tool against `result.capabilities`. This method only:
+   *  - issues the request (network/auth errors propagate)
+   *  - normalizes the legacy pre-1.2.0 shape (`capabilities: string[]`)
+   *    into the post-1.2.0 shape (`capabilities: Record<string,boolean>`)
+   *    so the rest of the server can assume a uniform map.
+   *
+   * The plugin still rejects servers below its own MIN_SERVER_VERSION
+   * with HTTP 426 — that error surfaces here as a regular request error.
    */
   async handshake(
     serverVersion: string,
@@ -219,12 +220,17 @@ export class WPClient {
       body: { mcp_server_version: serverVersion },
     });
 
-    // Server-side check passed — now verify plugin meets our minimum.
-    if (compareVersions(result.plugin_version, MIN_PLUGIN_VERSION) < 0) {
-      throw new Error(
-        `WP plugin version ${result.plugin_version} is below the minimum required ${MIN_PLUGIN_VERSION}. ` +
-          'Please update the diviops-agent plugin.',
-      );
+    // Pre-1.2.0 plugins emit `capabilities` as a string[] of coarse
+    // namespace tags. Coerce to an empty map so per-tool gates fail fast
+    // with the upgrade hint instead of silently passing because of a
+    // shape mismatch.
+    if (Array.isArray(result.capabilities)) {
+      result.capabilities = {};
+    } else if (
+      result.capabilities === null ||
+      typeof result.capabilities !== 'object'
+    ) {
+      result.capabilities = {};
     }
 
     return result;

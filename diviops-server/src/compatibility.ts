@@ -1,9 +1,21 @@
 /**
- * Version compatibility between MCP server and WP plugin.
+ * Server↔plugin compatibility surface.
+ *
+ * As of #486, the global `MIN_PLUGIN_VERSION` floor is gone. Compatibility
+ * is now decided per-tool against a capability map returned by the plugin's
+ * `/handshake`. See `wp-client.ts` (handshake parse) and `index.ts`
+ * (`requireCapability` gate at each plugin-touching tool entry).
+ *
+ * Implicit floor: pre-1.2.0 plugins emit `capabilities` as a string[] of
+ * coarse namespace tags, not the per-tool map this server expects.
+ * `wp-client.ts` normalizes that legacy shape to an empty map, which makes
+ * every gated tool fail fast with the upgrade hint. So while there is no
+ * declared `MIN_PLUGIN_VERSION` constant, the capability-map shape change
+ * effectively sets a 1.2.0 floor for any tool that calls `requireCapability`.
+ *
+ * `compareVersions` is kept exported because handshake helper code and
+ * future per-tool soft-deprecation messages may want it.
  */
-
-/** Minimum WP plugin version this server requires. */
-export const MIN_PLUGIN_VERSION = '1.1.0';
 
 /**
  * Compare two semver-like version strings (supports pre-release tags).
@@ -62,6 +74,15 @@ export function compareVersions(a: string, b: string): -1 | 0 | 1 {
   return 0;
 }
 
+/**
+ * Shape returned by `POST /diviops/v1/handshake`.
+ *
+ * `capabilities` is a per-tool map keyed by post-rename tool slug
+ * (without the `diviops_` prefix). Older plugins (pre-1.2.0) emit
+ * a string[] of coarse namespace keys; the server normalizes that
+ * legacy shape to an empty map (every gated tool then fails fast
+ * with an upgrade hint, which is the intended behavior).
+ */
 export interface HandshakeResult {
   compatible: boolean;
   plugin_version: string;
@@ -70,5 +91,24 @@ export interface HandshakeResult {
     active: boolean;
     version: string | null;
   };
-  capabilities: string[];
+  capabilities: Record<string, boolean>;
+}
+
+/**
+ * Thrown when a tool handler calls `requireCapability(key)` and the
+ * plugin's handshake response did not include `key`. The server's
+ * tool dispatch wraps this into the MCP error response, surfacing
+ * the upgrade hint to the agent.
+ */
+export class MissingCapabilityError extends Error {
+  constructor(
+    public readonly capability: string,
+    public readonly pluginVersion: string,
+  ) {
+    super(
+      `Tool requires plugin capability "${capability}", which is not present in the active diviops-agent plugin (version ${pluginVersion}). ` +
+        'Upgrade the diviops-agent plugin to the version shipped alongside this MCP server release.',
+    );
+    this.name = 'MissingCapabilityError';
+  }
 }

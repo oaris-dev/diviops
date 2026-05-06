@@ -14,6 +14,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import { WPClient } from "./wp-client.js";
+import { MissingCapabilityError } from "./compatibility.js";
 import { optimizeSchema } from "./schema-optimizer.js";
 import { createWpCli } from "./wp-cli.js";
 import {
@@ -99,9 +100,83 @@ const server = new McpServer({
   version: SERVER_VERSION,
 });
 
+// ── Capability map (#486) ────────────────────────────────────────────
+
+// Per-tool capability gate. Populated by main()'s handshake call against
+// the plugin's /handshake response. Plugin-touching tools register via
+// `registerPluginTool` (below), which calls `requireCapability(slug)` at
+// entry and converts the typed `MissingCapabilityError` into an MCP error
+// response with an upgrade hint.
+//
+// Server-local tools (wp-cli wrappers, in-memory templates, meta_ping /
+// meta_info) register directly via `server.registerTool` — they have no
+// plugin dependency.
+//
+// Three distinct startup states the gate must honor (Codex review):
+//   - "ok"      — handshake succeeded, capabilities is the real map.
+//                 Missing key ⇒ MissingCapabilityError (upgrade hint).
+//   - "failed"  — handshake threw (network, auth, 5xx, etc.). The gate
+//                 must not synthesize an upgrade hint here; instead it
+//                 falls through and lets the underlying tool's
+//                 `wp.request()` surface the real error (pre-PR
+//                 behavior, e.g. "WordPress API error (401): …").
+//   - "pending" — handshake hasn't run yet (defensive; main() awaits it
+//                 before connecting transport, so this should not be
+//                 reachable in normal flow).
+type HandshakeState =
+  | { kind: "ok"; capabilities: Record<string, boolean>; pluginVersion: string }
+  | { kind: "failed" }
+  | { kind: "pending" };
+
+let handshakeState: HandshakeState = { kind: "pending" };
+
+function requireCapability(key: string): void {
+  // Only gate when we have a real capability map. On handshake failure,
+  // bypass the gate so the underlying request surfaces the actual cause
+  // (auth, network, 5xx) rather than misattributing it to the plugin
+  // version.
+  if (handshakeState.kind !== "ok") return;
+  if (!handshakeState.capabilities[key]) {
+    throw new MissingCapabilityError(key, handshakeState.pluginVersion);
+  }
+}
+
+// `any` here is deliberate, not laziness. McpServer.registerTool is a
+// multi-overload generic whose `cb`/`InputArgs` machinery doesn't compose
+// with `Parameters<typeof server.registerTool>` (overload collapse to
+// `never`). Restating its Zod-driven generics in this thin wrapper buys
+// no real safety — the per-callsite `inputSchema` Zod object at every
+// usage site below is what enforces actual argument shape; this helper
+// only adds a capability-check + an error envelope on top, both shape-
+// independent. Scope: 4 narrow suppressions, all in this 25-line block.
+/* eslint-disable @typescript-eslint/no-explicit-any */
+function registerPluginTool<H extends (args: any) => Promise<any>>(
+  name: string,
+  config: any,
+  handler: H,
+): void {
+  const key = name.replace(/^diviops_/, "");
+  const wrapped = (async (args: any) => {
+    try {
+      requireCapability(key);
+    } catch (e) {
+      if (e instanceof MissingCapabilityError) {
+        return {
+          content: [{ type: "text" as const, text: e.message }],
+          isError: true,
+        };
+      }
+      throw e;
+    }
+    return handler(args);
+  }) as any;
+  server.registerTool(name, config, wrapped);
+}
+/* eslint-enable @typescript-eslint/no-explicit-any */
+
 // ── Read Tools ───────────────────────────────────────────────────────
 
-server.registerTool(
+registerPluginTool(
   "diviops_page_list",
   {
     description:
@@ -136,7 +211,7 @@ server.registerTool(
   },
 );
 
-server.registerTool(
+registerPluginTool(
   "diviops_page_get",
   {
     description:
@@ -155,7 +230,7 @@ server.registerTool(
   },
 );
 
-server.registerTool(
+registerPluginTool(
   "diviops_page_get_layout",
   {
     description:
@@ -183,7 +258,7 @@ server.registerTool(
   },
 );
 
-server.registerTool(
+registerPluginTool(
   "diviops_schema_list_modules",
   {
     description:
@@ -199,7 +274,7 @@ server.registerTool(
   },
 );
 
-server.registerTool(
+registerPluginTool(
   "diviops_schema_get_module",
   {
     description:
@@ -230,7 +305,7 @@ server.registerTool(
   },
 );
 
-server.registerTool(
+registerPluginTool(
   "diviops_schema_get_settings",
   {
     description:
@@ -246,7 +321,7 @@ server.registerTool(
   },
 );
 
-server.registerTool(
+registerPluginTool(
   "diviops_global_color_list",
   {
     description:
@@ -262,7 +337,7 @@ server.registerTool(
   },
 );
 
-server.registerTool(
+registerPluginTool(
   "diviops_global_color_create",
   {
     description:
@@ -299,7 +374,7 @@ server.registerTool(
   },
 );
 
-server.registerTool(
+registerPluginTool(
   "diviops_global_color_update",
   {
     description:
@@ -340,7 +415,7 @@ server.registerTool(
   },
 );
 
-server.registerTool(
+registerPluginTool(
   "diviops_global_color_delete",
   {
     description:
@@ -367,7 +442,7 @@ server.registerTool(
   },
 );
 
-server.registerTool(
+registerPluginTool(
   "diviops_global_font_list",
   {
     description: "Get the global font definitions from Divi settings.",
@@ -382,7 +457,7 @@ server.registerTool(
   },
 );
 
-server.registerTool(
+registerPluginTool(
   "diviops_meta_find_icon",
   {
     description:
@@ -419,7 +494,7 @@ server.registerTool(
 
 // ── Write Tools ──────────────────────────────────────────────────────
 
-server.registerTool(
+registerPluginTool(
   "diviops_page_update_content",
   {
     description:
@@ -448,7 +523,7 @@ server.registerTool(
   },
 );
 
-server.registerTool(
+registerPluginTool(
   "diviops_render_preview",
   {
     description:
@@ -470,7 +545,7 @@ server.registerTool(
   },
 );
 
-server.registerTool(
+registerPluginTool(
   "diviops_validate_blocks",
   {
     description:
@@ -492,7 +567,7 @@ server.registerTool(
   },
 );
 
-server.registerTool(
+registerPluginTool(
   "diviops_section_append",
   {
     description:
@@ -526,7 +601,7 @@ server.registerTool(
   },
 );
 
-server.registerTool(
+registerPluginTool(
   "diviops_section_replace",
   {
     description:
@@ -573,7 +648,7 @@ server.registerTool(
   },
 );
 
-server.registerTool(
+registerPluginTool(
   "diviops_section_remove",
   {
     description:
@@ -615,7 +690,7 @@ server.registerTool(
   },
 );
 
-server.registerTool(
+registerPluginTool(
   "diviops_section_get",
   {
     description:
@@ -655,7 +730,7 @@ server.registerTool(
   },
 );
 
-server.registerTool(
+registerPluginTool(
   "diviops_module_update",
   {
     description:
@@ -712,7 +787,7 @@ server.registerTool(
   },
 );
 
-server.registerTool(
+registerPluginTool(
   "diviops_module_move",
   {
     description:
@@ -803,7 +878,7 @@ server.registerTool(
   },
 );
 
-server.registerTool(
+registerPluginTool(
   "diviops_module_lock",
   {
     description:
@@ -827,7 +902,7 @@ server.registerTool(
   },
 );
 
-server.registerTool(
+registerPluginTool(
   "diviops_module_unlock",
   {
     description:
@@ -851,7 +926,7 @@ server.registerTool(
   },
 );
 
-server.registerTool(
+registerPluginTool(
   "diviops_module_clone",
   {
     description:
@@ -877,7 +952,7 @@ server.registerTool(
   },
 );
 
-server.registerTool(
+registerPluginTool(
   "diviops_page_create",
   {
     description:
@@ -913,7 +988,7 @@ server.registerTool(
   },
 );
 
-server.registerTool(
+registerPluginTool(
   "diviops_page_trash",
   {
     description:
@@ -952,7 +1027,7 @@ server.registerTool(
   },
 );
 
-server.registerTool(
+registerPluginTool(
   "diviops_page_update_status",
   {
     description:
@@ -997,7 +1072,7 @@ server.registerTool(
 
 // ── Preset Tools ────────────────────────────────────────────────────
 
-server.registerTool(
+registerPluginTool(
   "diviops_preset_audit",
   {
     description:
@@ -1013,7 +1088,7 @@ server.registerTool(
   },
 );
 
-server.registerTool(
+registerPluginTool(
   "diviops_preset_cleanup",
   {
     description:
@@ -1071,7 +1146,7 @@ server.registerTool(
   },
 );
 
-server.registerTool(
+registerPluginTool(
   "diviops_preset_update",
   {
     description:
@@ -1111,7 +1186,7 @@ server.registerTool(
   },
 );
 
-server.registerTool(
+registerPluginTool(
   "diviops_preset_delete",
   {
     description:
@@ -1141,7 +1216,7 @@ server.registerTool(
   },
 );
 
-server.registerTool(
+registerPluginTool(
   "diviops_preset_create",
   {
     description:
@@ -1217,7 +1292,7 @@ server.registerTool(
   },
 );
 
-server.registerTool(
+registerPluginTool(
   "diviops_preset_reassign",
   {
     description:
@@ -1281,7 +1356,7 @@ server.registerTool(
   },
 );
 
-server.registerTool(
+registerPluginTool(
   "diviops_preset_scan_orphans",
   {
     description:
@@ -1297,7 +1372,7 @@ server.registerTool(
   },
 );
 
-server.registerTool(
+registerPluginTool(
   "diviops_preset_set_default",
   {
     description:
@@ -1349,7 +1424,7 @@ server.registerTool(
 
 // ── Library Tools ───────────────────────────────────────────────────
 
-server.registerTool(
+registerPluginTool(
   "diviops_library_list",
   {
     description:
@@ -1386,7 +1461,7 @@ server.registerTool(
   },
 );
 
-server.registerTool(
+registerPluginTool(
   "diviops_library_get",
   {
     description:
@@ -1405,7 +1480,7 @@ server.registerTool(
   },
 );
 
-server.registerTool(
+registerPluginTool(
   "diviops_library_save",
   {
     description:
@@ -1449,7 +1524,7 @@ server.registerTool(
 
 // ── Theme Builder Tools ─────────────────────────────────────────────
 
-server.registerTool(
+registerPluginTool(
   "diviops_tb_template_list",
   {
     description:
@@ -1477,7 +1552,7 @@ server.registerTool(
   },
 );
 
-server.registerTool(
+registerPluginTool(
   "diviops_tb_layout_get",
   {
     description:
@@ -1500,7 +1575,7 @@ server.registerTool(
   },
 );
 
-server.registerTool(
+registerPluginTool(
   "diviops_tb_layout_update",
   {
     description:
@@ -1523,7 +1598,7 @@ server.registerTool(
   },
 );
 
-server.registerTool(
+registerPluginTool(
   "diviops_tb_template_create",
   {
     description:
@@ -1566,7 +1641,7 @@ server.registerTool(
 
 // ── Canvas Tools ────────────────────────────────────────────────────
 
-server.registerTool(
+registerPluginTool(
   "diviops_canvas_create",
   {
     description:
@@ -1620,7 +1695,7 @@ server.registerTool(
   },
 );
 
-server.registerTool(
+registerPluginTool(
   "diviops_canvas_list",
   {
     description:
@@ -1653,7 +1728,7 @@ server.registerTool(
   },
 );
 
-server.registerTool(
+registerPluginTool(
   "diviops_canvas_get",
   {
     description: "Get a canvas's block content and metadata.",
@@ -1673,7 +1748,7 @@ server.registerTool(
   },
 );
 
-server.registerTool(
+registerPluginTool(
   "diviops_canvas_update",
   {
     description:
@@ -1710,7 +1785,7 @@ server.registerTool(
   },
 );
 
-server.registerTool(
+registerPluginTool(
   "diviops_canvas_delete",
   {
     description: "Delete a canvas. This permanently removes the canvas post.",
@@ -2304,7 +2379,7 @@ server.registerTool(
 
 // ── Variable Manager CRUD ─────────────────────────────────────────────
 
-server.registerTool(
+registerPluginTool(
   "diviops_variable_list",
   {
     description:
@@ -2335,7 +2410,7 @@ server.registerTool(
   },
 );
 
-server.registerTool(
+registerPluginTool(
   "diviops_variable_create",
   {
     description:
@@ -2426,7 +2501,7 @@ server.registerTool(
   },
 );
 
-server.registerTool(
+registerPluginTool(
   "diviops_variable_create_fluid_system",
   {
     description:
@@ -2639,7 +2714,7 @@ server.registerTool(
   },
 );
 
-server.registerTool(
+registerPluginTool(
   "diviops_variable_delete",
   {
     description:
@@ -2672,7 +2747,7 @@ server.registerTool(
   },
 );
 
-server.registerTool(
+registerPluginTool(
   "diviops_variable_scan_orphans",
   {
     description:
@@ -2688,7 +2763,7 @@ server.registerTool(
   },
 );
 
-server.registerTool(
+registerPluginTool(
   "diviops_variable_used_on_page",
   {
     description:
@@ -2713,7 +2788,7 @@ server.registerTool(
   },
 );
 
-server.registerTool(
+registerPluginTool(
   "diviops_meta_flush_cache",
   {
     description:
@@ -2764,27 +2839,43 @@ server.registerTool(
 // ── Start ────────────────────────────────────────────────────────────
 
 async function main() {
-  // Version handshake — verify plugin compatibility before accepting tool calls.
+  // Capability handshake — populate the per-tool gate map (#486).
   try {
     const hs = await wp.handshake(SERVER_VERSION);
+    handshakeState = {
+      kind: "ok",
+      capabilities: hs.capabilities,
+      pluginVersion: hs.plugin_version,
+    };
     const diviInfo = hs.divi.active
       ? `Divi ${hs.divi.version ?? "unknown"}`
       : "Divi not active";
+    const capCount = Object.keys(hs.capabilities).filter(
+      (k) => hs.capabilities[k],
+    ).length;
     console.error(
-      `Handshake OK: plugin ${hs.plugin_version}, ${diviInfo}, ${hs.capabilities.length} capabilities`,
+      `Handshake OK: plugin ${hs.plugin_version}, ${diviInfo}, ${capCount} capabilities`,
     );
+    if (capCount === 0) {
+      console.error(
+        "Warning: plugin returned an empty capability map. Plugin-touching tools will fail with an upgrade hint. Update diviops-agent to ≥1.2.0.",
+      );
+    }
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error);
-    // Version mismatch — fatal (HTTP 426 from plugin, or client-side minimum check).
-    if (
-      msg.includes("WordPress API error (426)") ||
-      msg.includes("below the minimum required")
-    ) {
-      console.error(`Version mismatch: ${msg}`);
+    // Plugin rejected this server as too old (HTTP 426) — fatal.
+    if (msg.includes("WordPress API error (426)")) {
+      console.error(`Server too old for plugin: ${msg}`);
       process.exit(1);
     }
-    // Other errors (network, auth) — warn but continue, tools will fail individually.
-    console.error(`Handshake warning: ${msg}`);
+    // Network / auth / other transient failure — mark the gate as
+    // failed so plugin-touching tools fall through to their own
+    // wp.request() calls and surface the real error (401, 5xx, etc.)
+    // instead of being misreported as missing capabilities.
+    // Codex review on PR #525: pre-#486 behavior surfaced the actual
+    // cause; the gate must preserve that.
+    handshakeState = { kind: "failed" };
+    console.error(`Handshake warning (gate disabled): ${msg}`);
   }
 
   const transport = new StdioServerTransport();

@@ -320,8 +320,11 @@ Ensure `WP_URL`, `WP_USER`, and `WP_APP_PASSWORD` are all set. Check your `claud
 - Verify the WP plugin is active: visit `{WP_URL}/wp-json/diviops/v1/schema/settings` in your browser
 - Check Application Password is correct (try with curl first)
 
-### "Version mismatch" error
-The MCP server and WP plugin versions are incompatible. Update whichever side is older.
+### "This tool requires plugin capability" error
+A specific tool failed at the per-tool capability gate (#486) because the active diviops-agent plugin doesn't advertise that capability. Update the plugin to ≥ 1.2.0 (the version that introduced the capability map). Other tools the older plugin does support keep working — the gate is per-tool, not a global floor.
+
+### "Server too old for plugin" error
+The plugin returned HTTP 426 because this MCP server is below the plugin's `MIN_SERVER_VERSION`. Update the MCP server (`npm install -g @diviops/mcp-server@latest` or rebuild from source).
 
 ### "Permission denied" errors
 - The WP user must have `edit_posts` capability (Editor or Admin role)
