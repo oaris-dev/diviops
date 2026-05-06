@@ -1,6 +1,6 @@
 # MCP Tool Reference
 
-48 tools for reading and writing Divi 5 pages, presets, variables, library, canvas, Theme Builder, and WP-CLI.
+49 tools for reading and writing Divi 5 pages, presets, variables, library, canvas, Theme Builder, and WP-CLI.
 
 ## Read Tools (26)
 
@@ -22,7 +22,7 @@
 - `diviops_variable_list` — list design token variables, filter by type (`colors`, `numbers`, etc.) or ID prefix (e.g. `gcid-oa-` for oa design system colors, `gvid-oa-` for numbers)
 - `diviops_variable_scan_orphans` — find `gvid-`/`gcid-` refs with no backing Variable Manager entry (orphans render as invalid CSS when the `$variable()$` resolver falls through) plus variables defined but referenced nowhere (unused — deletion candidates). Scans pages, Theme Builder layouts (`et_header_layout` / `et_body_layout` / `et_footer_layout`), Divi Library items (`et_pb_layout`), canvas pages (`et_pb_canvas`), and the preset registry. Symmetric to `diviops_preset_scan_orphans`
 
-## Write Tools (20)
+## Write Tools (21)
 
 - `diviops_page_create` — create new page with Divi content
 - `diviops_page_update_content` — full page rewrite
@@ -39,7 +39,8 @@
 - `diviops_tb_layout_update` — update Theme Builder header/footer/body content
 - `diviops_tb_template_create` — create Theme Builder template with header/footer and conditions
 - `diviops_canvas_create` — create off-canvas workspace (popups, modals, menus) linked to a page
-- `diviops_canvas_update` — update canvas content and metadata
+- `diviops_canvas_duplicate` — deep-copy a canvas (content + parent/append/z-index meta). Default copy title `<source> (Copy)` auto-suffixes on collision; explicit `title` collisions return 409. Supports `dry_run`
+- `diviops_canvas_update` — update canvas content and/or metadata; pass any subset (e.g. `{canvas_post_id, title}` renames without touching content)
 - `diviops_canvas_delete` — remove a canvas
 - `diviops_variable_create` — create a design token variable (colors: `gcid-*` + hex, numbers: `gvid-*` + CSS value). For `type=numbers` fluid tokens, pass `min`+`max` shorthand (anchors default to 320px/1920px) or explicit `targets` like `{"320px":"20px","1920px":"60px"}` — server generates arithmetically-correct `clamp()` instead of hand-written math that silently under-reaches the stated max. All-px inputs emit px (root-agnostic). Rem inputs OR rem output require explicit opt-in: pass `output_unit="rem"` (accepts the 1rem=16px default) or `root_font_size_px:N` (declares the site's actual root, e.g. `10` for `html { font-size: 62.5% }`, `20` for `html { font-size: 20px }`). Mutually exclusive with `value`
 - `diviops_variable_delete` — delete a variable by ID (auto-detects storage from prefix). Refuses with HTTP 409 when live references exist unless `force=true`; run `diviops_variable_scan_orphans` to find where they live. Returns HTTP 403 for Divi's customizer-bound defaults (`gcid-primary-color`, `gcid-secondary-color`, `gcid-heading-color`, `gcid-body-color`, `gcid-link-color`) — those are managed via WP Customizer theme options, not this tool

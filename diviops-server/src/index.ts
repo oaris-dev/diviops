@@ -1752,7 +1752,7 @@ registerPluginTool(
   "diviops_canvas_update",
   {
     description:
-      "Update a canvas's content and/or metadata. Content replaces the entire canvas.",
+      "Update a canvas's content and/or metadata. Pass any subset of fields — e.g. `{canvas_post_id, title}` to rename without touching content. `content` replaces the entire canvas when present. At least one of content/title/append_to_main/z_index is required.",
     inputSchema: {
       canvas_post_id: z.number().describe("Canvas post ID"),
       content: z
@@ -1774,6 +1774,43 @@ registerPluginTool(
     if (append_to_main !== undefined) body.append_to_main = append_to_main;
     if (z_index !== undefined) body.z_index = z_index;
     const result = await wp.request(`/canvas/update/${canvas_post_id}`, {
+      method: "POST",
+      body,
+    });
+    return {
+      content: [
+        { type: "text" as const, text: JSON.stringify(result) },
+      ],
+    };
+  },
+);
+
+registerPluginTool(
+  "diviops_canvas_duplicate",
+  {
+    description:
+      "Deep-copy a canvas (post_content + canvas-specific meta: parent page, append_to_main, z_index). Source canvas untouched. Default copy title is `<source title> (Copy)` with auto-suffix on collision (Copy 2, Copy 3, …) — use this for repeat-clone workflows. Pass an explicit `title` for a deliberate name; collisions return 409 instead of silently auto-suffixing. Pass `dry_run: true` to preview without mutating.",
+    inputSchema: {
+      canvas_post_id: z.number().describe("Source canvas post ID"),
+      title: z
+        .string()
+        .optional()
+        .describe(
+          "Optional explicit title for the duplicate. Omit to auto-derive `<source> (Copy [N])`. Explicit collisions return 409.",
+        ),
+      dry_run: z
+        .boolean()
+        .optional()
+        .default(false)
+        .describe(
+          "When true, return the change plan without creating the canvas.",
+        ),
+    },
+  },
+  async ({ canvas_post_id, title, dry_run }) => {
+    const body: Record<string, unknown> = { dry_run: dry_run ?? false };
+    if (title !== undefined) body.title = title;
+    const result = await wp.request(`/canvas/duplicate/${canvas_post_id}`, {
       method: "POST",
       body,
     });

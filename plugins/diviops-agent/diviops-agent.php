@@ -3,7 +3,7 @@
  * Plugin Name: DiviOps Agent
  * Plugin URI: https://github.com/oaris-dev/diviops
  * Description: REST API bridge for DiviOps — connects Claude Code to your Divi 5 site for AI-powered page building and design management.
- * Version: 1.2.0
+ * Version: 1.3.0
  * Author: oaris.de
  * Author URI: https://oaris.de
  * Text Domain: diviops-agent
@@ -60,7 +60,7 @@ class DiviOps_Agent {
 	 * Plugin version — surfaced in /handshake for self-diagnosis only;
 	 * server no longer gates on it (capability map is the gate).
 	 */
-	const VERSION = '1.2.0';
+	const VERSION = '1.3.0';
 
 	/**
 	 * Minimum MCP server version this plugin is compatible with.
@@ -87,7 +87,7 @@ class DiviOps_Agent {
 	 */
 	const CAPABILITIES = [
 		// canvas
-		'canvas_create', 'canvas_delete', 'canvas_get', 'canvas_list', 'canvas_update',
+		'canvas_create', 'canvas_delete', 'canvas_duplicate', 'canvas_get', 'canvas_list', 'canvas_update',
 		// global colors / fonts
 		'global_color_create', 'global_color_delete', 'global_color_list', 'global_color_update',
 		'global_font_list',
@@ -998,6 +998,16 @@ class DiviOps_Agent {
 			'methods'             => 'POST',
 			'callback'            => [ __CLASS__, 'canvas_delete' ],
 			'permission_callback' => [ __CLASS__, 'check_write_permission' ],
+		] );
+
+		register_rest_route( self::REST_NAMESPACE, '/canvas/duplicate/(?P<id>\d+)', [
+			'methods'             => 'POST',
+			'callback'            => [ __CLASS__, 'canvas_duplicate' ],
+			'permission_callback' => [ __CLASS__, 'check_write_permission' ],
+			'args'                => [
+				'title'   => [ 'required' => false, 'type' => 'string' ],
+				'dry_run' => [ 'required' => false, 'type' => 'boolean', 'default' => false ],
+			],
 		] );
 
 		// ── Variable Manager CRUD ──────────────────────────────────────

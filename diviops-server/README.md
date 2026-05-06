@@ -96,7 +96,7 @@ The server connects via standard WordPress REST API and works with any environme
 
 > **WP-CLI note:** `WP_PATH` keeps the existing Local by Flywheel behavior by running `wp` directly on the host filesystem. For Docker-based environments (DDEV, wp-env, DevKinsta, WordPress Studio), set `WP_CLI_CMD` to the wrapper command instead. When `WP_CLI_CMD` is set, the server executes the wrapper from `WP_PATH` if provided, otherwise from its current working directory. The MCP server still validates the requested WP-CLI subcommand against its allowlist before executing either path.
 
-## Available Tools (65)
+## Available Tools (66)
 
 ### Read (30)
 | Tool | Description |
@@ -132,7 +132,7 @@ The server connects via standard WordPress REST API and works with any environme
 | `diviops_scf_field_group_list` | List all SCF/ACF field groups (post_name = ACF key, post_title, post_status, post_modified). Queries the `acf-field-group` post type via `wp post list` (works on SCF 6.8.4+ and older ACF) |
 | `diviops_scf_field_group_get` | Fetch a single SCF/ACF field-group post by ACF key (`group_abc123` → post_name) or numeric WP post ID. For the parsed/structured field tree, use `diviops_scf_export --field-groups=<key> --stdout` |
 
-### Write (33)
+### Write (34)
 | Tool | Description |
 |------|-------------|
 | `diviops_page_create` | Create a new page with optional Divi content |
@@ -163,7 +163,8 @@ The server connects via standard WordPress REST API and works with any environme
 | `diviops_variable_create_fluid_system` | Batch-emit a fluid typography + spacing + radius variable set in one call. Mirrors Divi 5.4.0's Variable Generator Modal at the algorithm level (clamp() math is identical to `diviops_variable_create`'s fluid mode) but layers profile-selectable anchors over it: `divi-default` (360→1350) matches ET's defaults, `wide` (320→1920) matches the diviops convention, `custom` takes explicit anchors. Each category is independent and optional. Typography uses modular-scale chains (named ratios `major-third`/`perfect-fifth`/`golden`/etc., or raw numbers) — h1 = largest, hN = base. Spacing/radius support `linear` or `geometric` step distributions. `dry_run: true` returns the full plan without persisting; `overwrite: false` (default) skips existing IDs. Single atomic write to the registry — mid-batch failures roll back cleanly |
 | `diviops_variable_delete` | Delete a variable by ID. Returns HTTP 409 when live references exist unless `force=true` (use `diviops_variable_scan_orphans` to find reference locations). Returns HTTP 403 for Divi's customizer-bound defaults (`gcid-primary-color`, `gcid-secondary-color`, `gcid-heading-color`, `gcid-body-color`, `gcid-link-color` — managed via WP Customizer) |
 | `diviops_canvas_create` | Create a canvas page |
-| `diviops_canvas_update` | Update canvas content |
+| `diviops_canvas_duplicate` | Deep-copy a canvas (content + canvas-specific meta). Default copy title `<source> (Copy)` auto-suffixes on collision (Copy 2, …); explicit `title` collisions return 409. Supports `dry_run` |
+| `diviops_canvas_update` | Update canvas content and/or metadata. Pass any subset of fields — `{canvas_post_id, title}` renames without touching content |
 | `diviops_canvas_delete` | Delete a canvas page |
 | `diviops_scf_export` | Export SCF schema (field groups, post types, taxonomies, options pages) as JSON to a directory under the safe-root, or to stdout. Wraps `wp scf json export` |
 | `diviops_scf_import` | Import SCF schema from a JSON file (mutates DB; idempotent — existing items are updated). Wraps `wp scf json import <file>` |
