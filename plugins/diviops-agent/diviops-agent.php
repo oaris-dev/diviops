@@ -3,7 +3,7 @@
  * Plugin Name: DiviOps Agent
  * Plugin URI: https://github.com/oaris-dev/diviops
  * Description: REST API bridge for DiviOps — connects Claude Code to your Divi 5 site for AI-powered page building and design management.
- * Version: 1.3.0
+ * Version: 1.3.1
  * Author: oaris.de
  * Author URI: https://oaris.de
  * Text Domain: diviops-agent
@@ -60,7 +60,7 @@ class DiviOps_Agent {
 	 * Plugin version — surfaced in /handshake for self-diagnosis only;
 	 * server no longer gates on it (capability map is the gate).
 	 */
-	const VERSION = '1.3.0';
+	const VERSION = '1.3.1';
 
 	/**
 	 * Minimum MCP server version this plugin is compatible with.
@@ -106,7 +106,7 @@ class DiviOps_Agent {
 		// render
 		'render_preview',
 		// schema
-		'schema_get_module', 'schema_get_settings', 'schema_list_modules',
+		'schema_get_module', 'schema_get_module_dump_all', 'schema_get_settings', 'schema_list_modules',
 		// section
 		'section_append', 'section_get', 'section_remove', 'section_replace',
 		// theme builder
@@ -347,6 +347,12 @@ class DiviOps_Agent {
 		register_rest_route( self::REST_NAMESPACE, '/schema/modules', [
 			'methods'             => 'GET',
 			'callback'            => [ __CLASS__, 'schema_list_modules' ],
+			'permission_callback' => [ __CLASS__, 'check_read_permission' ],
+		] );
+
+		register_rest_route( self::REST_NAMESPACE, '/schema/module/dump-all', [
+			'methods'             => 'GET',
+			'callback'            => [ __CLASS__, 'schema_get_module_dump_all' ],
 			'permission_callback' => [ __CLASS__, 'check_read_permission' ],
 		] );
 

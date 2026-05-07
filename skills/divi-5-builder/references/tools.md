@@ -7,7 +7,7 @@
 - `diviops_meta_ping` — verify WordPress + plugin connection
 - `diviops_meta_info` — DiviOps server identity, version, license type, capabilities
 - `diviops_page_list` / `diviops_page_get` / `diviops_page_get_layout` — read pages (layout returns slim targeting metadata by default; use `full: true` for complete attrs)
-- `diviops_schema_list_modules` / `diviops_schema_get_module` — discover modules and attributes (optimized schema by default)
+- `diviops_schema_list_modules` / `diviops_schema_get_module` — discover modules and attributes (optimized schema by default). `diviops_schema_get_module({ mode: "dump_all" })` snapshots every Divi module + a `schema_version` hash + `divi_version` in one call — build-time entry point for the skill regen pipeline, not a normal authoring step
 - `diviops_schema_get_settings` / `diviops_global_color_list` / `diviops_global_font_list` — site config
 - `diviops_meta_find_icon` — search 1,989 icons by keyword (returns unicode, type, weight)
 - `diviops_section_get` — get a section's markup by admin label or text content

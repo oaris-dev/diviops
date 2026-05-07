@@ -278,21 +278,63 @@ registerPluginTool(
   "diviops_schema_get_module",
   {
     description:
-      "Get the attribute schema for a Divi module. Returns optimized schema by default (~70% smaller) with content-relevant fields only. Use raw: true for the full schema including CSS selectors and VB metadata.",
+      "Get the attribute schema for a Divi module. Default mode 'single' returns one module's schema (optimized, ~70% smaller; pass raw: true for full). Mode 'dump_all' snapshots every Divi module in one call and includes a `schema_version` hash over the canonical *PresetAttrsMap.php files — build-time entry point for the skill regen pipeline; ignores `module_name` and `raw`.",
     inputSchema: {
+      mode: z
+        .enum(["single", "dump_all"])
+        .optional()
+        .default("single")
+        .describe("'single' (default): return one module's schema. 'dump_all': return every module keyed by name plus schema_version + divi_version."),
       module_name: z
         .string()
+        .optional()
         .describe(
-          'Module name, e.g. "text", "image", "accordion", or full "divi/text"',
+          'Module name, e.g. "text", "image", "accordion", or full "divi/text". Required when mode="single"; ignored when mode="dump_all".',
         ),
       raw: z
         .boolean()
         .optional()
         .default(false)
-        .describe("Return full schema including CSS selectors and VB metadata"),
+        .describe("Return full schema including CSS selectors and VB metadata. Applies to mode='single' only."),
     },
   },
-  async ({ module_name, raw }) => {
+  async ({ mode, module_name, raw }) => {
+    if (mode === "dump_all") {
+      // Capability gate for the dump-all surface: handled here (rather
+      // than the wrapper's auto-derived `schema_get_module` key) so older
+      // plugins without /schema/module/dump-all surface a clean upgrade
+      // hint instead of a 404 from wp.request.
+      if (
+        handshakeState.kind === "ok" &&
+        !handshakeState.capabilities["schema_get_module_dump_all"]
+      ) {
+        const err = new MissingCapabilityError(
+          "schema_get_module_dump_all",
+          handshakeState.pluginVersion,
+        );
+        return {
+          content: [{ type: "text" as const, text: err.message }],
+          isError: true,
+        };
+      }
+      const result = await wp.request("/schema/module/dump-all");
+      return {
+        content: [{ type: "text" as const, text: JSON.stringify(result) }],
+      };
+    }
+
+    if (!module_name) {
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: "module_name is required when mode='single'",
+          },
+        ],
+        isError: true,
+      };
+    }
+
     const result = await wp.request(
       `/schema/module/${encodeURIComponent(module_name)}`,
     );

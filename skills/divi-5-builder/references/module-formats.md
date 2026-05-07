@@ -331,4 +331,24 @@ The Pro version includes per-module element maps (elements, innerContent shapes,
 
 Upgrade to Pro: https://diviops.com
 
+<!-- BEGIN GENERATED:path-index -->
+
+## Generated path index (appendix)
+
+> ⚠️ **APPENDIX — temporary.** This section is generated mechanically by `diviops-server/scripts/regen-module-formats.mjs` from `diviops_schema_get_module` dump-all output. Superseded once the in-place cutover lands; until then it lives at the bottom of the file as a flat path index alongside the human-authored Tier 3 prose. Do **not** edit between sentinels — edits are clobbered on regen.
+
+> Generated against Divi `5.4.1`, schema `c5046273f617…`.
+
+Per CLAUDE.md "Suite architecture coherence": schema dump is the canonical index; VB-verified prose is the canonical interpretation. On conflicts, the prose above wins (per `feedback_vb_first_verification`).
+
+<!-- TIER: free -->
+#### `divi/text`
+
+- **content** — `content.decoration.bodyFont`, `content.decoration.headingFont` _(+innerContent)_
+- **module** — `module.decoration.animation`, `module.decoration.attributes`, `module.decoration.background`, `module.decoration.border`, `module.decoration.boxShadow`, `module.decoration.conditions`, `module.decoration.disabledOn`, `module.decoration.filters`, `module.decoration.interactions`, `module.decoration.layout`, `module.decoration.order`, `module.decoration.overflow`, `module.decoration.position`, `module.decoration.scroll`, `module.decoration.sizing`, `module.decoration.spacing`, `module.decoration.sticky`, `module.decoration.transform`, `module.decoration.transition`, `module.decoration.zIndex` _(+advanced)_
+
+
+<!-- END GENERATED:path-index -->
+
+
 [^button-deep-path]: Render-relevant keys at `button.decoration.button.desktop.value.*` are limited to `enable` (migration trigger — `"off"` causes Divi to strip `button.decoration`; never write without intent), `icon.*` (visible icon configuration), `padding` (icon-spacing gate — does **not** emit visible padding CSS, but values do flip the hover-gate behavior at `StyleDeclarations.php:153-160`; required as gate-bypass on every `divi/button` group preset that doesn't carry padding here, see [presets.md → Hover-padding gate on Button group presets](presets.md#hover-padding-gate-on-button-group-presets-broad-scope-upstream-tracked)), and `alignment` (deprecated, forwarded to `decoration.sizing.alignment`). Anything else (e.g. `backgroundColor`, `textColor`, `font`) parses, validates, saves, then no-ops at render. VB-verified Divi 5.4.0.

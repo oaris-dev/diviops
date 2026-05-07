@@ -108,7 +108,7 @@ The server connects via standard WordPress REST API and works with any environme
 | `diviops_page_get_layout` | Get parsed block tree (layout structure) |
 | `diviops_section_get` | Get a single section's markup by admin label |
 | `diviops_schema_list_modules` | List all available Divi modules |
-| `diviops_schema_get_module` | Get attribute schema for a module (optimized by default, `raw: true` for full) |
+| `diviops_schema_get_module` | Get attribute schema for a module. Default `mode: "single"` returns one module's schema (optimized; `raw: true` for full). `mode: "dump_all"` snapshots every Divi module in one call along with a `schema_version` hash over `*PresetAttrsMap.php` and a `divi_version` field — build-time entry point for the skill regen pipeline. |
 | `diviops_schema_get_settings` | Get Divi site settings and theme options |
 | `diviops_global_color_list` | Get global color palette |
 | `diviops_global_font_list` | Get global font definitions |
