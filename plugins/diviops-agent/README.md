@@ -1,6 +1,10 @@
 # DiviOps Agent
 
-WordPress plugin that exposes Divi 5 Visual Builder data and operations via authenticated REST API endpoints. Companion to the [Divi 5 MCP Server](../../../diviops-server/).
+**DiviOps Agent — REST API bridge for AI-driven WordPress site authoring.**
+
+The WordPress companion plugin for `@diviops/mcp-server`. Pairs with the MCP server to expose Divi 5 page authoring, SCF management, CPT/post population, data model introspection, and site auditing as `/diviops/v1/*` REST endpoints behind Application Password auth.
+
+> **Don't use this plugin standalone** — it's the WordPress side of a two-piece suite; install + configure the [DiviOps MCP Server](../../../diviops-server/) next.
 
 ## Requirements
 
@@ -12,89 +16,39 @@ WordPress plugin that exposes Divi 5 Visual Builder data and operations via auth
 ## Installation
 
 1. Zip this directory: `cd wp-content/plugins && zip -r diviops-agent.zip diviops-agent/`
-2. Go to **WP Admin → Plugins → Add New → Upload Plugin**
-3. Upload `diviops-agent.zip` and activate
-4. If Divi is not active, all endpoints return `503 divi_unavailable`
+2. **WP Admin → Plugins → Add New → Upload Plugin** — upload `diviops-agent.zip` and activate.
+3. Create an Application Password under **WP Admin → Users → Profile → Application Passwords**.
 
-## Upgrade From The Previous Plugin Name
+If Divi is not active, all endpoints return `503 divi_unavailable`. See [setup-guide.md](../../../docs/setup-guide.md) for the full onboarding walkthrough including MCP server registration.
 
-1. Deactivate the old `Divi MCP Agent` plugin.
-2. Install or copy `diviops-agent/`.
-3. Activate `DiviOps Agent`.
-4. Keep your MCP server config pointed at `/wp-json/diviops/v1/`; the REST namespace is unchanged.
+## Pairing with the MCP server
 
-See [setup guide](../../../docs/setup-guide.md) for full onboarding with MCP server registration.
+Communication is via the `/diviops/v1/*` REST namespace, authenticated with Application Passwords. The MCP server reads the plugin's per-tool capability map at startup (the `/handshake` endpoint) and only exposes tools the plugin advertises support for — so you can update the plugin and server independently and unsupported tools fail with a clear `capability_missing` error rather than silent runtime breakage.
 
-## REST Endpoints
+After installing the plugin, register the MCP server with Claude:
 
-Base: `/wp-json/diviops/v1/`
+```bash
+claude mcp add diviops-mcp \
+  --env WP_URL=http://your-site.local \
+  --env WP_USER=your-wp-username \
+  --env WP_APP_PASSWORD=xxxxXXXXxxxxXXXXxxxxXXXX \
+  -- npx @diviops/mcp-server
+```
 
-### Read
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/handshake` | POST | Per-tool capability handshake. Returns `plugin_version`, `divi.version`, and a `capabilities` map keyed by tool slug (e.g. `preset_set_default: true`). Replaces the pre-1.2.0 global version-floor gate (#486). POST because it takes a required `mcp_server_version` body param |
-| `/page/list` | GET | List pages with Divi status |
-| `/page/get/{id}` | GET | Get page details + raw content |
-| `/page/get-layout/{id}` | GET | Parsed block tree with auto-index, text preview, admin labels |
-| `/section/get/{id}?label=` | GET | Section markup by admin label |
-| `/schema/modules` | GET | List all Divi modules |
-| `/schema/module/{name}` | GET | Module attribute schema |
-| `/schema/settings` | GET | Divi theme settings |
-| `/global-color/list` | GET | Global color palette |
-| `/global-font/list` | GET | Global font definitions |
-| `/meta/find-icon?q=&type=&limit=` | GET | Search 1,989 icons by keyword |
-| `/preset/list` | GET | All presets (D5 + legacy) |
-| `/preset/audit` | GET | Preset analysis with referenced/unreferenced breakdown + `orphan_default_pointers` (per-bucket `default` pointers referencing UUIDs missing from `items[]`) |
-| `/preset/scan-orphans` | GET | List preset UUIDs referenced in pages but missing from the D5 registry (dangling vs D4-legacy) |
-| `/variable/list` | GET | List design token variables (filter by type, prefix) |
-| `/variable/scan-orphans` | GET | Scan variable refs across pages, Theme Builder layouts, Divi Library items, canvas pages, and the preset registry. Reports both orphans (`gvid-`/`gcid-` refs missing from the registry) and unused variables (defined but never referenced — deletion candidates) |
-| `/variable/used-on-page/{id}` | GET | Detect which gvid- variable IDs a single page emits (post_content + active TB layouts + canvases + presets) |
-| `/canvas/list` | GET | List canvas items (reusable block containers) |
-| `/canvas/get/{id}` | GET | Get canvas content |
-| `/library/items` | GET | List Divi Library items (filter by type, scope) |
-| `/library/item/{id}` | GET | Get library item content |
-| `/render` | POST | Render block markup to HTML (read-only, no state change) |
-| `/validate/blocks` | POST | Validate block markup structure + known pitfalls (read-only) |
-| `/theme-builder/template/list` | GET | List Theme Builder templates with conditions |
-| `/theme-builder/layout/get/{id}` | GET | Get Theme Builder layout content |
+See the [DiviOps MCP Server README](../../../diviops-server/) for full setup and the response contract.
 
-### Write
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/page/create` | POST | Create new page |
-| `/page/update-content/{id}` | POST | Full content rewrite |
-| `/page/trash/{id}` | POST | Trash (default) or permanently delete (`force=true`) a page; idempotent; supports `dry_run` |
-| `/page/update-status/{id}` | POST | Update post_status (publish/draft/private/pending/future). `future` requires `date_gmt` (ISO 8601 UTC); supports `dry_run` |
-| `/section/append/{id}` | POST | Append section to page |
-| `/section/replace/{id}` | POST | Replace section by label |
-| `/section/remove/{id}` | POST | Remove section by label |
-| `/module/update/{id}` | POST | Update module attrs by label or text match |
-| `/module/move/{id}` | POST | Move a block before/after another block |
-| `/module/lock/{id}` | POST | Lock a module so VB users cannot edit it |
-| `/module/unlock/{id}` | POST | Unlock a module by removing `attrs.locked` |
-| `/module/clone/{id}` | POST | Deep-copy a module + insert next to source within the same parent |
-| `/page/set-meta/{id}` | POST | Set page template/meta |
-| `/global-color/upsert` | POST | Upsert global color palette (create + update via single bulk write) |
-| `/global-color/delete` | POST | Delete a global color by gcid (auto-protects customizer defaults) |
-| `/theme-options` | POST | Update theme customizer options |
-| `/preset/create` | POST | Create a module or group preset in the D5 registry |
-| `/preset/reassign` | POST | Rewrite preset UUID refs across page content + (for group-bucket swaps) registry chains. Supports `scope: "module" \| "group" \| "both"` (default `"both"`); dry-run default with explicit `mode: "apply"` to commit |
-| `/preset/cleanup` | POST | Remove spam/duplicate presets, bulk rename |
-| `/preset/update` | POST | Update a single preset (name, attrs) |
-| `/preset/delete` | POST | Delete a preset by ID. Refuses with `409 preset_is_default` if the target is the registered default for its bucket; pass `force=true` to delete and clear the `default` pointer in the same write |
-| `/preset/set-default` | POST | Set or clear the per-module/group default preset pointer (preset_id mode walks both buckets; bucket-addressed mode requires `type` + `module` + `unset=true` to clear orphan pointers) |
-| `/variable/create` | POST | Create a design token variable (colors or numbers/strings/etc) |
-| `/variable/create-fluid-system` | POST | Batch-emit a fluid typography + spacing + radius variable set (single atomic write) |
-| `/variable/delete` | POST | Delete a variable by ID |
-| `/canvas/create` | POST | Create a new canvas item |
-| `/canvas/update/{id}` | POST | Update canvas content |
-| `/canvas/delete/{id}` | POST | Delete a canvas |
-| `/library/save` | POST | Save block markup to Divi Library |
-| `/theme-builder/layout/update/{id}` | PUT | Update Theme Builder layout content |
-| `/theme-builder/template/create` | POST | Create Theme Builder template with conditions |
-| `/meta/flush-cache` | POST | Flush Divi's compiled CSS cache at `wp-content/et-cache/` after preset / variable / module mutations (required because `wp cache flush` doesn't invalidate this on-disk cache) |
+## Capabilities
 
-### Authentication & Permissions
+The plugin exposes these capability surfaces (full per-endpoint reference, 66 tools: [docs/server-reference.md](../../../docs/server-reference.md)):
+
+- **Page building** — Divi page/section/module/canvas CRUD; Theme Builder layouts + templates
+- **SCF setup + management** — field group provisioning, sync, export/import
+- **CPT + post population** — wp-cli-routed post type registration + bulk post operations
+- **Data model reasoning** — module schema introspection, SCF field group inspection, post meta surveys
+- **Site auditing** — preset audits, design-token usage scans, orphan detection (presets, variables, dangling references)
+- **Hybrid site harmonization** — design token APIs (`variable_*`, `global_color_*`, `global_font_*`) for cross-surface design system management between Divi pages and custom PHP templates
+
+## Authentication & permissions
 
 All endpoints require Application Password authentication (Basic Auth). Three permission tiers:
 
@@ -102,31 +56,20 @@ All endpoints require Application Password authentication (Basic Auth). Three pe
 |------|--------------|-----------|
 | **Read** | `edit_posts` | Most GET endpoints, `/render`, `/validate/blocks` |
 | **Write** | `edit_pages` | Page creation and content modification |
-| **Admin** | `manage_options` | Theme options, preset audit/cleanup/update/delete, library save, variable management, scan-orphans (variable + preset) |
+| **Admin** | `manage_options` | Theme options, preset audit/cleanup/update/delete, library save, variable management, scan-orphans |
 
-If Divi is not active, all endpoints return `503 divi_unavailable`.
+If Divi is not active, all endpoints return `503 divi_unavailable`. All write operations automatically clear Divi's `et-cache` to ensure CSS regeneration.
 
-### Module Targeting (module/update)
-Three ways to target a module for editing:
+## Upgrade from the previous plugin name
 
-| Method | Parameter | Works for |
-|--------|-----------|-----------|
-| Admin label | `label: "Hero Heading"` | Manually labeled modules |
-| Text content | `match_text: "Kitas"` | Modules with text (case-insensitive substring) |
-| Auto-index | Call `GET /page/get-layout/{id}` to find `auto_index` like `icon:5` | All modules including icons, dividers, images |
+1. Deactivate the old `Divi MCP Agent` plugin.
+2. Install or copy `diviops-agent/`.
+3. Activate `DiviOps Agent`.
+4. Keep your MCP server config pointed at `/wp-json/diviops/v1/`; the REST namespace is unchanged.
 
-### Page Layout Response
-`/page/get-layout/{id}` returns per module:
-- `admin_label` — manual label if set
-- `text_preview` — first 50 chars of content text
-- `auto_index` — `type:count` (e.g. `text:3`, `icon:5`, `group:9`)
+## Learn more
 
-### Cache Invalidation
-All write operations automatically clear Divi's et-cache to ensure CSS regeneration.
-
-## Setup
-
-1. Copy plugin folder to `wp-content/plugins/diviops-agent/`
-2. Activate in WP Admin → Plugins
-3. Create Application Password: WP Admin → Users → Profile → Application Passwords
-4. Use credentials with the MCP server or direct REST API calls
+- [DiviOps MCP Server README](../../../diviops-server/) — server quick start + response contract
+- [setup-guide.md](../../../docs/setup-guide.md) — full onboarding walkthrough
+- [server-reference.md](../../../docs/server-reference.md) — full per-tool reference
+- [troubleshooting.md](../../../docs/troubleshooting.md) — common errors and resolutions

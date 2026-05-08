@@ -79,9 +79,14 @@ const DEFAULT_COMMANDS: readonly string[] = [
   'rewrite flush',
   // Export (reads data, writes to file only)
   'export',
-  // Info (read-only)
+  // Info (read-only + non-destructive writes)
   'cron event list',
   'plugin list',
+  // `plugin update` runs from authenticated sources (WP plugin repo or licensed
+  // update server) — same trust model as `core check-update`. Unlike `plugin
+  // activate` / `plugin deactivate` (extended tier), it does not enable
+  // previously-disabled code paths; it refreshes already-installed plugins.
+  'plugin update',
   'theme list',
   'menu list',
   'site url',
