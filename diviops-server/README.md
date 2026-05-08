@@ -296,9 +296,21 @@ Tool returns a preview of the changes it would make; caller reviews the diff, th
 
 > Both preview-then-commit tools share the same semantic pattern but use different parameter shapes (`mode` enum vs `dry_run` bool). Both predate this convention and stay as-is for caller compatibility. **New bulk tools should use the enum form** (`mode: "dry-run" | "apply"`) — it's more extensible if future modes are needed (`"interactive"`, `"selective"`, etc.) and keeps the interface consistent as the tool set grows.
 
+### Pattern B (variant) — universal `dry_run: boolean` on every write tool
+
+Every mutating tool also accepts an optional `dry_run: boolean` (default `false`). When `true`, the response carries a uniform plan shape — `{ ok: true, data: { dry_run: true, plan: { summary, changes[, warnings] } } }` — and no state is mutated. Apply mode (`dry_run` omitted) keeps each tool's pre-existing response shape unchanged, so adding the parameter is non-breaking.
+
+This complements Pattern B's `mode: dry-run/apply` convention on bulk operations:
+- `mode: "dry-run"/"apply"` is the explicit two-round-trip contract for bulk tools where the preview *is* the value.
+- `dry_run: true` is the lighter "preview before commit" knob available on every write tool, including single-item ones.
+
+A handful of pre-existing tools predate the standard plan shape and keep their original response shapes for now: `preset_cleanup`, `preset_reassign`, `preset_delete`, `canvas_duplicate`, `page_trash`, `page_update_status`, `scf_sync`, `variable_create_fluid_system`.
+
+`meta_wp_cli` and `scf_import` do not accept `dry_run` — `meta_wp_cli` is a raw passthrough (use explicit read-only commands instead) and SCF's upstream `wp scf json import` lacks a `--dry-run` flag (use `scf_sync --dry_run` for the SCF-on-disk preview path).
+
 ### Picking a pattern for a new tool
 
-Ask: **single item or many?** If single, Pattern A. If many, Pattern B.
+Ask: **single item or many?** If single, Pattern A. If many, Pattern B (with `mode: "dry-run"/"apply"`). Either way, the universal `dry_run: boolean` knob is also available on every write tool — adding it on a new write tool is the default expectation.
 
 Don't introduce a third pattern (`confirmation_token`, session-based preview, etc.) unless a tool has a genuine need that neither A nor B covers — both patterns above are stateless and flexible enough for most cases.
 

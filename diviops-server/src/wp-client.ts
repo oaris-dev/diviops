@@ -6,6 +6,11 @@
  */
 
 import { type HandshakeResult } from './compatibility.js';
+import {
+  type DiviopsResponse,
+  ErrorCodes,
+  isEnveloped,
+} from './envelope.js';
 
 /**
  * Normalize quote-escape pathologies inside `$variable(...)$` token regions only.
@@ -180,16 +185,181 @@ export class WPClient {
   }
 
   /**
+   * Envelope-aware sibling of `request()`.
+   *
+   * Issue the same HTTP call as `request()`, but return the parsed body
+   * directly as a `DiviopsResponse<T>` without throwing on envelope errors:
+   *
+   *   - Body is an envelope (`{ok: true, data}` or `{ok: false, error}`)
+   *     → return it verbatim. Plugin-emitted error envelopes (typically
+   *     4xx with `{ok: false, error: {code, message, hint?}}`) flow back
+   *     to the caller as a typed result, not a throw.
+   *   - Response is non-2xx and body is NOT an envelope (e.g. a WP REST
+   *     framework error before the route runs, an unexpected 5xx)
+   *     → synthesize `{ok: false, error: {code: 'wp_error', message: ...}}`
+   *     so callers see a uniform shape regardless of upstream.
+   *   - Response is 2xx but body is not enveloped (legacy routes that
+   *     have not adopted yet) → wrap as `{ok: true, data: <body>}` to
+   *     preserve a single contract for adopting tools to consume.
+   *
+   * Transport errors (network, JSON parse failure on a 2xx body) still
+   * throw — those are not domain-level outcomes the envelope models.
+   *
+   * Migration: pilot's three `schema_*` tools and every subsequent
+   * namespace adoption use this method. Once the rollout completes,
+   * `request()` becomes orphan and is removed.
+   */
+  async requestEnveloped<T = unknown>(
+    endpoint: string,
+    options: {
+      method?: string;
+      body?: Record<string, unknown>;
+      params?: Record<string, string>;
+    } = {},
+  ): Promise<DiviopsResponse<T>> {
+    const { method = 'GET', body, params } = options;
+
+    let url = `${this.baseUrl}/wp-json/diviops/v1${endpoint}`;
+    if (params) {
+      const searchParams = new URLSearchParams(params);
+      url += `?${searchParams.toString()}`;
+    }
+
+    const fetchOptions: RequestInit = {
+      method,
+      headers: {
+        Authorization: this.authHeader,
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      },
+    };
+    if (body && method !== 'GET') {
+      fetchOptions.body = JSON.stringify(normalizeBody(body));
+    }
+
+    const response = await fetch(url, fetchOptions);
+    const rawBody = await response.text();
+
+    // Try to parse the body as JSON. Failure is recoverable for non-2xx
+    // responses (HTML/plain-text error pages from a misconfigured host or
+    // upstream proxy synthesize a `wp_error` envelope rather than throwing)
+    // and is fatal only on a 2xx body that promised JSON but didn't deliver.
+    let parsed: unknown;
+    let parseError: unknown = null;
+    try {
+      parsed = rawBody === '' ? null : JSON.parse(rawBody);
+    } catch (e) {
+      parseError = e;
+    }
+
+    if (parseError === null && isEnveloped(parsed)) {
+      return parsed as DiviopsResponse<T>;
+    }
+
+    if (!response.ok) {
+      // Non-2xx + body either non-JSON or non-enveloped JSON. Two sub-cases:
+      //
+      //  (1) Body is a parsed `WP_Error`-shaped JSON object — `{code, message,
+      //      data?: {status?, hint?}}`. This is what older diviops-agent
+      //      versions (pre-envelope-adoption) emit alongside `WP_Error`-based
+      //      handlers, and what the WP REST framework itself emits for
+      //      framework-level errors (`rest_forbidden`, `rest_no_route`,
+      //      `rest_invalid_param`, etc.). Promote `code` to the envelope's
+      //      `error.code` so callers running against a mixed-version
+      //      deployment (new server + older plugin emitting non-envelope
+      //      error bodies) still receive granular codes like `invalid_type`,
+      //      `not_found`, `rest_forbidden` — instead of having every legacy
+      //      4xx collapse to a generic `wp_error` and lose the upstream
+      //      slug. Hint is forwarded when present in `data.hint` (matches
+      //      the convention `envelope_from_wp_error` writes plugin-side).
+      //
+      //  (2) Body is non-JSON, or JSON without `code`/`message` (HTML/plain
+      //      error pages from a misconfigured host, host firewall pages,
+      //      502/504 from a reverse proxy, etc.) — fall back to a synthesized
+      //      `wp_error` so adopted tools still see a uniform envelope.
+      const isLegacyWpErrorBody =
+        parseError === null &&
+        parsed !== null &&
+        typeof parsed === 'object' &&
+        typeof (parsed as Record<string, unknown>).code === 'string' &&
+        typeof (parsed as Record<string, unknown>).message === 'string';
+      if (isLegacyWpErrorBody) {
+        const obj = parsed as Record<string, unknown>;
+        const out: { code: string; message: string; hint?: string } = {
+          code: obj.code as string,
+          message: obj.message as string,
+        };
+        const data = obj.data;
+        if (
+          data !== null &&
+          typeof data === 'object' &&
+          'hint' in (data as Record<string, unknown>) &&
+          typeof (data as Record<string, unknown>).hint === 'string'
+        ) {
+          out.hint = (data as Record<string, unknown>).hint as string;
+        }
+        if (response.status === 429) {
+          const retryAfter = response.headers.get('Retry-After') || '60';
+          out.message = `${out.message} (retry after ${retryAfter}s)`;
+        }
+        return { ok: false, error: out };
+      }
+
+      const messageFromBody = parseError
+        ? rawBody.slice(0, 200)
+        : parsed && typeof parsed === 'object' && parsed !== null && 'message' in parsed
+          ? String((parsed as Record<string, unknown>).message)
+          : rawBody;
+      let message = `WordPress API error (${response.status}): ${messageFromBody}`;
+      if (response.status === 429) {
+        const retryAfter = response.headers.get('Retry-After') || '60';
+        message = `Rate limited (${response.status}): ${messageFromBody} (retry after ${retryAfter}s)`;
+      }
+      return {
+        ok: false,
+        error: { code: ErrorCodes.WP_ERROR, message },
+      };
+    }
+
+    // 2xx with non-JSON body — only legitimate failure mode that warrants a
+    // throw. A successful HTTP status with garbage in the body is a server-
+    // side contract violation, not a domain-level outcome the envelope can
+    // represent.
+    if (parseError) {
+      throw new Error(
+        `WordPress API non-JSON body (${response.status}): ${rawBody.slice(0, 200)}`,
+      );
+    }
+
+    // 2xx body that is not yet shaped as an envelope — legacy route. Wrap
+    // it so adopting tools always see a uniform success shape.
+    return { ok: true, data: parsed as T };
+  }
+
+  /**
    * Test the connection to WordPress.
+   *
+   * Routes through `requestEnveloped` because `/schema/settings` was
+   * envelope-adopted in the schema_* pilot — its body is now
+   * `{ ok: true, data: { builder, ... } }`. Reading
+   * `result.builder.version` against that shape (the pre-pilot pattern)
+   * silently regresses meta_ping to "Connected to Divi unknown" on
+   * healthy sites.
    */
   async testConnection(): Promise<{ ok: boolean; message: string }> {
     try {
-      const result = await this.request<{ builder: { version: string } }>(
-        '/schema/settings'
-      );
+      const response = await this.requestEnveloped<{
+        builder?: { version?: string };
+      }>('/schema/settings');
+      if (!response.ok) {
+        return {
+          ok: false,
+          message: `Connection failed: [${response.error.code}] ${response.error.message}`,
+        };
+      }
       return {
         ok: true,
-        message: `Connected to Divi ${result.builder?.version ?? 'unknown'}`,
+        message: `Connected to Divi ${response.data.builder?.version ?? 'unknown'}`,
       };
     } catch (error) {
       return {

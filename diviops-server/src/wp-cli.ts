@@ -386,12 +386,60 @@ export function createWpCli(config: WpCliConfig) {
   // pre-built argv eliminates the parsing step entirely so user-provided
   // strings flow through verbatim — execFile (no shell) handles them
   // correctly. Raised in PR #473 review (Copilot/Gemini both flagged).
-  const runArgv = async (
-    args: string[],
-  ): Promise<{ success: boolean; output: string; error?: string }> => {
+  //
+  // Result shape:
+  //   - `output` is the legacy concatenated stream (stdout + stderr,
+  //     trimmed, deprecation lines filtered) preserved for callers that
+  //     have not migrated to the split form.
+  //   - `stdout`, `stderr`, `exitCode` are the split fields envelope
+  //     adopters consume — `stderr` is the pre-filter raw stream (no
+  //     deprecation filtering), `exitCode` is `null` whenever a numeric
+  //     exit code is unavailable (pre-execution rejection, spawn failure,
+  //     timeout, or signal kill). The `failureKind` discriminator tells
+  //     callers which of those four null-cases occurred so they don't have
+  //     to guess from the captured streams:
+  //       - `undefined` on success
+  //       - `'rejected'`     — short-circuit before execFile (allowlist or
+  //                            FS validator); `stdout`/`stderr` are empty
+  //       - `'spawn_failed'` — execFile invoked but the OS refused to start
+  //                            the child (ENOENT, EACCES, etc.); the child
+  //                            never ran, `stdout`/`stderr` are empty.
+  //                            `error.code` from execFile is a string errno
+  //                            rather than a numeric exit code.
+  //       - `'killed'`       — execFile launched the child but it was killed
+  //                            (timeout or signal); `stdout`/`stderr` carry
+  //                            whatever streamed before the kill
+  //       - `'exited'`       — execFile launched the child and it exited
+  //                            with a numeric code (success path is
+  //                            distinguished by `success: true`)
+  //     Codex review pass 1 (PR #561) flagged that `meta_wp_cli` conflated
+  //     `'rejected'` with `'killed'` because both share `exitCode: null`,
+  //     causing real timeouts to be misreported as pre-execution
+  //     rejections. Pass 2 flagged that ENOENT-style spawn failures were
+  //     being misclassified as `'killed'` (the child never ran). Splitting
+  //     into four kinds lets every envelope adopter (`meta_wp_cli`
+  //     passthrough, `scf_*` round-trip) emit accurate hints per cause.
+  type RunArgvResult = {
+    success: boolean;
+    output: string;
+    error?: string;
+    stdout: string;
+    stderr: string;
+    exitCode: number | null;
+    failureKind?: 'rejected' | 'spawn_failed' | 'killed' | 'exited';
+  };
+  const runArgv = async (args: string[]): Promise<RunArgvResult> => {
     const check = isCommandAllowed(args);
     if (!check.allowed) {
-      return { success: false, output: '', error: check.reason };
+      return {
+        success: false,
+        output: '',
+        error: check.reason,
+        stdout: '',
+        stderr: '',
+        exitCode: null,
+        failureKind: 'rejected',
+      };
     }
 
     // Second-pass FS validation for commands whose flags/args can read/write
@@ -415,7 +463,15 @@ export function createWpCli(config: WpCliConfig) {
         isWrapper: !!customWpCliCmd,
       });
       if (!fsCheck.allowed) {
-        return { success: false, output: '', error: fsCheck.reason };
+        return {
+          success: false,
+          output: '',
+          error: fsCheck.reason,
+          stdout: '',
+          stderr: '',
+          exitCode: null,
+          failureKind: 'rejected',
+        };
       }
     }
 
@@ -429,7 +485,10 @@ export function createWpCli(config: WpCliConfig) {
         fullArgs,
         runOptions,
         (error, stdout, stderr) => {
-          // Filter PHP deprecation warnings from output
+          // Filter PHP deprecation warnings from the legacy concatenated
+          // `output` field; `stdout` / `stderr` siblings are kept raw so
+          // envelope adopters (meta_wp_cli passthrough, scf_* round-trip)
+          // see the unfiltered streams.
           const output = (stdout + '\n' + stderr)
             .split('\n')
             .filter((line) => !line.includes('Deprecated:') && !line.includes('PHP Deprecated'))
@@ -437,14 +496,63 @@ export function createWpCli(config: WpCliConfig) {
             .trim();
 
           if (error) {
-            const detail = error.killed
-              ? 'Command timed out'
-              : error.signal
-                ? `Killed by signal ${error.signal}`
-                : `Exit code ${error.code ?? 'unknown'}`;
-            resolve({ success: false, output, error: detail });
+            // execFile callback fired with an error. Three possible
+            // sub-cases; classifying them up-front so the handler can emit
+            // accurate hints per cause:
+            //
+            //  - `error.killed === true`            → timeout (Node sets
+            //    this when the configured `timeout` expires).
+            //  - `error.signal != null`             → killed by signal.
+            //  - typeof error.code === 'number'     → child ran and exited
+            //    with a numeric exit code (the normal "exited non-zero"
+            //    case).
+            //  - typeof error.code === 'string' or undefined → spawn-side
+            //    failure. ENOENT (binary missing), EACCES (not executable),
+            //    EPERM, etc. — execFile reports these via the same error
+            //    callback but the child never started. Distinct from
+            //    "killed" because there's no partial output to preserve
+            //    and the fix path is environmental (PATH, install, perms),
+            //    not "raise the timeout."
+            const codeRaw = (error as NodeJS.ErrnoException).code as
+              | number
+              | string
+              | undefined;
+            const isKilled = error.killed === true || error.signal != null;
+            const isExited = typeof codeRaw === 'number';
+            const exitCode = isExited ? (codeRaw as number) : null;
+            const failureKind: 'killed' | 'exited' | 'spawn_failed' = isKilled
+              ? 'killed'
+              : isExited
+                ? 'exited'
+                : 'spawn_failed';
+            const detail = isKilled
+              ? error.killed
+                ? 'Command timed out'
+                : `Killed by signal ${error.signal}`
+              : isExited
+                ? `Exit code ${codeRaw}`
+                : // spawn_failed — surface the system errno as the detail
+                  // string ("Spawn failed: ENOENT") so the cause is visible
+                  // without parsing structured fields. Falls back to the
+                  // raw error.message when `code` is empty.
+                  `Spawn failed: ${codeRaw ?? error.message ?? 'unknown'}`;
+            resolve({
+              success: false,
+              output,
+              error: detail,
+              stdout,
+              stderr,
+              exitCode,
+              failureKind,
+            });
           } else {
-            resolve({ success: true, output });
+            resolve({
+              success: true,
+              output,
+              stdout,
+              stderr,
+              exitCode: 0,
+            });
           }
         },
       );
@@ -461,7 +569,15 @@ export function createWpCli(config: WpCliConfig) {
      * so user-supplied values containing apostrophes/quotes flow through
      * verbatim instead of being mis-split.
      */
-    async run(command: string): Promise<{ success: boolean; output: string; error?: string }> {
+    async run(command: string): Promise<{
+      success: boolean;
+      output: string;
+      error?: string;
+      stdout: string;
+      stderr: string;
+      exitCode: number | null;
+      failureKind?: 'rejected' | 'spawn_failed' | 'killed' | 'exited';
+    }> {
       return runArgv(parseCommand(command));
     },
 
@@ -472,7 +588,15 @@ export function createWpCli(config: WpCliConfig) {
      * validation as `run`. Use this from typed wrappers that already
      * have the args structured (no string concatenation needed).
      */
-    async runArgs(args: string[]): Promise<{ success: boolean; output: string; error?: string }> {
+    async runArgs(args: string[]): Promise<{
+      success: boolean;
+      output: string;
+      error?: string;
+      stdout: string;
+      stderr: string;
+      exitCode: number | null;
+      failureKind?: 'rejected' | 'spawn_failed' | 'killed' | 'exited';
+    }> {
       return runArgv(args);
     },
 

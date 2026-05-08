@@ -331,15 +331,244 @@ The Pro version includes per-module element maps (elements, innerContent shapes,
 
 Upgrade to Pro: https://diviops.com
 
-<!-- BEGIN GENERATED:path-index -->
+<!-- BEGIN GENERATED:header -->
 
-## Generated path index (appendix)
+## Generated path index
 
-> ⚠️ **APPENDIX — temporary.** This section is generated mechanically by `diviops-server/scripts/regen-module-formats.mjs` from `diviops_schema_get_module` dump-all output. Superseded once the in-place cutover lands; until then it lives at the bottom of the file as a flat path index alongside the human-authored Tier 3 prose. Do **not** edit between sentinels — edits are clobbered on regen.
+> Generated mechanically by `diviops-server/scripts/regen-module-formats.mjs` from `diviops_schema_get_module` dump-all output. Each module block lives between `BEGIN GENERATED:module:divi/<slug>` / `END GENERATED:module:divi/<slug>` HTML-comment sentinels (see `diviops-server/CONTRIBUTING.md` for the full convention). Do **not** edit between sentinels — edits are clobbered on regen.
 
 > Generated against Divi `5.4.1`, schema `c5046273f617…`.
 
-Per CLAUDE.md "Suite architecture coherence": schema dump is the canonical index; VB-verified prose is the canonical interpretation. On conflicts, the prose above wins (per `feedback_vb_first_verification`).
+Per CLAUDE.md "Suite architecture coherence": schema dump is the canonical index; VB-verified prose above is the canonical interpretation. The two sections are complementary, not competing — prose explains surprises, this index enumerates paths exhaustively. On conflicts, the prose above wins (per `feedback_vb_first_verification`).
+
+<!-- END GENERATED:header -->
+
+<!-- BEGIN GENERATED:module:divi/accordion -->
+
+<!-- TIER: free -->
+#### `divi/accordion`
+
+- **closedToggle** — `closedToggle.decoration.background`, `closedToggle.decoration.font`
+- **closedToggleIcon** — `closedToggleIcon.decoration.icon`
+- **content** — `content.decoration.bodyFont`
+- **module** — `module.decoration.animation`, `module.decoration.attributes`, `module.decoration.background`, `module.decoration.border`, `module.decoration.boxShadow`, `module.decoration.conditions`, `module.decoration.disabledOn`, `module.decoration.filters`, `module.decoration.interactions`, `module.decoration.layout`, `module.decoration.order`, `module.decoration.overflow`, `module.decoration.position`, `module.decoration.scroll`, `module.decoration.sizing`, `module.decoration.spacing`, `module.decoration.sticky`, `module.decoration.transform`, `module.decoration.transition`, `module.decoration.zIndex` _(+advanced)_
+- **openToggle** — `openToggle.decoration.background`, `openToggle.decoration.font`
+- **title** — `title.decoration.font`
+
+<!-- END GENERATED:module:divi/accordion -->
+
+<!-- BEGIN GENERATED:module:divi/blurb -->
+
+<!-- TIER: free -->
+#### `divi/blurb`
+
+- **content** — `content.decoration.bodyFont` _(+innerContent)_
+- **contentContainer** — `contentContainer.decoration.sizing`
+- **imageIcon** — `imageIcon.decoration.animation`, `imageIcon.decoration.background`, `imageIcon.decoration.border`, `imageIcon.decoration.boxShadow`, `imageIcon.decoration.filters`, `imageIcon.decoration.sizing`, `imageIcon.decoration.spacing` _(+innerContent, +advanced)_
+- **module** — `module.decoration.animation`, `module.decoration.attributes`, `module.decoration.background`, `module.decoration.border`, `module.decoration.boxShadow`, `module.decoration.conditions`, `module.decoration.disabledOn`, `module.decoration.filters`, `module.decoration.interactions`, `module.decoration.layout`, `module.decoration.order`, `module.decoration.overflow`, `module.decoration.position`, `module.decoration.scroll`, `module.decoration.sizing`, `module.decoration.spacing`, `module.decoration.sticky`, `module.decoration.transform`, `module.decoration.transition`, `module.decoration.zIndex` _(+advanced)_
+- **title** — `title.decoration.font` _(+innerContent)_
+
+<!-- END GENERATED:module:divi/blurb -->
+
+<!-- BEGIN GENERATED:module:divi/button -->
+
+<!-- TIER: free -->
+#### `divi/button`
+
+- **button** — `button.decoration.background`, `button.decoration.border`, `button.decoration.boxShadow`, `button.decoration.button`, `button.decoration.font`, `button.decoration.sizing`, `button.decoration.spacing` _(+innerContent)_
+- **module** — `module.decoration.animation`, `module.decoration.attributes`, `module.decoration.boxShadow`, `module.decoration.conditions`, `module.decoration.disabledOn`, `module.decoration.filters`, `module.decoration.interactions`, `module.decoration.layout`, `module.decoration.order`, `module.decoration.overflow`, `module.decoration.position`, `module.decoration.scroll`, `module.decoration.spacing`, `module.decoration.sticky`, `module.decoration.transform`, `module.decoration.transition`, `module.decoration.zIndex` _(+advanced)_
+
+<!-- END GENERATED:module:divi/button -->
+
+<!-- BEGIN GENERATED:module:divi/code -->
+
+<!-- TIER: free -->
+#### `divi/code`
+
+- **content** — _(no decoration groups)_ _(+innerContent)_
+- **module** — `module.decoration.animation`, `module.decoration.attributes`, `module.decoration.background`, `module.decoration.border`, `module.decoration.boxShadow`, `module.decoration.conditions`, `module.decoration.disabledOn`, `module.decoration.filters`, `module.decoration.interactions`, `module.decoration.order`, `module.decoration.overflow`, `module.decoration.position`, `module.decoration.scroll`, `module.decoration.sizing`, `module.decoration.spacing`, `module.decoration.sticky`, `module.decoration.transform`, `module.decoration.transition`, `module.decoration.zIndex` _(+advanced)_
+
+<!-- END GENERATED:module:divi/code -->
+
+<!-- BEGIN GENERATED:module:divi/column -->
+
+<!-- TIER: free -->
+#### `divi/column`
+
+- **module** — `module.decoration.animation`, `module.decoration.attributes`, `module.decoration.background`, `module.decoration.border`, `module.decoration.boxShadow`, `module.decoration.conditions`, `module.decoration.disabledOn`, `module.decoration.filters`, `module.decoration.interactions`, `module.decoration.layout`, `module.decoration.order`, `module.decoration.overflow`, `module.decoration.position`, `module.decoration.scroll`, `module.decoration.sizing`, `module.decoration.spacing`, `module.decoration.sticky`, `module.decoration.transform`, `module.decoration.transition`, `module.decoration.zIndex` _(+advanced)_
+
+<!-- END GENERATED:module:divi/column -->
+
+<!-- BEGIN GENERATED:module:divi/contact-form -->
+
+<!-- TIER: free -->
+#### `divi/contact-form`
+
+- **button** — `button.decoration.background`, `button.decoration.border`, `button.decoration.boxShadow`, `button.decoration.button`, `button.decoration.font`, `button.decoration.sizing`, `button.decoration.spacing` _(+innerContent)_
+- **captcha** — `captcha.decoration.font`
+- **checkbox** — _(no decoration groups)_ _(+advanced)_
+- **email** — _(no decoration groups)_ _(+innerContent, +advanced)_
+- **field** — _(no decoration groups)_ _(+advanced)_
+- **module** — `module.decoration.animation`, `module.decoration.attributes`, `module.decoration.background`, `module.decoration.border`, `module.decoration.boxShadow`, `module.decoration.conditions`, `module.decoration.disabledOn`, `module.decoration.filters`, `module.decoration.interactions`, `module.decoration.layout`, `module.decoration.order`, `module.decoration.overflow`, `module.decoration.position`, `module.decoration.scroll`, `module.decoration.sizing`, `module.decoration.spacing`, `module.decoration.sticky`, `module.decoration.transform`, `module.decoration.transition`, `module.decoration.zIndex` _(+advanced)_
+- **radio** — _(no decoration groups)_ _(+advanced)_
+- **redirect** — _(no decoration groups)_ _(+innerContent, +advanced)_
+- **title** — `title.decoration.font` _(+innerContent)_
+
+<!-- END GENERATED:module:divi/contact-form -->
+
+<!-- BEGIN GENERATED:module:divi/countdown-timer -->
+
+<!-- TIER: free -->
+#### `divi/countdown-timer`
+
+- **content** — _(no decoration groups)_ _(+advanced)_
+- **label** — `label.decoration.font`
+- **module** — `module.decoration.animation`, `module.decoration.attributes`, `module.decoration.background`, `module.decoration.border`, `module.decoration.boxShadow`, `module.decoration.conditions`, `module.decoration.disabledOn`, `module.decoration.filters`, `module.decoration.interactions`, `module.decoration.layout`, `module.decoration.order`, `module.decoration.overflow`, `module.decoration.position`, `module.decoration.scroll`, `module.decoration.sizing`, `module.decoration.spacing`, `module.decoration.sticky`, `module.decoration.transform`, `module.decoration.transition`, `module.decoration.zIndex` _(+advanced)_
+- **number** — `number.decoration.font`
+- **separator** — `separator.decoration.font`
+- **title** — `title.decoration.font` _(+innerContent)_
+
+<!-- END GENERATED:module:divi/countdown-timer -->
+
+<!-- BEGIN GENERATED:module:divi/divider -->
+
+<!-- TIER: free -->
+#### `divi/divider`
+
+- **divider** — _(no decoration groups)_ _(+advanced)_
+- **module** — `module.decoration.animation`, `module.decoration.attributes`, `module.decoration.background`, `module.decoration.border`, `module.decoration.boxShadow`, `module.decoration.conditions`, `module.decoration.disabledOn`, `module.decoration.filters`, `module.decoration.interactions`, `module.decoration.order`, `module.decoration.overflow`, `module.decoration.position`, `module.decoration.scroll`, `module.decoration.sizing`, `module.decoration.spacing`, `module.decoration.sticky`, `module.decoration.transform`, `module.decoration.transition`, `module.decoration.zIndex` _(+advanced)_
+
+<!-- END GENERATED:module:divi/divider -->
+
+<!-- BEGIN GENERATED:module:divi/group -->
+
+<!-- TIER: free -->
+#### `divi/group`
+
+- **module** — `module.decoration.animation`, `module.decoration.attributes`, `module.decoration.background`, `module.decoration.border`, `module.decoration.boxShadow`, `module.decoration.conditions`, `module.decoration.disabledOn`, `module.decoration.filters`, `module.decoration.interactions`, `module.decoration.layout`, `module.decoration.order`, `module.decoration.overflow`, `module.decoration.position`, `module.decoration.scroll`, `module.decoration.sizing`, `module.decoration.spacing`, `module.decoration.sticky`, `module.decoration.transform`, `module.decoration.transition`, `module.decoration.zIndex` _(+advanced)_
+
+<!-- END GENERATED:module:divi/group -->
+
+<!-- BEGIN GENERATED:module:divi/heading -->
+
+<!-- TIER: free -->
+#### `divi/heading`
+
+- **module** — `module.decoration.animation`, `module.decoration.attributes`, `module.decoration.background`, `module.decoration.border`, `module.decoration.boxShadow`, `module.decoration.conditions`, `module.decoration.disabledOn`, `module.decoration.filters`, `module.decoration.interactions`, `module.decoration.layout`, `module.decoration.order`, `module.decoration.overflow`, `module.decoration.position`, `module.decoration.scroll`, `module.decoration.sizing`, `module.decoration.spacing`, `module.decoration.sticky`, `module.decoration.transform`, `module.decoration.transition`, `module.decoration.zIndex` _(+advanced)_
+- **title** — `title.decoration.font` _(+innerContent)_
+
+<!-- END GENERATED:module:divi/heading -->
+
+<!-- BEGIN GENERATED:module:divi/icon -->
+
+<!-- TIER: free -->
+#### `divi/icon`
+
+- **icon** — _(no decoration groups)_ _(+innerContent, +advanced)_
+- **iconLink** — _(no decoration groups)_
+- **module** — `module.decoration.animation`, `module.decoration.attributes`, `module.decoration.background`, `module.decoration.border`, `module.decoration.boxShadow`, `module.decoration.conditions`, `module.decoration.disabledOn`, `module.decoration.filters`, `module.decoration.interactions`, `module.decoration.layout`, `module.decoration.order`, `module.decoration.overflow`, `module.decoration.position`, `module.decoration.scroll`, `module.decoration.sizing`, `module.decoration.spacing`, `module.decoration.sticky`, `module.decoration.transform`, `module.decoration.transition`, `module.decoration.zIndex` _(+advanced)_
+
+<!-- END GENERATED:module:divi/icon -->
+
+<!-- BEGIN GENERATED:module:divi/image -->
+
+<!-- TIER: free -->
+#### `divi/image`
+
+- **image** — `image.decoration.border`, `image.decoration.boxShadow` _(+innerContent, +advanced)_
+- **module** — `module.decoration.animation`, `module.decoration.attributes`, `module.decoration.background`, `module.decoration.conditions`, `module.decoration.disabledOn`, `module.decoration.filters`, `module.decoration.interactions`, `module.decoration.layout`, `module.decoration.order`, `module.decoration.overflow`, `module.decoration.position`, `module.decoration.scroll`, `module.decoration.sticky`, `module.decoration.transform`, `module.decoration.transition`, `module.decoration.zIndex` _(+advanced)_
+
+<!-- END GENERATED:module:divi/image -->
+
+<!-- BEGIN GENERATED:module:divi/lottie -->
+
+<!-- TIER: free -->
+#### `divi/lottie`
+
+- **lottie** — _(no decoration groups)_ _(+innerContent)_
+- **module** — `module.decoration.animation`, `module.decoration.attributes`, `module.decoration.background`, `module.decoration.border`, `module.decoration.boxShadow`, `module.decoration.conditions`, `module.decoration.disabledOn`, `module.decoration.filters`, `module.decoration.interactions`, `module.decoration.layout`, `module.decoration.order`, `module.decoration.overflow`, `module.decoration.position`, `module.decoration.scroll`, `module.decoration.sizing`, `module.decoration.spacing`, `module.decoration.sticky`, `module.decoration.transform`, `module.decoration.transition`, `module.decoration.zIndex` _(+advanced)_
+
+<!-- END GENERATED:module:divi/lottie -->
+
+<!-- BEGIN GENERATED:module:divi/number-counter -->
+
+<!-- TIER: free -->
+#### `divi/number-counter`
+
+- **module** — `module.decoration.animation`, `module.decoration.attributes`, `module.decoration.background`, `module.decoration.border`, `module.decoration.boxShadow`, `module.decoration.conditions`, `module.decoration.disabledOn`, `module.decoration.filters`, `module.decoration.interactions`, `module.decoration.layout`, `module.decoration.order`, `module.decoration.overflow`, `module.decoration.position`, `module.decoration.scroll`, `module.decoration.sizing`, `module.decoration.spacing`, `module.decoration.sticky`, `module.decoration.transform`, `module.decoration.transition`, `module.decoration.zIndex` _(+advanced)_
+- **number** — `number.decoration.font` _(+innerContent, +advanced)_
+- **title** — `title.decoration.font` _(+innerContent)_
+
+<!-- END GENERATED:module:divi/number-counter -->
+
+<!-- BEGIN GENERATED:module:divi/row -->
+
+<!-- TIER: free -->
+#### `divi/row`
+
+- **module** — `module.decoration.animation`, `module.decoration.attributes`, `module.decoration.background`, `module.decoration.border`, `module.decoration.boxShadow`, `module.decoration.conditions`, `module.decoration.disabledOn`, `module.decoration.filters`, `module.decoration.interactions`, `module.decoration.layout`, `module.decoration.order`, `module.decoration.overflow`, `module.decoration.position`, `module.decoration.scroll`, `module.decoration.sizing`, `module.decoration.spacing`, `module.decoration.sticky`, `module.decoration.transform`, `module.decoration.transition`, `module.decoration.zIndex` _(+advanced)_
+
+<!-- END GENERATED:module:divi/row -->
+
+<!-- BEGIN GENERATED:module:divi/section -->
+
+<!-- TIER: free -->
+#### `divi/section`
+
+- **column1** — `column1.decoration.background`, `column1.decoration.spacing` _(+advanced)_
+- **column2** — `column2.decoration.background`, `column2.decoration.spacing` _(+advanced)_
+- **column3** — `column3.decoration.background`, `column3.decoration.spacing` _(+advanced)_
+- **innerSizing** — `innerSizing.decoration.sizing`
+- **module** — `module.decoration.animation`, `module.decoration.attributes`, `module.decoration.background`, `module.decoration.border`, `module.decoration.boxShadow`, `module.decoration.conditions`, `module.decoration.disabledOn`, `module.decoration.filters`, `module.decoration.interactions`, `module.decoration.layout`, `module.decoration.order`, `module.decoration.overflow`, `module.decoration.position`, `module.decoration.scroll`, `module.decoration.sizing`, `module.decoration.spacing`, `module.decoration.sticky`, `module.decoration.transform`, `module.decoration.transition`, `module.decoration.zIndex` _(+advanced)_
+
+<!-- END GENERATED:module:divi/section -->
+
+<!-- BEGIN GENERATED:module:divi/slider -->
+
+<!-- TIER: free -->
+#### `divi/slider`
+
+- **arrows** — _(no decoration groups)_ _(+advanced)_
+- **button** — `button.decoration.button`
+- **children** — `children.decoration.background`, `children.decoration.border` _(+advanced)_
+- **content** — `content.decoration.bodyFont`, `content.decoration.sizing`
+- **dotNav** — `dotNav.decoration.background`
+- **image** — `image.decoration.border`, `image.decoration.boxShadow` _(+advanced)_
+- **module** — `module.decoration.animation`, `module.decoration.attributes`, `module.decoration.border`, `module.decoration.boxShadow`, `module.decoration.conditions`, `module.decoration.disabledOn`, `module.decoration.filters`, `module.decoration.interactions`, `module.decoration.layout`, `module.decoration.order`, `module.decoration.overflow`, `module.decoration.position`, `module.decoration.scroll`, `module.decoration.sizing`, `module.decoration.spacing`, `module.decoration.sticky`, `module.decoration.transform`, `module.decoration.transition`, `module.decoration.zIndex` _(+advanced)_
+- **pagination** — _(no decoration groups)_ _(+advanced)_
+- **title** — `title.decoration.font`
+
+<!-- END GENERATED:module:divi/slider -->
+
+<!-- BEGIN GENERATED:module:divi/tabs -->
+
+<!-- TIER: free -->
+#### `divi/tabs`
+
+- **activeTab** — `activeTab.decoration.background`, `activeTab.decoration.font`
+- **content** — `content.decoration.background`, `content.decoration.bodyFont`
+- **module** — `module.decoration.animation`, `module.decoration.attributes`, `module.decoration.border`, `module.decoration.boxShadow`, `module.decoration.conditions`, `module.decoration.disabledOn`, `module.decoration.filters`, `module.decoration.interactions`, `module.decoration.order`, `module.decoration.overflow`, `module.decoration.position`, `module.decoration.scroll`, `module.decoration.sizing`, `module.decoration.spacing`, `module.decoration.sticky`, `module.decoration.transform`, `module.decoration.transition`, `module.decoration.zIndex` _(+advanced)_
+- **tab** — `tab.decoration.background`, `tab.decoration.font`
+
+<!-- END GENERATED:module:divi/tabs -->
+
+<!-- BEGIN GENERATED:module:divi/testimonial -->
+
+<!-- TIER: free -->
+#### `divi/testimonial`
+
+- **author** — `author.decoration.font` _(+innerContent)_
+- **company** — `company.decoration.font` _(+innerContent)_
+- **content** — `content.decoration.bodyFont` _(+innerContent)_
+- **jobTitle** — `jobTitle.decoration.font` _(+innerContent)_
+- **module** — `module.decoration.animation`, `module.decoration.attributes`, `module.decoration.background`, `module.decoration.border`, `module.decoration.boxShadow`, `module.decoration.conditions`, `module.decoration.disabledOn`, `module.decoration.filters`, `module.decoration.interactions`, `module.decoration.layout`, `module.decoration.order`, `module.decoration.overflow`, `module.decoration.position`, `module.decoration.scroll`, `module.decoration.sizing`, `module.decoration.spacing`, `module.decoration.sticky`, `module.decoration.transform`, `module.decoration.transition`, `module.decoration.zIndex` _(+advanced)_
+- **portrait** — `portrait.decoration.border`, `portrait.decoration.boxShadow`, `portrait.decoration.filters`, `portrait.decoration.sizing` _(+innerContent)_
+- **quoteIcon** — `quoteIcon.decoration.background`, `quoteIcon.decoration.icon`
+- **testimonialDescription** — _(no decoration groups)_
+
+<!-- END GENERATED:module:divi/testimonial -->
+
+<!-- BEGIN GENERATED:module:divi/text -->
 
 <!-- TIER: free -->
 #### `divi/text`
@@ -347,8 +576,36 @@ Per CLAUDE.md "Suite architecture coherence": schema dump is the canonical index
 - **content** — `content.decoration.bodyFont`, `content.decoration.headingFont` _(+innerContent)_
 - **module** — `module.decoration.animation`, `module.decoration.attributes`, `module.decoration.background`, `module.decoration.border`, `module.decoration.boxShadow`, `module.decoration.conditions`, `module.decoration.disabledOn`, `module.decoration.filters`, `module.decoration.interactions`, `module.decoration.layout`, `module.decoration.order`, `module.decoration.overflow`, `module.decoration.position`, `module.decoration.scroll`, `module.decoration.sizing`, `module.decoration.spacing`, `module.decoration.sticky`, `module.decoration.transform`, `module.decoration.transition`, `module.decoration.zIndex` _(+advanced)_
 
+<!-- END GENERATED:module:divi/text -->
 
-<!-- END GENERATED:path-index -->
+<!-- BEGIN GENERATED:module:divi/toggle -->
+
+<!-- TIER: free -->
+#### `divi/toggle`
+
+- **closedTitle** — `closedTitle.decoration.font` _(+innerContent)_
+- **closedToggle** — `closedToggle.decoration.background`
+- **closedToggleIcon** — `closedToggleIcon.decoration.icon`
+- **content** — `content.decoration.bodyFont` _(+innerContent)_
+- **module** — `module.decoration.animation`, `module.decoration.attributes`, `module.decoration.background`, `module.decoration.border`, `module.decoration.boxShadow`, `module.decoration.conditions`, `module.decoration.disabledOn`, `module.decoration.filters`, `module.decoration.interactions`, `module.decoration.layout`, `module.decoration.order`, `module.decoration.overflow`, `module.decoration.position`, `module.decoration.scroll`, `module.decoration.sizing`, `module.decoration.spacing`, `module.decoration.sticky`, `module.decoration.transform`, `module.decoration.transition`, `module.decoration.zIndex` _(+advanced)_
+- **openToggle** — `openToggle.decoration.background`, `openToggle.decoration.font`
+- **openToggleIcon** — `openToggleIcon.decoration.icon`
+- **title** — `title.decoration.font` _(+innerContent)_
+
+<!-- END GENERATED:module:divi/toggle -->
+
+<!-- BEGIN GENERATED:module:divi/video -->
+
+<!-- TIER: free -->
+#### `divi/video`
+
+- **module** — `module.decoration.animation`, `module.decoration.attributes`, `module.decoration.background`, `module.decoration.border`, `module.decoration.boxShadow`, `module.decoration.conditions`, `module.decoration.disabledOn`, `module.decoration.filters`, `module.decoration.interactions`, `module.decoration.layout`, `module.decoration.order`, `module.decoration.overflow`, `module.decoration.position`, `module.decoration.scroll`, `module.decoration.sizing`, `module.decoration.spacing`, `module.decoration.sticky`, `module.decoration.transform`, `module.decoration.transition`, `module.decoration.zIndex` _(+advanced)_
+- **overlay** — `overlay.decoration.background` _(+innerContent)_
+- **playIcon** — `playIcon.decoration.icon`
+- **video** — _(no decoration groups)_ _(+innerContent)_
+
+<!-- END GENERATED:module:divi/video -->
+
 
 
 [^button-deep-path]: Render-relevant keys at `button.decoration.button.desktop.value.*` are limited to `enable` (migration trigger — `"off"` causes Divi to strip `button.decoration`; never write without intent), `icon.*` (visible icon configuration), `padding` (icon-spacing gate — does **not** emit visible padding CSS, but values do flip the hover-gate behavior at `StyleDeclarations.php:153-160`; required as gate-bypass on every `divi/button` group preset that doesn't carry padding here, see [presets.md → Hover-padding gate on Button group presets](presets.md#hover-padding-gate-on-button-group-presets-broad-scope-upstream-tracked)), and `alignment` (deprecated, forwarded to `decoration.sizing.alignment`). Anything else (e.g. `backgroundColor`, `textColor`, `font`) parses, validates, saves, then no-ops at render. VB-verified Divi 5.4.0.

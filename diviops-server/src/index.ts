@@ -15,6 +15,14 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod";
 import { WPClient } from "./wp-client.js";
 import { MissingCapabilityError } from "./compatibility.js";
+import {
+  type DiviopsResponse,
+  ErrorCodes,
+  envelopeMap,
+  serializeEnvelope,
+  withCode,
+  wrapResponse,
+} from "./envelope.js";
 import { optimizeSchema } from "./schema-optimizer.js";
 import { createWpCli } from "./wp-cli.js";
 import {
@@ -174,13 +182,36 @@ function registerPluginTool<H extends (args: any) => Promise<any>>(
 }
 /* eslint-enable @typescript-eslint/no-explicit-any */
 
+// ── dry_run convention ──────────────────────────────────────────────
+//
+// Standard description suffix appended to every write tool that accepts
+// dry_run, and a shared Zod field reused across the registrations. The
+// suffix lets the model see one consistent line per tool ("Pass dry_run:
+// true to preview the change plan without mutating state."), and the
+// shared field guarantees the same default + description across the
+// surface.
+//
+// Shape returned when dry_run is true (built by the plugin's
+// dry_run_response helper):
+//   { ok: true, data: { dry_run: true, plan: { summary, changes[, warnings] }, ...extra } }
+// Apply mode keeps each tool's pre-existing response shape unchanged.
+const DRY_RUN_DESC_SUFFIX =
+  " Pass dry_run: true to preview the change plan without mutating state.";
+const DRY_RUN_FIELD = z
+  .boolean()
+  .optional()
+  .default(false)
+  .describe(
+    "When true, return the change plan { summary, changes[, warnings] } without mutating state.",
+  );
+
 // ── Read Tools ───────────────────────────────────────────────────────
 
 registerPluginTool(
   "diviops_page_list",
   {
     description:
-      "List pages/posts in the WordPress site. Returns title, ID, URL, status, and whether each page uses Divi builder.",
+      "List pages/posts in the WordPress site. Returns title, ID, URL, status, and whether each page uses Divi builder. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }.",
     inputSchema: {
       post_type: z
         .string()
@@ -194,9 +225,11 @@ registerPluginTool(
         .describe("Number of results per page (max 100)"),
       page: z.number().optional().default(1).describe("Page number"),
     },
+    annotations: { idempotentHint: true },
+    _meta: { idempotent: "true" },
   },
   async ({ post_type, per_page, page }) => {
-    const result = await wp.request("/page/list", {
+    const result = await wp.requestEnveloped("/page/list", {
       params: {
         post_type: post_type ?? "page",
         per_page: String(per_page ?? 20),
@@ -205,7 +238,7 @@ registerPluginTool(
     });
     return {
       content: [
-        { type: "text" as const, text: JSON.stringify(result) },
+        { type: "text" as const, text: serializeEnvelope(result) },
       ],
     };
   },
@@ -215,16 +248,18 @@ registerPluginTool(
   "diviops_page_get",
   {
     description:
-      "Get detailed info about a specific page including its raw Divi block content.",
+      "Get detailed info about a specific page including its raw Divi block content. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }; missing page_id returns ok:false with code 'not_found' and a hint pointing to diviops_page_list.",
     inputSchema: {
       page_id: z.number().describe("WordPress post/page ID"),
     },
+    annotations: { idempotentHint: true },
+    _meta: { idempotent: "true" },
   },
   async ({ page_id }) => {
-    const result = await wp.request(`/page/get/${page_id}`);
+    const result = await wp.requestEnveloped(`/page/get/${page_id}`);
     return {
       content: [
-        { type: "text" as const, text: JSON.stringify(result) },
+        { type: "text" as const, text: serializeEnvelope(result) },
       ],
     };
   },
@@ -234,7 +269,7 @@ registerPluginTool(
   "diviops_page_get_layout",
   {
     description:
-      "Get the parsed block tree for a page. Returns slim targeting metadata by default (block names, admin labels, text previews, auto_index). Use full: true for complete attrs (warning: can be very large on complex pages).",
+      "Get the parsed block tree for a page. Returns slim targeting metadata by default (block names, admin labels, text previews, auto_index). Use full: true for complete attrs (warning: can be very large on complex pages). Returns the standardized envelope { ok, data?, error: { code, message, hint? } }; missing page_id returns ok:false with code 'not_found'.",
     inputSchema: {
       page_id: z.number().describe("WordPress post/page ID"),
       full: z
@@ -245,14 +280,16 @@ registerPluginTool(
           "Include full block attrs and raw content (default: false for slim mode)",
         ),
     },
+    annotations: { idempotentHint: true },
+    _meta: { idempotent: "true" },
   },
   async ({ page_id, full }) => {
-    const result = await wp.request(`/page/get-layout/${page_id}`, {
+    const result = await wp.requestEnveloped(`/page/get-layout/${page_id}`, {
       params: full ? { full: "true" } : {},
     });
     return {
       content: [
-        { type: "text" as const, text: JSON.stringify(result) },
+        { type: "text" as const, text: serializeEnvelope(result) },
       ],
     };
   },
@@ -262,13 +299,15 @@ registerPluginTool(
   "diviops_schema_list_modules",
   {
     description:
-      "List all available Divi modules (block types) with their names, titles, and categories. Use this to discover what modules can be used in layouts.",
+      "List all available Divi modules (block types) with their names, titles, and categories. Use this to discover what modules can be used in layouts. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }.",
+    annotations: { idempotentHint: true },
+    _meta: { idempotent: "true" },
   },
   async () => {
-    const result = await wp.request("/schema/modules");
+    const result = await wp.requestEnveloped("/schema/modules");
     return {
       content: [
-        { type: "text" as const, text: JSON.stringify(result) },
+        { type: "text" as const, text: serializeEnvelope(result) },
       ],
     };
   },
@@ -278,7 +317,7 @@ registerPluginTool(
   "diviops_schema_get_module",
   {
     description:
-      "Get the attribute schema for a Divi module. Default mode 'single' returns one module's schema (optimized, ~70% smaller; pass raw: true for full). Mode 'dump_all' snapshots every Divi module in one call and includes a `schema_version` hash over the canonical *PresetAttrsMap.php files — build-time entry point for the skill regen pipeline; ignores `module_name` and `raw`.",
+      "Get the attribute schema for a Divi module. Default mode 'single' returns one module's schema (optimized, ~70% smaller; pass raw: true for full). Mode 'dump_all' snapshots every Divi module in one call and includes a `schema_version` hash over the canonical *PresetAttrsMap.php files — build-time entry point for the skill regen pipeline; ignores `module_name` and `raw`. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }.",
     inputSchema: {
       mode: z
         .enum(["single", "dump_all"])
@@ -297,13 +336,15 @@ registerPluginTool(
         .default(false)
         .describe("Return full schema including CSS selectors and VB metadata. Applies to mode='single' only."),
     },
+    annotations: { idempotentHint: true },
+    _meta: { idempotent: "true" },
   },
   async ({ mode, module_name, raw }) => {
     if (mode === "dump_all") {
       // Capability gate for the dump-all surface: handled here (rather
       // than the wrapper's auto-derived `schema_get_module` key) so older
-      // plugins without /schema/module/dump-all surface a clean upgrade
-      // hint instead of a 404 from wp.request.
+      // plugins without /schema/module/dump-all return a typed envelope
+      // error instead of a 404 from the underlying request.
       if (
         handshakeState.kind === "ok" &&
         !handshakeState.capabilities["schema_get_module_dump_all"]
@@ -312,36 +353,46 @@ registerPluginTool(
           "schema_get_module_dump_all",
           handshakeState.pluginVersion,
         );
+        const failure: DiviopsResponse<never> = {
+          ok: false,
+          error: {
+            code: ErrorCodes.CAPABILITY_MISSING,
+            message: err.message,
+            hint: "Update the diviops-agent WP plugin to a version that exposes the dump-all surface.",
+          },
+        };
         return {
-          content: [{ type: "text" as const, text: err.message }],
-          isError: true,
+          content: [{ type: "text" as const, text: serializeEnvelope(failure) }],
         };
       }
-      const result = await wp.request("/schema/module/dump-all");
+      const result = await wp.requestEnveloped("/schema/module/dump-all");
       return {
-        content: [{ type: "text" as const, text: JSON.stringify(result) }],
+        content: [{ type: "text" as const, text: serializeEnvelope(result) }],
       };
     }
 
     if (!module_name) {
+      const failure: DiviopsResponse<never> = {
+        ok: false,
+        error: {
+          code: ErrorCodes.INVALID_INPUT,
+          message: "module_name is required when mode='single'",
+        },
+      };
       return {
-        content: [
-          {
-            type: "text" as const,
-            text: "module_name is required when mode='single'",
-          },
-        ],
-        isError: true,
+        content: [{ type: "text" as const, text: serializeEnvelope(failure) }],
       };
     }
 
-    const result = await wp.request(
+    const result = await wp.requestEnveloped<Record<string, unknown>>(
       `/schema/module/${encodeURIComponent(module_name)}`,
     );
-    const output = raw ? result : optimizeSchema(result as Record<string, any>);
+    const projected = envelopeMap(result, (data) =>
+      raw ? data : optimizeSchema(data as Record<string, any>),
+    );
     return {
       content: [
-        { type: "text" as const, text: JSON.stringify(output) },
+        { type: "text" as const, text: serializeEnvelope(projected) },
       ],
     };
   },
@@ -351,13 +402,15 @@ registerPluginTool(
   "diviops_schema_get_settings",
   {
     description:
-      "Get Divi site settings including theme options, site info, and builder version. Useful for understanding the site context before generating content.",
+      "Get Divi site settings including theme options, site info, and builder version. Useful for understanding the site context before generating content. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }.",
+    annotations: { idempotentHint: true },
+    _meta: { idempotent: "true" },
   },
   async () => {
-    const result = await wp.request("/schema/settings");
+    const result = await wp.requestEnveloped("/schema/settings");
     return {
       content: [
-        { type: "text" as const, text: JSON.stringify(result) },
+        { type: "text" as const, text: serializeEnvelope(result) },
       ],
     };
   },
@@ -367,13 +420,15 @@ registerPluginTool(
   "diviops_global_color_list",
   {
     description:
-      "Get the global color palette defined in Divi. Returns all global colors that can be referenced by modules.",
+      "Get the global color palette defined in Divi. Returns all global colors that can be referenced by modules. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }.",
+    annotations: { idempotentHint: true },
+    _meta: { idempotent: "true" },
   },
   async () => {
-    const result = await wp.request("/global-color/list");
+    const result = await wp.requestEnveloped("/global-color/list");
     return {
       content: [
-        { type: "text" as const, text: JSON.stringify(result) },
+        { type: "text" as const, text: serializeEnvelope(result) },
       ],
     };
   },
@@ -383,7 +438,8 @@ registerPluginTool(
   "diviops_global_color_create",
   {
     description:
-      "Add a new global color to Divi's palette. The plugin mints a fresh `gcid-<uuid>` ID (the server forwards the color entry without an id and the WP-side handler generates one) and writes to the et_global_data option in the canonical Divi shape `{color, folder, label, lastUpdated, status, usedInPosts}`. The color appears in the VB color picker after save and can be referenced via `$variable({type:color,value:{name:gcid-...}})$` tokens. Note: Divi's AI Agent bundle has a Zod schema gap that drops `label` on its own writes — our PHP path goes around that bug by writing directly to the option. CONCURRENCY: this is a read-modify-write on a single WP option with no conflict detection. If a Visual Builder session holds stale global data, its next save can clobber colors written here in the interim. Coordinate writes when VB sessions are active, or have the user reload VB after MCP color writes.",
+      "Add a new global color to Divi's palette. The plugin mints a fresh `gcid-<uuid>` ID (the server forwards the color entry without an id and the WP-side handler generates one) and writes to the et_global_data option in the canonical Divi shape `{color, folder, label, lastUpdated, status, usedInPosts}`. The color appears in the VB color picker after save and can be referenced via `$variable({type:color,value:{name:gcid-...}})$` tokens. Note: Divi's AI Agent bundle has a Zod schema gap that drops `label` on its own writes — our PHP path goes around that bug by writing directly to the option. CONCURRENCY: this is a read-modify-write on a single WP option with no conflict detection. If a Visual Builder session holds stale global data, its next save can clobber colors written here in the interim. Coordinate writes when VB sessions are active, or have the user reload VB after MCP color writes. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }; input-shape rejections (non-CSS color value, missing required `color` for a new entry) return code 'invalid_input' with `error.data` documenting the failed field." +
+      DRY_RUN_DESC_SUFFIX,
     inputSchema: {
       color: z
         .string()
@@ -401,18 +457,23 @@ registerPluginTool(
         .optional()
         .default("active")
         .describe('Color status — "active" (default, visible in picker) or "archived" (hidden but preserved).'),
+      dry_run: DRY_RUN_FIELD,
     },
+    annotations: { idempotentHint: false },
+    _meta: { idempotent: "false" },
   },
-  async ({ color, label, folder, status }) => {
+  async ({ color, label, folder, status, dry_run }) => {
     const colorEntry: Record<string, any> = { color };
     if (label !== undefined) colorEntry.label = label;
     if (folder !== undefined) colorEntry.folder = folder;
     if (status) colorEntry.status = status;
-    const result = await wp.request("/global-color/upsert", {
+    const body: Record<string, unknown> = { colors: [colorEntry], mode: "merge" };
+    if (dry_run) body.dry_run = true;
+    const result = await wp.requestEnveloped("/global-color/upsert", {
       method: "POST",
-      body: { colors: [colorEntry], mode: "merge" },
+      body,
     });
-    return { content: [{ type: "text" as const, text: JSON.stringify(result) }] };
+    return { content: [{ type: "text" as const, text: serializeEnvelope(result) }] };
   },
 );
 
@@ -420,7 +481,8 @@ registerPluginTool(
   "diviops_global_color_update",
   {
     description:
-      "Update an existing global color by gcid. Only provided fields are updated; omitted fields are preserved. The lastUpdated timestamp is bumped on every write. Use diviops_global_color_list first to find the gcid for a color. CONCURRENCY: same VB-session race caveat as diviops_global_color_create — the write is read-modify-write on a single WP option, so an active VB session's next save can clobber this update.",
+      "Update an existing global color by gcid. Only provided fields are updated; omitted fields are preserved. The lastUpdated timestamp is bumped on every write. Use diviops_global_color_list first to find the gcid for a color. NOTE: the underlying upsert is merge-mode — supplying a gcid that doesn't yet exist creates a new color with that gcid (provided it satisfies the gcid charset/length rules) rather than failing as 'not found'. Pre-check via diviops_global_color_list if you need strict-update semantics. CONCURRENCY: same VB-session race caveat as diviops_global_color_create — the write is read-modify-write on a single WP option, so an active VB session's next save can clobber this update. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }; malformed gcid charset/length returns code 'invalid_input' with `error.data` documenting the failed field; non-CSS color value returns code 'invalid_input'; attempts to write to a customizer-bound default (gcid-primary-color / gcid-secondary-color / gcid-heading-color / gcid-body-color / gcid-link-color) return code 'variable.customizer_default_immutable' (HTTP 403) with `error.data = { id, managed_by: 'wp_customizer' }` — same code as diviops_variable_delete because the identity is identical (5.4+ unified gcid-* into the variable manager while preserving customizer-binding for the five legacy defaults)." +
+      DRY_RUN_DESC_SUFFIX,
     inputSchema: {
       gcid: z
         .string()
@@ -441,19 +503,24 @@ registerPluginTool(
         .enum(["active", "archived"])
         .optional()
         .describe('Change status — "active" or "archived". Omit to keep existing.'),
+      dry_run: DRY_RUN_FIELD,
     },
+    annotations: { idempotentHint: false },
+    _meta: { idempotent: "conditional" },
   },
-  async ({ gcid, color, label, folder, status }) => {
+  async ({ gcid, color, label, folder, status, dry_run }) => {
     const colorEntry: Record<string, any> = { id: gcid };
     if (color !== undefined) colorEntry.color = color;
     if (label !== undefined) colorEntry.label = label;
     if (folder !== undefined) colorEntry.folder = folder;
     if (status) colorEntry.status = status;
-    const result = await wp.request("/global-color/upsert", {
+    const body: Record<string, unknown> = { colors: [colorEntry], mode: "merge" };
+    if (dry_run) body.dry_run = true;
+    const result = await wp.requestEnveloped("/global-color/upsert", {
       method: "POST",
-      body: { colors: [colorEntry], mode: "merge" },
+      body,
     });
-    return { content: [{ type: "text" as const, text: JSON.stringify(result) }] };
+    return { content: [{ type: "text" as const, text: serializeEnvelope(result) }] };
   },
 );
 
@@ -461,7 +528,8 @@ registerPluginTool(
   "diviops_global_color_delete",
   {
     description:
-      "Delete a global color from the registry by gcid. Refuses by default if the color is tracked as referenced by any post (per Divi's `usedInPosts` index — pass `force: true` to delete anyway; orphan refs will render as invalid CSS until pages are re-saved through VB). Always refuses to delete the 5 customizer-bound defaults (gcid-primary-color, gcid-secondary-color, gcid-heading-color, gcid-body-color, gcid-link-color) regardless of force — those must be edited via WP Customizer. CONCURRENCY: same VB-session race caveat as diviops_global_color_create — an active VB session's next save can re-introduce a color we just deleted if the session held stale data.",
+      "Delete a global color from the registry by gcid. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }. Live-reference soft-block: returns code 'conflict' (HTTP 409) when Divi's `usedInPosts` index lists references — `error.data = { id, ref_count, used_in_posts }` carries Divi's pass-through reference list (Divi-maintained on VB save; element shape is whatever Divi emits, NOT the discriminated-union `locations[]` shape diviops_variable_delete builds via parse_blocks). Pass `force: true` to override; orphan refs will render as invalid CSS until pages are re-saved through VB. Always refuses to delete the 5 customizer-bound defaults (gcid-primary-color, gcid-secondary-color, gcid-heading-color, gcid-body-color, gcid-link-color) regardless of force — returns code 'variable.customizer_default_immutable' (HTTP 403) with `error.data = { id, managed_by: 'wp_customizer' }`. Missing gcids return 'not_found' (HTTP 404). Malformed gcid (empty or missing `gcid-` prefix) returns 'invalid_input'. CONCURRENCY: same VB-session race caveat as diviops_global_color_create — an active VB session's next save can re-introduce a color we just deleted if the session held stale data." +
+      DRY_RUN_DESC_SUFFIX,
     inputSchema: {
       gcid: z
         .string()
@@ -471,29 +539,36 @@ registerPluginTool(
         .optional()
         .default(false)
         .describe("If true, delete even when usedInPosts shows live references. Customizer-bound defaults remain protected regardless."),
+      dry_run: DRY_RUN_FIELD,
     },
+    annotations: { idempotentHint: true },
+    _meta: { idempotent: "true" },
   },
-  async ({ gcid, force }) => {
+  async ({ gcid, force, dry_run }) => {
     const body: Record<string, any> = { gcid };
     if (force) body.force = true;
-    const result = await wp.request("/global-color/delete", {
+    if (dry_run) body.dry_run = true;
+    const result = await wp.requestEnveloped("/global-color/delete", {
       method: "POST",
       body,
     });
-    return { content: [{ type: "text" as const, text: JSON.stringify(result) }] };
+    return { content: [{ type: "text" as const, text: serializeEnvelope(result) }] };
   },
 );
 
 registerPluginTool(
   "diviops_global_font_list",
   {
-    description: "Get the global font definitions from Divi settings.",
+    description:
+      "Get the global font definitions from Divi settings. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }.",
+    annotations: { idempotentHint: true },
+    _meta: { idempotent: "true" },
   },
   async () => {
-    const result = await wp.request("/global-font/list");
+    const result = await wp.requestEnveloped("/global-font/list");
     return {
       content: [
-        { type: "text" as const, text: JSON.stringify(result) },
+        { type: "text" as const, text: serializeEnvelope(result) },
       ],
     };
   },
@@ -503,7 +578,7 @@ registerPluginTool(
   "diviops_meta_find_icon",
   {
     description:
-      "Search for icons by keyword. Returns matching icons with unicode, type (fa/divi), and weight. Use the returned unicode/type/weight in Blurb icon or Icon module attributes.",
+      "Search for icons by keyword. Returns matching icons with unicode, type (fa/divi), and weight. Use the returned unicode/type/weight in Blurb icon or Icon module attributes. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }.",
     inputSchema: {
       query: z
         .string()
@@ -521,14 +596,16 @@ registerPluginTool(
         .default(10)
         .describe("Max results (default 10, max 50)"),
     },
+    annotations: { idempotentHint: true },
+    _meta: { idempotent: "true" },
   },
   async ({ query, type, limit }) => {
-    const result = await wp.request(
+    const result = await wp.requestEnveloped(
       `/meta/find-icon?q=${encodeURIComponent(query)}&type=${type ?? "all"}&limit=${limit ?? 10}`,
     );
     return {
       content: [
-        { type: "text" as const, text: JSON.stringify(result) },
+        { type: "text" as const, text: serializeEnvelope(result) },
       ],
     };
   },
@@ -540,7 +617,8 @@ registerPluginTool(
   "diviops_page_update_content",
   {
     description:
-      "Update the content of a page with Divi block markup. The content should be valid WordPress block markup using divi/* blocks. IMPORTANT: This overwrites the entire page content.",
+      "Update the content of a page with Divi block markup. The content should be valid WordPress block markup using divi/* blocks. IMPORTANT: This overwrites the entire page content. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }; missing page_id returns 'not_found', edit-permission failures return 'forbidden' (HTTP 403), non-string content returns 'invalid_input' with `error.data = { field, received_type }`." +
+      DRY_RUN_DESC_SUFFIX,
     inputSchema: {
       page_id: z.number().describe("WordPress post/page ID to update"),
       content: z
@@ -548,18 +626,23 @@ registerPluginTool(
         .describe(
           "Full page content in WordPress block markup format (<!-- wp:divi/section -->...<!-- /wp:divi/section -->)",
         ),
+      dry_run: DRY_RUN_FIELD,
     },
+    annotations: { idempotentHint: false },
+    _meta: { idempotent: "conditional" },
   },
-  async ({ page_id, content }) => {
+  async ({ page_id, content, dry_run }) => {
     const hits = findForeignVarRefs(content, "content");
     if (hits.length > 0) return isolationErrorResult("diviops_page_update_content", hits);
-    const result = await wp.request(`/page/update-content/${page_id}`, {
+    const body: Record<string, unknown> = { content };
+    if (dry_run) body.dry_run = true;
+    const result = await wp.requestEnveloped(`/page/update-content/${page_id}`, {
       method: "POST",
-      body: { content },
+      body,
     });
     return {
       content: [
-        { type: "text" as const, text: JSON.stringify(result) },
+        { type: "text" as const, text: serializeEnvelope(result) },
       ],
     };
   },
@@ -569,19 +652,21 @@ registerPluginTool(
   "diviops_render_preview",
   {
     description:
-      "Render Divi block markup to HTML. Use this to preview what the output will look like before saving. Useful for validation.",
+      "Render Divi block markup to HTML. Use this to preview what the output will look like before saving. Useful for validation. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }; success payload is { rendered_html: string }. Errors map to `invalid_input` (non-string content) or `divi_error` (parser/render exception, with truncated message and full detail in `error.data.detail`).",
     inputSchema: {
       content: z.string().describe("Divi block markup to render to HTML"),
     },
+    annotations: { idempotentHint: true },
+    _meta: { idempotent: "true" },
   },
   async ({ content }) => {
-    const result = await wp.request("/render", {
+    const result = await wp.requestEnveloped("/render", {
       method: "POST",
       body: { content },
     });
     return {
       content: [
-        { type: "text" as const, text: JSON.stringify(result) },
+        { type: "text" as const, text: serializeEnvelope(result) },
       ],
     };
   },
@@ -591,19 +676,21 @@ registerPluginTool(
   "diviops_validate_blocks",
   {
     description:
-      "Validate Divi block markup before saving. Checks structure (malformed comments, unknown blocks, missing builderVersion), required attributes (layout display on containers), and known pitfalls (button padding path, icon.enable, gradient enabled/positions). Returns errors and warnings.",
+      "Validate Divi block markup before saving. Checks structure (malformed comments, unknown blocks, missing builderVersion), required attributes (layout display on containers), and known pitfalls (button padding path, icon.enable, gradient enabled/positions). Returns the standardized envelope { ok, data?, error: { code, message, hint? } }; success payload is { valid: bool, total_blocks: number, errors: Finding[], warnings: Finding[] } where each Finding is { block, index, code, message, path? }. Note: shape errors detected in the markup surface as success-branch `data.errors[]` entries (NOT `validation_failed` envelopes) — the findings array is the payload, not an error. The envelope's error branch fires only for tool-level failures (`invalid_input` for non-string content; `divi_error` for an exception in the walker).",
     inputSchema: {
       content: z.string().describe("Divi block markup to validate"),
     },
+    annotations: { idempotentHint: true },
+    _meta: { idempotent: "true" },
   },
   async ({ content }) => {
-    const result = await wp.request("/validate/blocks", {
+    const result = await wp.requestEnveloped("/validate/blocks", {
       method: "POST",
       body: { content },
     });
     return {
       content: [
-        { type: "text" as const, text: JSON.stringify(result) },
+        { type: "text" as const, text: serializeEnvelope(result) },
       ],
     };
   },
@@ -613,7 +700,8 @@ registerPluginTool(
   "diviops_section_append",
   {
     description:
-      "Append a Divi section to an existing page without overwriting other content. Use this to incrementally build pages.",
+      "Append a Divi section to an existing page without overwriting other content. Use this to incrementally build pages. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }; missing page_id returns 'not_found' with `error.data.target_kind = \"page\"`, edit-permission failures return 'forbidden' (HTTP 403), non-string content or invalid position returns 'invalid_input' with `error.data = { field, ... }`." +
+      DRY_RUN_DESC_SUFFIX,
     inputSchema: {
       page_id: z.number().describe("WordPress post/page ID"),
       content: z
@@ -626,18 +714,23 @@ registerPluginTool(
         .optional()
         .default("end")
         .describe('Where to insert: "start" or "end" (default)'),
+      dry_run: DRY_RUN_FIELD,
     },
+    annotations: { idempotentHint: false },
+    _meta: { idempotent: "false" },
   },
-  async ({ page_id, content, position }) => {
+  async ({ page_id, content, position, dry_run }) => {
     const hits = findForeignVarRefs(content, "content");
     if (hits.length > 0) return isolationErrorResult("diviops_section_append", hits);
-    const result = await wp.request(`/section/append/${page_id}`, {
+    const body: Record<string, unknown> = { content, position: position ?? "end" };
+    if (dry_run) body.dry_run = true;
+    const result = await wp.requestEnveloped(`/section/append/${page_id}`, {
       method: "POST",
-      body: { content, position: position ?? "end" },
+      body,
     });
     return {
       content: [
-        { type: "text" as const, text: JSON.stringify(result) },
+        { type: "text" as const, text: serializeEnvelope(result) },
       ],
     };
   },
@@ -647,7 +740,8 @@ registerPluginTool(
   "diviops_section_replace",
   {
     description:
-      "Replace a section on a page. Target by admin label OR text content. Use occurrence when multiple sections match.",
+      "Replace a section on a page. Target by admin label OR text content. Use occurrence when multiple sections match. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }; missing section returns 'not_found' with `error.data = { target_kind: \"section\", ... }`, missing/ambiguous selectors return 'invalid_input' with `error.data.reason`." +
+      DRY_RUN_DESC_SUFFIX,
     inputSchema: {
       page_id: z.number().describe("WordPress post/page ID"),
       label: z
@@ -670,21 +764,25 @@ registerPluginTool(
         .optional()
         .default(1)
         .describe("Which match to target (1-based, default: 1)"),
+      dry_run: DRY_RUN_FIELD,
     },
+    annotations: { idempotentHint: false },
+    _meta: { idempotent: "conditional" },
   },
-  async ({ page_id, label, match_text, content, occurrence }) => {
+  async ({ page_id, label, match_text, content, occurrence, dry_run }) => {
     const hits = findForeignVarRefs(content, "content");
     if (hits.length > 0) return isolationErrorResult("diviops_section_replace", hits);
     const body: Record<string, any> = { content, occurrence };
     if (label) body.label = label;
     if (match_text) body.match_text = match_text;
-    const result = await wp.request(`/section/replace/${page_id}`, {
+    if (dry_run) body.dry_run = true;
+    const result = await wp.requestEnveloped(`/section/replace/${page_id}`, {
       method: "POST",
       body,
     });
     return {
       content: [
-        { type: "text" as const, text: JSON.stringify(result) },
+        { type: "text" as const, text: serializeEnvelope(result) },
       ],
     };
   },
@@ -694,7 +792,8 @@ registerPluginTool(
   "diviops_section_remove",
   {
     description:
-      "Remove a section from a page. Target by admin label OR text content. Use occurrence when multiple sections match.",
+      "Remove a section from a page. Target by admin label OR text content. Use occurrence when multiple sections match. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }; section selectors lack identity-preserving repeat-call detection so a removal of an already-removed section returns 'not_found' (HTTP 404) — the side-effect (section is gone) holds regardless of how many times you call." +
+      DRY_RUN_DESC_SUFFIX,
     inputSchema: {
       page_id: z.number().describe("WordPress post/page ID"),
       label: z
@@ -714,19 +813,23 @@ registerPluginTool(
         .optional()
         .default(1)
         .describe("Which match to target (1-based, default: 1)"),
+      dry_run: DRY_RUN_FIELD,
     },
+    annotations: { idempotentHint: true },
+    _meta: { idempotent: "true" },
   },
-  async ({ page_id, label, match_text, occurrence }) => {
+  async ({ page_id, label, match_text, occurrence, dry_run }) => {
     const body: Record<string, any> = { occurrence };
     if (label) body.label = label;
     if (match_text) body.match_text = match_text;
-    const result = await wp.request(`/section/remove/${page_id}`, {
+    if (dry_run) body.dry_run = true;
+    const result = await wp.requestEnveloped(`/section/remove/${page_id}`, {
       method: "POST",
       body,
     });
     return {
       content: [
-        { type: "text" as const, text: JSON.stringify(result) },
+        { type: "text" as const, text: serializeEnvelope(result) },
       ],
     };
   },
@@ -736,7 +839,7 @@ registerPluginTool(
   "diviops_section_get",
   {
     description:
-      "Get the raw block markup of a section. Target by admin label OR text content. Use occurrence when multiple sections match. Returns total_matches warning when duplicates exist.",
+      "Get the raw block markup of a section. Target by admin label OR text content. Use occurrence when multiple sections match. Returns total_matches warning when duplicates exist. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }; missing section returns 'not_found' with `error.data.target_kind = \"section\"`.",
     inputSchema: {
       page_id: z.number().describe("WordPress post/page ID"),
       label: z
@@ -757,16 +860,18 @@ registerPluginTool(
         .default(1)
         .describe("Which match to target (1-based, default: 1)"),
     },
+    annotations: { idempotentHint: true },
+    _meta: { idempotent: "true" },
   },
   async ({ page_id, label, match_text, occurrence }) => {
     const params: Record<string, string> = { occurrence: String(occurrence) };
     if (label) params.label = label;
     if (match_text) params.match_text = match_text;
     const qs = new URLSearchParams(params).toString();
-    const result = await wp.request(`/section/get/${page_id}?${qs}`);
+    const result = await wp.requestEnveloped(`/section/get/${page_id}?${qs}`);
     return {
       content: [
-        { type: "text" as const, text: JSON.stringify(result) },
+        { type: "text" as const, text: serializeEnvelope(result) },
       ],
     };
   },
@@ -776,7 +881,8 @@ registerPluginTool(
   "diviops_module_update",
   {
     description:
-      'Update specific attributes of a module. Target by auto_index (e.g. "text:5"), admin label, or text content. Uses dot notation for attribute paths. Example: {"content.decoration.headingFont.h2.font.desktop.value.color": "#ff0000"}. For paths whose key segments contain literal dots — notably Composable Settings preset slots like groupPreset["title.decoration.spacing"] — escape the inner dots with `\\.` to keep the segment intact: {"groupPreset.title\\\\.decoration\\\\.spacing.presetId": ["uuid"]}. Priority: auto_index > label > match_text. Use occurrence with label when duplicates exist.',
+      'Update specific attributes of a module. Target by auto_index (e.g. "text:5"), admin label, or text content. Uses dot notation for attribute paths. Example: {"content.decoration.headingFont.h2.font.desktop.value.color": "#ff0000"}. For paths whose key segments contain literal dots — notably Composable Settings preset slots like groupPreset["title.decoration.spacing"] — escape the inner dots with `\\.` to keep the segment intact: {"groupPreset.title\\\\.decoration\\\\.spacing.presetId": ["uuid"]}. Priority: auto_index > label > match_text. Use occurrence with label when duplicates exist. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }; missing module returns code "not_found" with error.data = { target_kind: "module", target_mode, target_value, page_id }, non-array attrs returns code "invalid_input" with error.data.field = "attrs", malformed Divi block markup surfaces code "divi_error" (HTTP 500).' +
+      DRY_RUN_DESC_SUFFIX,
     inputSchema: {
       page_id: z.number().describe("WordPress post/page ID"),
       label: z
@@ -807,9 +913,12 @@ registerPluginTool(
       attrs: z
         .record(z.string(), z.any())
         .describe("Attribute paths (dot notation) and their new values"),
+      dry_run: DRY_RUN_FIELD,
     },
+    annotations: { idempotentHint: false },
+    _meta: { idempotent: "conditional" },
   },
-  async ({ page_id, label, match_text, auto_index, occurrence, attrs }) => {
+  async ({ page_id, label, match_text, auto_index, occurrence, attrs, dry_run }) => {
     const hits = scanAttrsForForeignVarRefs(attrs);
     if (hits.length > 0) return isolationErrorResult("diviops_module_update", hits);
     const body: Record<string, any> = { attrs };
@@ -817,13 +926,14 @@ registerPluginTool(
     if (label) body.label = label;
     if (match_text) body.match_text = match_text;
     if (occurrence > 1) body.occurrence = occurrence;
-    const result = await wp.request(`/module/update/${page_id}`, {
+    if (dry_run) body.dry_run = true;
+    const result = await wp.requestEnveloped(`/module/update/${page_id}`, {
       method: "POST",
       body,
     });
     return {
       content: [
-        { type: "text" as const, text: JSON.stringify(result) },
+        { type: "text" as const, text: serializeEnvelope(result) },
       ],
     };
   },
@@ -833,7 +943,8 @@ registerPluginTool(
   "diviops_module_move",
   {
     description:
-      'Move a module to a new position on the page. Specify source and target blocks using auto_index (e.g. "text:3"), admin label, or text content. Position "before" or "after" the target. Works with any block type including sections, rows, and modules. Both blocks are found in the original content, so auto_index values refer to positions before the move.',
+      'Move a module to a new position on the page. Specify source and target blocks using auto_index (e.g. "text:3"), admin label, or text content. Position "before" or "after" the target. Works with any block type including sections, rows, and modules. Both blocks are found in the original content, so auto_index values refer to positions before the move. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }; missing source/target blocks return code "not_found" with error.data = { target_kind: "block", context: "source"|"target", ... }, moving a block into itself returns code "module.overlap" (HTTP 400).' +
+      DRY_RUN_DESC_SUFFIX,
     inputSchema: {
       page_id: z.number().describe("WordPress post/page ID"),
       source_label: z
@@ -885,7 +996,10 @@ registerPluginTool(
       position: z
         .enum(["before", "after"])
         .describe("Place the source before or after the target"),
+      dry_run: DRY_RUN_FIELD,
     },
+    annotations: { idempotentHint: false },
+    _meta: { idempotent: "conditional" },
   },
   async ({
     page_id,
@@ -898,6 +1012,7 @@ registerPluginTool(
     target_auto_index,
     target_occurrence,
     position,
+    dry_run,
   }) => {
     const body: Record<string, any> = { position };
     if (source_label) body.source_label = source_label;
@@ -908,13 +1023,14 @@ registerPluginTool(
     if (target_match_text) body.target_match_text = target_match_text;
     if (target_auto_index) body.target_auto_index = target_auto_index;
     if (target_occurrence > 1) body.target_occurrence = target_occurrence;
-    const result = await wp.request(`/module/move/${page_id}`, {
+    if (dry_run) body.dry_run = true;
+    const result = await wp.requestEnveloped(`/module/move/${page_id}`, {
       method: "POST",
       body,
     });
     return {
       content: [
-        { type: "text" as const, text: JSON.stringify(result) },
+        { type: "text" as const, text: serializeEnvelope(result) },
       ],
     };
   },
@@ -924,23 +1040,28 @@ registerPluginTool(
   "diviops_module_lock",
   {
     description:
-      'Lock a module so VB users cannot edit it. Sets attrs.locked = {desktop: {value: "on"}} per Divi\'s per-breakpoint convention (verified via VB-save probe). Locked modules render normally on frontend; only VB-side editing is gated. Same targeting pattern as diviops_module_update — pick one of label / match_text / auto_index. Use diviops_module_unlock to reverse.',
+      'Lock a module so VB users cannot edit it. Sets attrs.locked = {desktop: {value: "on"}} per Divi\'s per-breakpoint convention (verified via VB-save probe). Locked modules render normally on frontend; only VB-side editing is gated. Same targeting pattern as diviops_module_update — pick one of label / match_text / auto_index. Use diviops_module_unlock to reverse. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }; missing module returns code "not_found" with error.data.target_kind = "module".' +
+      DRY_RUN_DESC_SUFFIX,
     inputSchema: {
       page_id: z.number().describe("WordPress post/page ID"),
       label: z.string().optional().describe("Admin label of the module to lock (exact match)"),
       match_text: z.string().optional().describe("Text to search for in module markup (case-insensitive)"),
       auto_index: z.string().optional().describe('Auto-index in "type:N" format (e.g. "text:3")'),
       occurrence: z.number().int().min(1).optional().default(1).describe("Which occurrence when multiple modules share the same label (1-based)"),
+      dry_run: DRY_RUN_FIELD,
     },
+    annotations: { idempotentHint: false },
+    _meta: { idempotent: "false" },
   },
-  async ({ page_id, label, match_text, auto_index, occurrence }) => {
+  async ({ page_id, label, match_text, auto_index, occurrence, dry_run }) => {
     const body: Record<string, any> = {};
     if (label) body.label = label;
     if (match_text) body.match_text = match_text;
     if (auto_index) body.auto_index = auto_index;
     if (occurrence && occurrence > 1) body.occurrence = occurrence;
-    const result = await wp.request(`/module/lock/${page_id}`, { method: "POST", body });
-    return { content: [{ type: "text" as const, text: JSON.stringify(result) }] };
+    if (dry_run) body.dry_run = true;
+    const result = await wp.requestEnveloped(`/module/lock/${page_id}`, { method: "POST", body });
+    return { content: [{ type: "text" as const, text: serializeEnvelope(result) }] };
   },
 );
 
@@ -948,23 +1069,28 @@ registerPluginTool(
   "diviops_module_unlock",
   {
     description:
-      "Unlock a module by removing attrs.locked entirely. Matches Divi VB's convention: unlocked = attribute absent (NOT {value: 'off'}) — VB doesn't write a falsy value on unlock, it removes the field. Same targeting pattern as diviops_module_lock.",
+      "Unlock a module by removing attrs.locked entirely. Matches Divi VB's convention: unlocked = attribute absent (NOT {value: 'off'}) — VB doesn't write a falsy value on unlock, it removes the field. Same targeting pattern as diviops_module_lock. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }; missing module returns 'not_found' with `error.data.target_kind = \"module\"`." +
+      DRY_RUN_DESC_SUFFIX,
     inputSchema: {
       page_id: z.number().describe("WordPress post/page ID"),
       label: z.string().optional().describe("Admin label of the module to unlock (exact match)"),
       match_text: z.string().optional().describe("Text to search for in module markup (case-insensitive)"),
       auto_index: z.string().optional().describe('Auto-index in "type:N" format'),
       occurrence: z.number().int().min(1).optional().default(1).describe("Which occurrence when multiple modules share the same label (1-based)"),
+      dry_run: DRY_RUN_FIELD,
     },
+    annotations: { idempotentHint: false },
+    _meta: { idempotent: "false" },
   },
-  async ({ page_id, label, match_text, auto_index, occurrence }) => {
+  async ({ page_id, label, match_text, auto_index, occurrence, dry_run }) => {
     const body: Record<string, any> = {};
     if (label) body.label = label;
     if (match_text) body.match_text = match_text;
     if (auto_index) body.auto_index = auto_index;
     if (occurrence && occurrence > 1) body.occurrence = occurrence;
-    const result = await wp.request(`/module/unlock/${page_id}`, { method: "POST", body });
-    return { content: [{ type: "text" as const, text: JSON.stringify(result) }] };
+    if (dry_run) body.dry_run = true;
+    const result = await wp.requestEnveloped(`/module/unlock/${page_id}`, { method: "POST", body });
+    return { content: [{ type: "text" as const, text: serializeEnvelope(result) }] };
   },
 );
 
@@ -972,7 +1098,8 @@ registerPluginTool(
   "diviops_module_clone",
   {
     description:
-      'Clone a module by deep-copying its block JSON and inserting it next to the source within the same parent container. Position controls before/after placement (default "after"). Module IDs are reassigned by Divi at render time from the block tree position, so the clone gets fresh IDs automatically. Same targeting pattern as diviops_module_lock.',
+      'Clone a module by deep-copying its block JSON and inserting it next to the source within the same parent container. Position controls before/after placement (default "after"). Module IDs are reassigned by Divi at render time from the block tree position, so the clone gets fresh IDs automatically. Same targeting pattern as diviops_module_lock. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }; missing module returns code "not_found" with error.data.target_kind = "module", malformed parent containers surface code "divi_error" (HTTP 500).' +
+      DRY_RUN_DESC_SUFFIX,
     inputSchema: {
       page_id: z.number().describe("WordPress post/page ID"),
       label: z.string().optional().describe("Admin label of the module to clone (exact match)"),
@@ -980,17 +1107,21 @@ registerPluginTool(
       auto_index: z.string().optional().describe('Auto-index in "type:N" format'),
       occurrence: z.number().int().min(1).optional().default(1).describe("Which occurrence when multiple modules share the same label (1-based)"),
       position: z.enum(["before", "after"]).optional().default("after").describe('Place the clone "before" or "after" the source module within its parent.'),
+      dry_run: DRY_RUN_FIELD,
     },
+    annotations: { idempotentHint: false },
+    _meta: { idempotent: "false" },
   },
-  async ({ page_id, label, match_text, auto_index, occurrence, position }) => {
+  async ({ page_id, label, match_text, auto_index, occurrence, position, dry_run }) => {
     const body: Record<string, any> = {};
     if (label) body.label = label;
     if (match_text) body.match_text = match_text;
     if (auto_index) body.auto_index = auto_index;
     if (occurrence && occurrence > 1) body.occurrence = occurrence;
     if (position) body.position = position;
-    const result = await wp.request(`/module/clone/${page_id}`, { method: "POST", body });
-    return { content: [{ type: "text" as const, text: JSON.stringify(result) }] };
+    if (dry_run) body.dry_run = true;
+    const result = await wp.requestEnveloped(`/module/clone/${page_id}`, { method: "POST", body });
+    return { content: [{ type: "text" as const, text: serializeEnvelope(result) }] };
   },
 );
 
@@ -998,7 +1129,8 @@ registerPluginTool(
   "diviops_page_create",
   {
     description:
-      "Create a new WordPress page, optionally with Divi block content.",
+      "Create a new WordPress page, optionally with Divi block content. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }; non-string content or invalid status return code 'invalid_input' with `error.data` documenting the failed field." +
+      DRY_RUN_DESC_SUFFIX,
     inputSchema: {
       title: z.string().describe("Page title"),
       content: z
@@ -1011,20 +1143,25 @@ registerPluginTool(
         .optional()
         .default("draft")
         .describe("Post status"),
+      dry_run: DRY_RUN_FIELD,
     },
+    annotations: { idempotentHint: false },
+    _meta: { idempotent: "false" },
   },
-  async ({ title, content, status }) => {
+  async ({ title, content, status, dry_run }) => {
     if (content) {
       const hits = findForeignVarRefs(content, "content");
       if (hits.length > 0) return isolationErrorResult("diviops_page_create", hits);
     }
-    const result = await wp.request("/page/create", {
+    const body: Record<string, unknown> = { title, content: content ?? "", status: status ?? "draft" };
+    if (dry_run) body.dry_run = true;
+    const result = await wp.requestEnveloped("/page/create", {
       method: "POST",
-      body: { title, content: content ?? "", status: status ?? "draft" },
+      body,
     });
     return {
       content: [
-        { type: "text" as const, text: JSON.stringify(result) },
+        { type: "text" as const, text: serializeEnvelope(result) },
       ],
     };
   },
@@ -1034,7 +1171,7 @@ registerPluginTool(
   "diviops_page_trash",
   {
     description:
-      "Trash or permanently delete a page/post. Defaults to trash (reversible via WP Admin → Trash). Pass force=true to permanently delete (wp_delete_post — irreversible). Idempotent: trashing an already-trashed post is a no-op. Pass dry_run=true to preview without mutating. Replaces wp-cli `post delete --force=0|1` routing for AI-agent callers (typed input, deterministic envelope).",
+      "Trash or permanently delete a page/post. Defaults to trash (reversible via WP Admin → Trash). Pass force=true to permanently delete (wp_delete_post — irreversible). Idempotent: trashing an already-trashed post returns ok:true with `data.already_trashed = true` (repeat-safe semantics for AI-agent retries). Pass dry_run=true to preview without mutating. Replaces wp-cli `post delete --force=0|1` routing for AI-agent callers (typed input, deterministic envelope). Returns the standardized envelope { ok, data?, error: { code, message, hint? } }; missing post_id returns 'not_found', delete-permission failures return 'forbidden' (HTTP 403). Note: dry_run currently returns the route-specific shape rather than the standardized `data.plan = { summary, changes[] }` shape used by tools introduced after the dry_run convention was generalized; plan-shape standardization is tracked separately for the pre-existing dry_run wave.",
     inputSchema: {
       post_id: z.number().int().describe("WordPress post/page ID"),
       force: z
@@ -1052,9 +1189,11 @@ registerPluginTool(
           "When true, return the change plan without mutating state.",
         ),
     },
+    annotations: { idempotentHint: true },
+    _meta: { idempotent: "true" },
   },
   async ({ post_id, force, dry_run }) => {
-    const result = await wp.request(`/page/trash/${post_id}`, {
+    const result = await wp.requestEnveloped(`/page/trash/${post_id}`, {
       method: "POST",
       body: {
         force: force ?? false,
@@ -1063,7 +1202,7 @@ registerPluginTool(
     });
     return {
       content: [
-        { type: "text" as const, text: JSON.stringify(result) },
+        { type: "text" as const, text: serializeEnvelope(result) },
       ],
     };
   },
@@ -1073,7 +1212,7 @@ registerPluginTool(
   "diviops_page_update_status",
   {
     description:
-      "Update a page's post_status. Valid statuses: publish, draft, private, pending, future. status='future' requires date_gmt (ISO 8601 UTC, must be in the future) — server writes both post_date_gmt and the site-tz post_date so WP's scheduler picks it up. status='publish' on a previously-scheduled post clears the future date so it publishes immediately. Idempotent: same-status update is a no-op. Pass dry_run=true to preview. Replaces wp-cli `post update --post_status=...` routing.",
+      "Update a page's post_status. Valid statuses: publish, draft, private, pending, future. status='future' requires date_gmt (ISO 8601 UTC, must be in the future) — server writes both post_date_gmt and the site-tz post_date so WP's scheduler picks it up. status='publish' on a previously-scheduled post clears the future date so it publishes immediately. Idempotent: same-status update returns ok:true with `data.noop = true`. Pass dry_run=true to preview. Replaces wp-cli `post update --post_status=...` routing. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }; missing post_id returns 'not_found', edit-permission failures return 'forbidden' (HTTP 403); status enum violations and date_gmt validation failures return 'invalid_input' with `error.data` documenting the field. Note: dry_run currently returns the route-specific shape rather than the standardized `data.plan = { summary, changes[] }` shape used by tools introduced after the dry_run convention was generalized; plan-shape standardization is tracked separately for the pre-existing dry_run wave.",
     inputSchema: {
       post_id: z.number().int().describe("WordPress post/page ID"),
       status: z
@@ -1093,6 +1232,8 @@ registerPluginTool(
           "When true, return the change plan without mutating state.",
         ),
     },
+    annotations: { idempotentHint: true },
+    _meta: { idempotent: "true" },
   },
   async ({ post_id, status, date_gmt, dry_run }) => {
     const body: Record<string, any> = {
@@ -1100,13 +1241,13 @@ registerPluginTool(
       dry_run: dry_run ?? false,
     };
     if (date_gmt) body.date_gmt = date_gmt;
-    const result = await wp.request(`/page/update-status/${post_id}`, {
+    const result = await wp.requestEnveloped(`/page/update-status/${post_id}`, {
       method: "POST",
       body,
     });
     return {
       content: [
-        { type: "text" as const, text: JSON.stringify(result) },
+        { type: "text" as const, text: serializeEnvelope(result) },
       ],
     };
   },
@@ -1118,13 +1259,15 @@ registerPluginTool(
   "diviops_preset_audit",
   {
     description:
-      "Audit all Divi presets (module + group). Each entry reports `block_ref_count` (page-content refs via modulePreset / groupPreset block markup), `group_ref_count` (in-registry chain refs from other presets — module presets via top-level `groupPresets.<slot>.presetId`, group presets via `attrs.groupPreset.<slot>.presetId`), and `referenced` (true if either > 0). Group presets that are chain-referenced also expose `referenced_by_presets` (UUIDs of the presets that wire them in — typically module presets, but type-agnostic). Use this before deleting — orphan-cleanup based only on page refs would silently wipe load-bearing chain-wired group presets (font, border, box-shadow, spacing, button). Also reports `orphan_default_pointers`: per-bucket `default` pointers that reference a UUID no longer present in `items[]` (caused by past unsafe deletes). Render-safe but blocks Divi's lazy recreate-on-VB-use path; clear via diviops_preset_set_default with unset=true on the affected module/group.",
+      "Audit all Divi presets (module + group). Each entry reports `block_ref_count` (page-content refs via modulePreset / groupPreset block markup), `group_ref_count` (in-registry chain refs from other presets — module presets via top-level `groupPresets.<slot>.presetId`, group presets via `attrs.groupPreset.<slot>.presetId`), and `referenced` (true if either > 0). Group presets that are chain-referenced also expose `referenced_by_presets` (UUIDs of the presets that wire them in — typically module presets, but type-agnostic). Use this before deleting — orphan-cleanup based only on page refs would silently wipe load-bearing chain-wired group presets (font, border, box-shadow, spacing, button). Also reports `orphan_default_pointers`: per-bucket `default` pointers that reference a UUID no longer present in `items[]` (caused by past unsafe deletes). Render-safe but blocks Divi's lazy recreate-on-VB-use path; clear via diviops_preset_set_default with unset=true on the affected module/group. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }.",
+    annotations: { idempotentHint: true },
+    _meta: { idempotent: "true" },
   },
   async () => {
-    const result = await wp.request("/preset/audit");
+    const result = await wp.requestEnveloped("/preset/audit");
     return {
       content: [
-        { type: "text" as const, text: JSON.stringify(result) },
+        { type: "text" as const, text: serializeEnvelope(result) },
       ],
     };
   },
@@ -1134,7 +1277,7 @@ registerPluginTool(
   "diviops_preset_cleanup",
   {
     description:
-      'Clean up presets. Default: remove spam presets. Optional: dedup=true to also remove duplicates, action="rename_strip_prefix" with prefix to strip a name prefix, or action="remove_orphans" with scope="spam"|"all" to remove unreferenced presets. Use dry_run: true (default) to preview.',
+      'Clean up presets. Default: remove spam presets. Optional: dedup=true to also remove duplicates, action="rename_strip_prefix" with prefix to strip a name prefix, or action="remove_orphans" with scope="spam"|"all" to remove unreferenced presets. Use dry_run: true (default) to preview. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }. Note: dry_run currently returns the route-specific summary shape rather than the standardized `data.plan = { summary, changes[] }` shape used by tools introduced after the dry_run convention was generalized; plan-shape standardization is tracked separately for the pre-existing dry_run wave.',
     inputSchema: {
       dry_run: z
         .boolean()
@@ -1169,6 +1312,8 @@ registerPluginTool(
           'Scope for remove_orphans: "spam" (only spam-named orphans) or "all" (all non-default orphans).',
         ),
     },
+    annotations: { idempotentHint: false },
+    _meta: { idempotent: "false" },
   },
   async ({ dry_run, dedup, action, prefix, scope }) => {
     const body: Record<string, any> = { dry_run: dry_run ?? true };
@@ -1176,13 +1321,13 @@ registerPluginTool(
     if (action) body.action = action;
     if (prefix) body.prefix = prefix;
     if (action === "remove_orphans" && scope) body.scope = scope;
-    const result = await wp.request("/preset/cleanup", {
+    const result = await wp.requestEnveloped("/preset/cleanup", {
       method: "POST",
       body,
     });
     return {
       content: [
-        { type: "text" as const, text: JSON.stringify(result) },
+        { type: "text" as const, text: serializeEnvelope(result) },
       ],
     };
   },
@@ -1192,7 +1337,8 @@ registerPluginTool(
   "diviops_preset_update",
   {
     description:
-      "Update a specific preset by ID. Can rename, replace its style attributes, and/or change its stack priority. Note: Divi serves frontend CSS from a per-post static cache at wp-content/et-cache/{post_id}/ that wp cache flush does NOT invalidate — if you're verifying a preset change on the rendered frontend, delete that dir for affected pages to force regeneration. Server-side preset state updates immediately; only the pre-rendered CSS file is stale.",
+      "Update a specific preset by ID. Can rename, replace its style attributes, and/or change its stack priority. Note: Divi serves frontend CSS from a per-post static cache at wp-content/et-cache/{post_id}/ that wp cache flush does NOT invalidate — if you're verifying a preset change on the rendered frontend, delete that dir for affected pages to force regeneration. Server-side preset state updates immediately; only the pre-rendered CSS file is stale. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }; missing preset_id returns code 'not_found' with a hint to diviops_preset_audit." +
+      DRY_RUN_DESC_SUFFIX,
     inputSchema: {
       preset_id: z.string().describe("Preset ID (UUID or short ID)"),
       name: z.string().optional().describe("New display name for the preset"),
@@ -1209,20 +1355,24 @@ registerPluginTool(
         .describe(
           "Stack-merge priority. When this preset is part of a stacked-preset arrangement (e.g. base typography + brand override on the same module/group slot), Divi sorts presets ascending and merges in priority order, so a higher number wins the cascade. Default in Divi is 10 when omitted. Only meaningful for presets that participate in a stack — solo presets render the same regardless of priority.",
         ),
+      dry_run: DRY_RUN_FIELD,
     },
+    annotations: { idempotentHint: false },
+    _meta: { idempotent: "conditional" },
   },
-  async ({ preset_id, name, attrs, priority }) => {
+  async ({ preset_id, name, attrs, priority, dry_run }) => {
     const body: Record<string, any> = { preset_id };
     if (name) body.name = name;
     if (attrs) body.attrs = attrs;
     if (typeof priority === "number") body.priority = priority;
-    const result = await wp.request("/preset/update", {
+    if (dry_run) body.dry_run = true;
+    const result = await wp.requestEnveloped("/preset/update", {
       method: "POST",
       body,
     });
     return {
       content: [
-        { type: "text" as const, text: JSON.stringify(result) },
+        { type: "text" as const, text: serializeEnvelope(result) },
       ],
     };
   },
@@ -1232,7 +1382,7 @@ registerPluginTool(
   "diviops_preset_delete",
   {
     description:
-      "Delete a specific preset by ID. Use diviops_preset_audit first to verify the preset is unreferenced before deleting. Refuses with 409 preset_is_default if the target is the registered default for its module/group bucket — clear the pointer first via diviops_preset_set_default with unset=true, or pass force=true to delete and clear the pointer in one write.",
+      "Delete a specific preset by ID. Use diviops_preset_audit first to verify the preset is unreferenced before deleting. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }; missing preset_id returns code 'not_found' with a hint to diviops_preset_audit. Refuses with code 'conflict' (HTTP 409) and `error.data = { preset_id, type, module, name, reason: 'is_default' }` if the target is the registered default for its module/group bucket — clear the pointer first via diviops_preset_set_default with unset=true, or pass force=true to delete and clear the pointer in one write. The `reason` discriminator field leaves room for future conflict reasons (referenced_in_chain, etc.) without reshaping.",
     inputSchema: {
       preset_id: z.string().describe("Preset ID to delete"),
       force: z
@@ -1242,17 +1392,19 @@ registerPluginTool(
           "When true, deletes the preset even if it is the registered default and clears the default pointer in the same write. Default false (refuse-by-default).",
         ),
     },
+    annotations: { idempotentHint: true },
+    _meta: { idempotent: "true" },
   },
   async ({ preset_id, force }) => {
     const body: Record<string, unknown> = { preset_id };
     if (force !== undefined) body.force = force;
-    const result = await wp.request("/preset/delete", {
+    const result = await wp.requestEnveloped("/preset/delete", {
       method: "POST",
       body,
     });
     return {
       content: [
-        { type: "text" as const, text: JSON.stringify(result) },
+        { type: "text" as const, text: serializeEnvelope(result) },
       ],
     };
   },
@@ -1262,7 +1414,9 @@ registerPluginTool(
   "diviops_preset_create",
   {
     description:
-      'Create a new preset in the Divi 5 registry. For module presets, supply module_name (e.g. "divi/column", "divi/button", "divi/section"), name, and attrs. For group (attribute-level) presets, set type="group" and supply group_name ("divi/font", "divi/button", etc.), group_id ("designTitleText", "button", etc.), and optionally primary_attr_name.',
+      'Create a new preset in the Divi 5 registry. For module presets, supply module_name (e.g. "divi/column", "divi/button", "divi/section"), name, and attrs. For group (attribute-level) presets, set type="group" and supply group_name ("divi/font", "divi/button", etc.), group_id ("designTitleText", "button", etc.), and optionally primary_attr_name.' +
+      DRY_RUN_DESC_SUFFIX +
+      " NOTE: dry_run plan does not pre-allocate the UUID — that's generated at apply time. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }. Per-bucket name uniqueness check: a name collision in the same `(bucket, bucket_key)` returns code 'conflict' (HTTP 409) with `error.data = { existing_preset_id, bucket, bucket_key, name }` so callers can branch on reuse / rename / preset_update. Bucket coordinates are the natural addressing scope: a 'Hero Title' font preset and a 'Hero Title' button preset coexist (different buckets), but two 'Hero Title' presets under `group/divi/font` collide. Input-shape rejections (missing module_name/name/attrs, type outside [module,group], group preset without group_name/group_id) return code 'invalid_input' with structured `error.data` documenting the failed field.",
     inputSchema: {
       module_name: z
         .string()
@@ -1311,9 +1465,12 @@ registerPluginTool(
         .describe(
           "Stack-merge priority. When this preset participates in a stacked-preset arrangement, Divi sorts ascending and merges in priority order — higher number wins the cascade. Default in Divi is 10 when omitted.",
         ),
+      dry_run: DRY_RUN_FIELD,
     },
+    annotations: { idempotentHint: false },
+    _meta: { idempotent: "conditional" },
   },
-  async ({ module_name, name, attrs, type, group_name, group_id, primary_attr_name, make_default, priority }) => {
+  async ({ module_name, name, attrs, type, group_name, group_id, primary_attr_name, make_default, priority, dry_run }) => {
     if (type === "group" && (!group_name || !group_id)) {
       throw new Error(
         'type="group" requires both group_name and group_id. Example: group_name="divi/font", group_id="designTitleText".',
@@ -1325,10 +1482,11 @@ registerPluginTool(
     if (primary_attr_name) body.primary_attr_name = primary_attr_name;
     if (make_default) body.make_default = true;
     if (typeof priority === "number") body.priority = priority;
-    const result = await wp.request("/preset/create", { method: "POST", body });
+    if (dry_run) body.dry_run = true;
+    const result = await wp.requestEnveloped("/preset/create", { method: "POST", body });
     return {
       content: [
-        { type: "text" as const, text: JSON.stringify(result) },
+        { type: "text" as const, text: serializeEnvelope(result) },
       ],
     };
   },
@@ -1338,7 +1496,7 @@ registerPluginTool(
   "diviops_preset_reassign",
   {
     description:
-      'Reassign a preset UUID across page content. Covers both module-level refs (`attrs.modulePreset[...]`) and attribute-level group-preset refs (`attrs.groupPreset.<slot>.presetId`), plus — for group presets — registry chain refs: module-bucket presets via top-level `groupPresets.<slot>.presetId`, group-bucket presets via `attrs.groupPreset.<slot>.presetId`. The `scope` param controls which ref types are walked (default "both", auto-selects based on new_uuid\'s bucket). Cross-bucket swaps (module ↔ group) are rejected. When `strip_inline=true` (default), strips inline attrs that duplicate the new preset\'s attrs (otherwise inline wins over preset): for module scope, strips from block root; for group scope, strips per-slot using Divi\'s own slot→target-path resolver (handles composite button groups, `-id-classes` suffix, FormField/checkbox/radio `attrName` mappings, cross-module translation). Both scopes enforce a singular-stack guard (skip strip when slot holds multiple presets). Unmappable group slots skip strip and emit a per-slot advisory at `summary.strip_advisory_per_slot[<module>::<slot>]`; neighbor slots are unaffected. Defaults to dry-run — set mode="apply" to actually rewrite. Use this to consolidate repeated inline styling into a reusable preset after creating one with diviops_preset_create.',
+      'Reassign a preset UUID across page content. Covers both module-level refs (`attrs.modulePreset[...]`) and attribute-level group-preset refs (`attrs.groupPreset.<slot>.presetId`), plus — for group presets — registry chain refs: module-bucket presets via top-level `groupPresets.<slot>.presetId`, group-bucket presets via `attrs.groupPreset.<slot>.presetId`. The `scope` param controls which ref types are walked (default "both", auto-selects based on new_uuid\'s bucket). Cross-bucket swaps (module ↔ group) are rejected with code \'preset.bucket_mismatch\' (HTTP 400) carrying `error.data = { old_bucket, new_bucket }`. Explicit scope mismatch with new_uuid\'s bucket returns code \'preset.scope_mismatch\' (HTTP 400) with `error.data = { scope, new_bucket }`. When `strip_inline=true` (default), strips inline attrs that duplicate the new preset\'s attrs (otherwise inline wins over preset): for module scope, strips from block root; for group scope, strips per-slot using Divi\'s own slot→target-path resolver (handles composite button groups, `-id-classes` suffix, FormField/checkbox/radio `attrName` mappings, cross-module translation). Both scopes enforce a singular-stack guard (skip strip when slot holds multiple presets). Unmappable group slots skip strip and emit a per-slot advisory at `summary.strip_advisory_per_slot[<module>::<slot>]`; neighbor slots are unaffected. Defaults to dry-run — set mode="apply" to actually rewrite. Use this to consolidate repeated inline styling into a reusable preset after creating one with diviops_preset_create. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }; missing/invalid inputs return code \'invalid_input\' with structured `error.data` documenting the failed field; new_uuid not in registry returns code \'not_found\'; oversized page_ids batch returns code \'preset.too_many_pages\' with `error.data = { received, max_pages }`.',
     inputSchema: {
       old_uuid: z
         .string()
@@ -1376,6 +1534,8 @@ registerPluginTool(
           '"module" walks `attrs.modulePreset[...]` only. "group" walks `attrs.groupPreset.<slot>.presetId` plus registry chain refs (top-level `groupPresets.<slot>.presetId` on module presets, `attrs.groupPreset.<slot>.presetId` on group presets). "both" (default) auto-selects based on new_uuid\'s bucket — module/group identity is disjoint, so there is one valid walk per swap. An explicit "module" or "group" rejects if new_uuid is in the wrong bucket.',
         ),
     },
+    annotations: { idempotentHint: true },
+    _meta: { idempotent: "true" },
   },
   async ({ old_uuid, new_uuid, page_ids, mode, strip_inline, scope }) => {
     const body: Record<string, any> = {
@@ -1386,13 +1546,13 @@ registerPluginTool(
       scope,
     };
     if (page_ids) body.page_ids = page_ids;
-    const result = await wp.request("/preset/reassign", {
+    const result = await wp.requestEnveloped("/preset/reassign", {
       method: "POST",
       body,
     });
     return {
       content: [
-        { type: "text" as const, text: JSON.stringify(result) },
+        { type: "text" as const, text: serializeEnvelope(result) },
       ],
     };
   },
@@ -1402,13 +1562,15 @@ registerPluginTool(
   "diviops_preset_scan_orphans",
   {
     description:
-      "Scan page content for modulePreset UUIDs that are not in the D5 registry. Categorizes as dangling orphans (preset was deleted, reference remains) or D4-legacy candidates (preset exists in the legacy builder_global_presets_ng option but not in D5). Use before diviops_preset_reassign to identify stale UUIDs for consolidation.",
+      "Scan page content for modulePreset UUIDs that are not in the D5 registry. Categorizes as dangling orphans (preset was deleted, reference remains) or D4-legacy candidates (preset exists in the legacy builder_global_presets_ng option but not in D5). Use before diviops_preset_reassign to identify stale UUIDs for consolidation. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }.",
+    annotations: { idempotentHint: true },
+    _meta: { idempotent: "true" },
   },
   async () => {
-    const result = await wp.request("/preset/scan-orphans");
+    const result = await wp.requestEnveloped("/preset/scan-orphans");
     return {
       content: [
-        { type: "text" as const, text: JSON.stringify(result) },
+        { type: "text" as const, text: serializeEnvelope(result) },
       ],
     };
   },
@@ -1418,7 +1580,8 @@ registerPluginTool(
   "diviops_preset_set_default",
   {
     description:
-      "Set or clear the per-module/group default preset. Two addressing modes: (1) preset_id mode — walks both buckets to locate the preset by UUID, then points the containing module/group's `default` slot at it (or clears it with unset=true). (2) Bucket-addressed clear — pass type + module + unset=true to clear an orphan default pointer when the preset_id no longer exists in items[] (the preset_id walk path can't locate orphans — that's the very state being repaired; surfaced via diviops_preset_audit's `orphan_default_pointers`). Defaults apply to NEW module instances only — existing modules keep their current preset bindings (use diviops_preset_reassign for retroactive swaps). Use diviops_preset_audit's `is_default` and `orphan_default_pointers` fields to verify state before/after.",
+      "Set or clear the per-module/group default preset. Two addressing modes: (1) preset_id mode — walks both buckets to locate the preset by UUID, then points the containing module/group's `default` slot at it (or clears it with unset=true). (2) Bucket-addressed clear — pass type + module + unset=true to clear an orphan default pointer when the preset_id no longer exists in items[] (the preset_id walk path can't locate orphans — that's the very state being repaired; surfaced via diviops_preset_audit's `orphan_default_pointers`). Defaults apply to NEW module instances only — existing modules keep their current preset bindings (use diviops_preset_reassign for retroactive swaps). Use diviops_preset_audit's `is_default` and `orphan_default_pointers` fields to verify state before/after. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }; missing preset_id (and not in bucket-addressed-clear mode) / bucket-addressed mode without unset=true return code 'invalid_input'; missing preset / unknown bucket returns 'not_found'." +
+      DRY_RUN_DESC_SUFFIX,
     inputSchema: {
       preset_id: z
         .string()
@@ -1444,21 +1607,25 @@ registerPluginTool(
         .describe(
           "If true, clear the default pointer. With preset_id, clears the bucket containing that preset. With type+module, clears that bucket directly (use this form for orphan-pointer repair). Defaults to false (set the preset as the default — preset_id required).",
         ),
+      dry_run: DRY_RUN_FIELD,
     },
+    annotations: { idempotentHint: true },
+    _meta: { idempotent: "true" },
   },
-  async ({ preset_id, type, module, unset }) => {
+  async ({ preset_id, type, module, unset, dry_run }) => {
     const body: Record<string, any> = {};
     if (preset_id !== undefined) body.preset_id = preset_id;
     if (type !== undefined) body.type = type;
     if (module !== undefined) body.module = module;
     if (unset) body.unset = true;
-    const result = await wp.request("/preset/set-default", {
+    if (dry_run) body.dry_run = true;
+    const result = await wp.requestEnveloped("/preset/set-default", {
       method: "POST",
       body,
     });
     return {
       content: [
-        { type: "text" as const, text: JSON.stringify(result) },
+        { type: "text" as const, text: serializeEnvelope(result) },
       ],
     };
   },
@@ -1470,7 +1637,7 @@ registerPluginTool(
   "diviops_library_list",
   {
     description:
-      "List saved Divi Library items. Filter by layout_type (section, row, module) and scope (global, non_global).",
+      "List saved Divi Library items. Filter by layout_type (section, row, module) and scope (global, non_global). Returns the standardized envelope { ok, data?, error: { code, message, hint? } }.",
     inputSchema: {
       layout_type: z
         .string()
@@ -1488,16 +1655,18 @@ registerPluginTool(
         .default(50)
         .describe("Max results (default 50)"),
     },
+    annotations: { idempotentHint: true },
+    _meta: { idempotent: "true" },
   },
   async ({ layout_type, scope, per_page }) => {
     const params: Record<string, string> = {};
     if (layout_type) params.layout_type = layout_type;
     if (scope) params.scope = scope;
     if (per_page) params.per_page = String(per_page);
-    const result = await wp.request("/library/items", { params });
+    const result = await wp.requestEnveloped("/library/items", { params });
     return {
       content: [
-        { type: "text" as const, text: JSON.stringify(result) },
+        { type: "text" as const, text: serializeEnvelope(result) },
       ],
     };
   },
@@ -1507,16 +1676,18 @@ registerPluginTool(
   "diviops_library_get",
   {
     description:
-      "Get a Divi Library item's content by ID. Returns the raw block markup that can be used with diviops_section_append or diviops_page_update_content.",
+      "Get a Divi Library item's content by ID. Returns the raw block markup that can be used with diviops_section_append or diviops_page_update_content. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }; missing item_id returns ok:false with code 'not_found' and a hint pointing to diviops_library_list.",
     inputSchema: {
       item_id: z.number().describe("Library item ID"),
     },
+    annotations: { idempotentHint: true },
+    _meta: { idempotent: "true" },
   },
   async ({ item_id }) => {
-    const result = await wp.request(`/library/item/${item_id}`);
+    const result = await wp.requestEnveloped(`/library/item/${item_id}`);
     return {
       content: [
-        { type: "text" as const, text: JSON.stringify(result) },
+        { type: "text" as const, text: serializeEnvelope(result) },
       ],
     };
   },
@@ -1526,7 +1697,8 @@ registerPluginTool(
   "diviops_library_save",
   {
     description:
-      'Save Divi block markup to the Divi Library for reuse. Saved items appear in the VB\'s "Add From Library" panel.',
+      'Save Divi block markup to the Divi Library for reuse. Saved items appear in the VB\'s "Add From Library" panel. Title-uniqueness is enforced and scoped to (layout_type, scope) — a "Hero" section and a "Hero" row coexist (different design intent), but a second "Hero" section under the same scope returns ok:false with code \'conflict\' (HTTP 409) and `error.data = { existing_library_id, layout_type, scope }` so callers can retrieve the existing item and decide whether to reuse, rename, or delete-and-replace. Other rejections: missing title / non-string content / invalid layout_type or scope return \'invalid_input\'.' +
+      DRY_RUN_DESC_SUFFIX,
     inputSchema: {
       title: z.string().describe("Display name for the library item"),
       content: z
@@ -1544,21 +1716,21 @@ registerPluginTool(
         .describe(
           '"global" = synced across all uses, "non_global" = independent copies',
         ),
+      dry_run: DRY_RUN_FIELD,
     },
+    annotations: { idempotentHint: false },
+    _meta: { idempotent: "conditional" },
   },
-  async ({ title, content, layout_type, scope }) => {
-    const result = await wp.request("/library/save", {
+  async ({ title, content, layout_type, scope, dry_run }) => {
+    const body: Record<string, unknown> = { title, content, layout_type, scope };
+    if (dry_run) body.dry_run = true;
+    const result = await wp.requestEnveloped("/library/save", {
       method: "POST",
-      body: {
-        title,
-        content,
-        layout_type,
-        scope,
-      },
+      body,
     });
     return {
       content: [
-        { type: "text" as const, text: JSON.stringify(result) },
+        { type: "text" as const, text: serializeEnvelope(result) },
       ],
     };
   },
@@ -1570,7 +1742,7 @@ registerPluginTool(
   "diviops_tb_template_list",
   {
     description:
-      "List all Theme Builder templates with their conditions, layout IDs, and enabled status. Shows which template applies to which pages/post types.",
+      "List all Theme Builder templates with their conditions, layout IDs, and enabled status. Shows which template applies to which pages/post types. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }.",
     inputSchema: {
       per_page: z
         .number()
@@ -1580,15 +1752,17 @@ registerPluginTool(
         .describe("Results per page (max 100)"),
       page: z.number().optional().default(1).describe("Page number"),
     },
+    annotations: { idempotentHint: true },
+    _meta: { idempotent: "true" },
   },
   async ({ per_page, page }) => {
     const params: Record<string, string> = {};
     if (per_page) params.per_page = String(per_page);
     if (page) params.page = String(page);
-    const result = await wp.request("/theme-builder/template/list", { params });
+    const result = await wp.requestEnveloped("/theme-builder/template/list", { params });
     return {
       content: [
-        { type: "text" as const, text: JSON.stringify(result) },
+        { type: "text" as const, text: serializeEnvelope(result) },
       ],
     };
   },
@@ -1598,7 +1772,7 @@ registerPluginTool(
   "diviops_tb_layout_get",
   {
     description:
-      "Get a Theme Builder layout's block markup content (header, body, or footer). Use the layout IDs from diviops_tb_template_list.",
+      "Get a Theme Builder layout's block markup content (header, body, or footer). Use the layout IDs from diviops_tb_template_list. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }; missing layout_id returns ok:false with code 'not_found' and a hint pointing to diviops_tb_template_list.",
     inputSchema: {
       layout_id: z
         .number()
@@ -1606,12 +1780,14 @@ registerPluginTool(
           "Layout post ID (from template header_layout_id, body_layout_id, or footer_layout_id)",
         ),
     },
+    annotations: { idempotentHint: true },
+    _meta: { idempotent: "true" },
   },
   async ({ layout_id }) => {
-    const result = await wp.request(`/theme-builder/layout/get/${layout_id}`);
+    const result = await wp.requestEnveloped(`/theme-builder/layout/get/${layout_id}`);
     return {
       content: [
-        { type: "text" as const, text: JSON.stringify(result) },
+        { type: "text" as const, text: serializeEnvelope(result) },
       ],
     };
   },
@@ -1621,20 +1797,26 @@ registerPluginTool(
   "diviops_tb_layout_update",
   {
     description:
-      "Update a Theme Builder layout's block markup (header, body, or footer). Replaces the full content.",
+      "Update a Theme Builder layout's block markup (header, body, or footer). Replaces the full content. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }; missing layout_id returns ok:false with code 'not_found'." +
+      DRY_RUN_DESC_SUFFIX,
     inputSchema: {
       layout_id: z.number().describe("Layout post ID to update"),
       content: z.string().describe("New block markup content"),
+      dry_run: DRY_RUN_FIELD,
     },
+    annotations: { idempotentHint: false },
+    _meta: { idempotent: "conditional" },
   },
-  async ({ layout_id, content }) => {
-    const result = await wp.request(`/theme-builder/layout/update/${layout_id}`, {
+  async ({ layout_id, content, dry_run }) => {
+    const body: Record<string, unknown> = { content };
+    if (dry_run) body.dry_run = true;
+    const result = await wp.requestEnveloped(`/theme-builder/layout/update/${layout_id}`, {
       method: "PUT",
-      body: { content },
+      body,
     });
     return {
       content: [
-        { type: "text" as const, text: JSON.stringify(result) },
+        { type: "text" as const, text: serializeEnvelope(result) },
       ],
     };
   },
@@ -1644,7 +1826,8 @@ registerPluginTool(
   "diviops_tb_template_create",
   {
     description:
-      "Create a Theme Builder template with custom header and/or footer. Automatically creates layout posts, sets conditions, and links to Theme Builder.",
+      "Create a Theme Builder template with custom header and/or footer. Automatically creates layout posts, sets conditions, and links to Theme Builder. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }; missing Theme Builder master post returns ok:false with code 'wp_error' and a hint to open the Divi Theme Builder once to initialize it." +
+      DRY_RUN_DESC_SUFFIX,
     inputSchema: {
       title: z.string().describe('Template name (e.g. "Landing Pages")'),
       condition: z
@@ -1666,16 +1849,21 @@ registerPluginTool(
         .describe(
           "Footer block markup (empty = inherit from default template)",
         ),
+      dry_run: DRY_RUN_FIELD,
     },
+    annotations: { idempotentHint: false },
+    _meta: { idempotent: "false" },
   },
-  async ({ title, condition, header_content, footer_content }) => {
-    const result = await wp.request("/theme-builder/template/create", {
+  async ({ title, condition, header_content, footer_content, dry_run }) => {
+    const body: Record<string, unknown> = { title, condition, header_content, footer_content };
+    if (dry_run) body.dry_run = true;
+    const result = await wp.requestEnveloped("/theme-builder/template/create", {
       method: "POST",
-      body: { title, condition, header_content, footer_content },
+      body,
     });
     return {
       content: [
-        { type: "text" as const, text: JSON.stringify(result) },
+        { type: "text" as const, text: serializeEnvelope(result) },
       ],
     };
   },
@@ -1687,7 +1875,8 @@ registerPluginTool(
   "diviops_canvas_create",
   {
     description:
-      "Create a canvas (off-canvas workspace) linked to a page. Used for popups, off-canvas menus, modals. Content uses standard Divi block markup.",
+      "Create a canvas (off-canvas workspace) linked to a page. Used for popups, off-canvas menus, modals. Content uses standard Divi block markup. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }; missing parent_page_id returns ok:false with code 'not_found'; non-string content / malformed canvas_id / append_to_main outside {above, below} returns 'invalid_input'." +
+      DRY_RUN_DESC_SUFFIX,
     inputSchema: {
       title: z
         .string()
@@ -1710,7 +1899,10 @@ registerPluginTool(
         .number()
         .optional()
         .describe("Layering order (higher = on top)"),
+      dry_run: DRY_RUN_FIELD,
     },
+    annotations: { idempotentHint: false },
+    _meta: { idempotent: "false" },
   },
   async ({
     title,
@@ -1719,6 +1911,7 @@ registerPluginTool(
     canvas_id,
     append_to_main,
     z_index,
+    dry_run,
   }) => {
     const body: Record<string, unknown> = {
       title,
@@ -1728,10 +1921,11 @@ registerPluginTool(
     if (canvas_id) body.canvas_id = canvas_id;
     if (append_to_main) body.append_to_main = append_to_main;
     if (z_index !== undefined) body.z_index = z_index;
-    const result = await wp.request("/canvas/create", { method: "POST", body });
+    if (dry_run) body.dry_run = true;
+    const result = await wp.requestEnveloped("/canvas/create", { method: "POST", body });
     return {
       content: [
-        { type: "text" as const, text: JSON.stringify(result) },
+        { type: "text" as const, text: serializeEnvelope(result) },
       ],
     };
   },
@@ -1741,7 +1935,7 @@ registerPluginTool(
   "diviops_canvas_list",
   {
     description:
-      "List canvases (off-canvas workspaces). Filter by parent page or list all.",
+      "List canvases (off-canvas workspaces). Filter by parent page or list all. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }.",
     inputSchema: {
       parent_page_id: z
         .number()
@@ -1756,15 +1950,17 @@ registerPluginTool(
         .default(50)
         .describe("Max results (default 50, 1-100)"),
     },
+    annotations: { idempotentHint: true },
+    _meta: { idempotent: "true" },
   },
   async ({ parent_page_id, per_page }) => {
     const params: Record<string, string> = {};
     if (parent_page_id) params.parent_page_id = String(parent_page_id);
     if (per_page) params.per_page = String(per_page);
-    const result = await wp.request("/canvas/list", { params });
+    const result = await wp.requestEnveloped("/canvas/list", { params });
     return {
       content: [
-        { type: "text" as const, text: JSON.stringify(result) },
+        { type: "text" as const, text: serializeEnvelope(result) },
       ],
     };
   },
@@ -1773,18 +1969,21 @@ registerPluginTool(
 registerPluginTool(
   "diviops_canvas_get",
   {
-    description: "Get a canvas's block content and metadata.",
+    description:
+      "Get a canvas's block content and metadata. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }; missing canvas_post_id returns ok:false with code 'not_found' and a hint pointing to diviops_canvas_list.",
     inputSchema: {
       canvas_post_id: z
         .number()
         .describe("Canvas post ID (from diviops_canvas_list)"),
     },
+    annotations: { idempotentHint: true },
+    _meta: { idempotent: "true" },
   },
   async ({ canvas_post_id }) => {
-    const result = await wp.request(`/canvas/get/${canvas_post_id}`);
+    const result = await wp.requestEnveloped(`/canvas/get/${canvas_post_id}`);
     return {
       content: [
-        { type: "text" as const, text: JSON.stringify(result) },
+        { type: "text" as const, text: serializeEnvelope(result) },
       ],
     };
   },
@@ -1794,7 +1993,8 @@ registerPluginTool(
   "diviops_canvas_update",
   {
     description:
-      "Update a canvas's content and/or metadata. Pass any subset of fields — e.g. `{canvas_post_id, title}` to rename without touching content. `content` replaces the entire canvas when present. At least one of content/title/append_to_main/z_index is required.",
+      "Update a canvas's content and/or metadata. Pass any subset of fields — e.g. `{canvas_post_id, title}` to rename without touching content. `content` replaces the entire canvas when present. At least one of content/title/append_to_main/z_index is required. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }; missing canvas_post_id returns ok:false with code 'not_found'; empty / no-op payload (no content/title/append_to_main/z_index) returns 'invalid_input' with a hint pointing at the rename-only path." +
+      DRY_RUN_DESC_SUFFIX,
     inputSchema: {
       canvas_post_id: z.number().describe("Canvas post ID"),
       content: z
@@ -1807,21 +2007,25 @@ registerPluginTool(
         .optional()
         .describe('Append position: "above", "below", or "" to clear'),
       z_index: z.number().optional().describe("Layering order"),
+      dry_run: DRY_RUN_FIELD,
     },
+    annotations: { idempotentHint: false },
+    _meta: { idempotent: "conditional" },
   },
-  async ({ canvas_post_id, content, title, append_to_main, z_index }) => {
+  async ({ canvas_post_id, content, title, append_to_main, z_index, dry_run }) => {
     const body: Record<string, unknown> = {};
     if (content !== undefined) body.content = content;
     if (title !== undefined) body.title = title;
     if (append_to_main !== undefined) body.append_to_main = append_to_main;
     if (z_index !== undefined) body.z_index = z_index;
-    const result = await wp.request(`/canvas/update/${canvas_post_id}`, {
+    if (dry_run) body.dry_run = true;
+    const result = await wp.requestEnveloped(`/canvas/update/${canvas_post_id}`, {
       method: "POST",
       body,
     });
     return {
       content: [
-        { type: "text" as const, text: JSON.stringify(result) },
+        { type: "text" as const, text: serializeEnvelope(result) },
       ],
     };
   },
@@ -1831,7 +2035,7 @@ registerPluginTool(
   "diviops_canvas_duplicate",
   {
     description:
-      "Deep-copy a canvas (post_content + canvas-specific meta: parent page, append_to_main, z_index). Source canvas untouched. Default copy title is `<source title> (Copy)` with auto-suffix on collision (Copy 2, Copy 3, …) — use this for repeat-clone workflows. Pass an explicit `title` for a deliberate name; collisions return 409 instead of silently auto-suffixing. Pass `dry_run: true` to preview without mutating.",
+      "Deep-copy a canvas (post_content + canvas-specific meta: parent page, append_to_main, z_index). Source canvas untouched. Default copy title is `<source title> (Copy)` with auto-suffix on collision (Copy 2, Copy 3, …) — use this for repeat-clone workflows. Pass an explicit `title` for a deliberate name; collisions return ok:false with code 'conflict' (HTTP 409) and `error.data = { existing_canvas_id, parent_page_id }` so callers can retrieve / rename the conflicting canvas. Pass `dry_run: true` to preview without mutating. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }; missing canvas_post_id returns 'not_found'.",
     inputSchema: {
       canvas_post_id: z.number().describe("Source canvas post ID"),
       title: z
@@ -1848,17 +2052,19 @@ registerPluginTool(
           "When true, return the change plan without creating the canvas.",
         ),
     },
+    annotations: { idempotentHint: false },
+    _meta: { idempotent: "conditional" },
   },
   async ({ canvas_post_id, title, dry_run }) => {
     const body: Record<string, unknown> = { dry_run: dry_run ?? false };
     if (title !== undefined) body.title = title;
-    const result = await wp.request(`/canvas/duplicate/${canvas_post_id}`, {
+    const result = await wp.requestEnveloped(`/canvas/duplicate/${canvas_post_id}`, {
       method: "POST",
       body,
     });
     return {
       content: [
-        { type: "text" as const, text: JSON.stringify(result) },
+        { type: "text" as const, text: serializeEnvelope(result) },
       ],
     };
   },
@@ -1867,18 +2073,26 @@ registerPluginTool(
 registerPluginTool(
   "diviops_canvas_delete",
   {
-    description: "Delete a canvas. This permanently removes the canvas post.",
+    description:
+      "Delete a canvas. This permanently removes the canvas post. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }; missing canvas_post_id returns ok:false with code 'not_found'." +
+      DRY_RUN_DESC_SUFFIX,
     inputSchema: {
       canvas_post_id: z.number().describe("Canvas post ID to delete"),
+      dry_run: DRY_RUN_FIELD,
     },
+    annotations: { idempotentHint: true },
+    _meta: { idempotent: "true" },
   },
-  async ({ canvas_post_id }) => {
-    const result = await wp.request(`/canvas/delete/${canvas_post_id}`, {
+  async ({ canvas_post_id, dry_run }) => {
+    const body: Record<string, unknown> = {};
+    if (dry_run) body.dry_run = true;
+    const result = await wp.requestEnveloped(`/canvas/delete/${canvas_post_id}`, {
       method: "POST",
+      body,
     });
     return {
       content: [
-        { type: "text" as const, text: JSON.stringify(result) },
+        { type: "text" as const, text: serializeEnvelope(result) },
       ],
     };
   },
@@ -1890,7 +2104,7 @@ server.registerTool(
   "diviops_meta_wp_cli",
   {
     description:
-      "Run a WP-CLI command on the WordPress site. Requires WP_PATH env var (LOCAL_SITE_ID auto-detected from Local by Flywheel), or WP_CLI_CMD for containerized wrappers. Commands validated against a safety allowlist. Default tier covers read ops across options/posts/post-types/taxonomies/users/info/core/db, non-destructive writes (post/term create+update, post meta read/write, cache/rewrite/transient flush), ACF/SCF schema ops (`acf export/import/field-group list/get` plus SCF 6.8.4+ `scf json {status,sync,import,export}` and the `acf json …` aliases), and WXR export. Extended tier (requires DIVIOPS_WP_CLI_ALLOW env var) adds destructive or bulk-modifying ops: option update, post/post meta/term delete, search-replace, import, plugin activate/deactivate, eval-file. Filesystem-touching commands (`wp export`, `acf export/import`, `scf|acf json export/import`) are additionally constrained: path arguments must resolve under a safe root (defaults to `<WP_PATH>/.diviops-tmp/`, overridable via DIVIOPS_WP_CLI_SAFE_FS_ROOT, disable via DIVIOPS_WP_CLI_UNSAFE_FS=1); `wp export` and `scf json export` require an explicit `--dir=<path>` (or `--stdout`). In WP_CLI_CMD wrapper mode, DIVIOPS_WP_CLI_SAFE_FS_ROOT is required for FS-sensitive commands. Prefer the typed `diviops_scf_*` wrappers for SCF round-trips — they're easier to invoke and accept the same safe-root scoping. Use --format=json for structured output. Full allowlist + tier rationale + filesystem semantics in the MCP server README.",
+      "Run a WP-CLI command on the WordPress site. Requires WP_PATH env var (LOCAL_SITE_ID auto-detected from Local by Flywheel), or WP_CLI_CMD for containerized wrappers. Commands validated against a safety allowlist. Default tier covers read ops across options/posts/post-types/taxonomies/users/info/core/db, non-destructive writes (post/term create+update, post meta read/write, cache/rewrite/transient flush), ACF/SCF schema ops (`acf export/import/field-group list/get` plus SCF 6.8.4+ `scf json {status,sync,import,export}` and the `acf json …` aliases), and WXR export. Extended tier (requires DIVIOPS_WP_CLI_ALLOW env var) adds destructive or bulk-modifying ops: option update, post/post meta/term delete, search-replace, import, plugin activate/deactivate, eval-file. Filesystem-touching commands (`wp export`, `acf export/import`, `scf|acf json export/import`) are additionally constrained: path arguments must resolve under a safe root (defaults to `<WP_PATH>/.diviops-tmp/`, overridable via DIVIOPS_WP_CLI_SAFE_FS_ROOT, disable via DIVIOPS_WP_CLI_UNSAFE_FS=1); `wp export` and `scf json export` require an explicit `--dir=<path>` (or `--stdout`). In WP_CLI_CMD wrapper mode, DIVIOPS_WP_CLI_SAFE_FS_ROOT is required for FS-sensitive commands. Prefer the typed `diviops_scf_*` wrappers for SCF round-trips — they're easier to invoke and accept the same safe-root scoping. Use --format=json for structured output. Full allowlist + tier rationale + filesystem semantics in the MCP server README. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }. Success payload: { stdout: string, stderr: string, exit_code: 0 }. Four failure modes converge on 'meta_wp_cli.command_failed' with error.data = { exit_code: number | null, stdout: string, stderr: string }: (a) numeric exit_code — wp-cli ran and exited non-zero; stdout/stderr are raw streams verbatim. (b) exit_code=null and message starts with 'wp-cli command terminated:' — execFile launched the child but it was killed (timeout or signal); stdout/stderr carry whatever streamed before the kill. (c) exit_code=null and message starts with 'wp-cli could not spawn:' — the OS refused to start the child (ENOENT/EACCES/EPERM); child never ran, stdout/stderr are empty. (d) exit_code=null and message is the rejection reason — pre-execution rejection by the allowlist / FS validator; rejection reason synthesized into error.data.stderr because the child never ran. A missing wp-cli configuration surfaces as 'meta_wp_cli.not_configured'. stdout is always passed through as a string (no server-side JSON parse) — pass --format=json and parse on the caller side when you want structured output.",
     inputSchema: {
       command: z
         .string()
@@ -1898,24 +2112,100 @@ server.registerTool(
           'WP-CLI command without the "wp" prefix. E.g. "option get blogname", "post list --format=json", "export --dir=$DIVIOPS_WP_CLI_SAFE_FS_ROOT --filename_format={site}.{date}.xml"',
         ),
     },
+    annotations: { idempotentHint: false },
+    _meta: { idempotent: "conditional" },
   },
   async ({ command }) => {
-    if (!wpCli) {
+    const response = await wrapResponse(async () => {
+      if (!wpCli) {
+        withCode(
+          "meta_wp_cli.not_configured",
+          "WP-CLI not configured.",
+          'Set the WP_PATH environment variable to your WordPress installation path. Example: claude mcp add diviops-mcp -- env WP_URL=http://site.local WP_USER=admin WP_APP_PASSWORD="xxxx" WP_PATH="/Users/you/Local Sites/your-site/app/public" npx @diviops/mcp-server. Local site ID is auto-detected from WP_PATH; set LOCAL_SITE_ID explicitly if needed.',
+        );
+      }
+      const result = await wpCli.run(command);
+      if (!result.success) {
+        // Four failure shapes converge on `meta_wp_cli.command_failed`,
+        // discriminated by `result.failureKind` from the runner:
+        //   - 'exited':       wp-cli ran and returned a numeric exit code.
+        //                     stdout/stderr are raw streams verbatim
+        //                     (empty string when wp-cli emitted nothing).
+        //                     The exit-code summary lives on `error.message`
+        //                     so callers branch on `error.data.exit_code`
+        //                     rather than parsing the stream.
+        //   - 'killed':       execFile spawned the child but it was killed
+        //                     (timeout or signal). exit_code is null
+        //                     because a numeric code is unavailable, but
+        //                     stdout/stderr carry whatever streamed before
+        //                     the kill — surface them verbatim. The kill
+        //                     reason lives on `error.message` and `hint`
+        //                     so callers can distinguish "timed out" from
+        //                     "got partial output then bailed."
+        //   - 'spawn_failed': execFile invoked but the OS refused to start
+        //                     the child (ENOENT, EACCES, EPERM, etc.). The
+        //                     child never ran; stdout/stderr are empty.
+        //                     Distinct from 'killed' — fix path is
+        //                     environmental (PATH, install, perms), not
+        //                     "raise the timeout." The system errno lives
+        //                     in `result.error` so callers can identify the
+        //                     specific OS reason without parsing.
+        //   - 'rejected':     pre-execution rejection (allowlist / FS
+        //                     validator). Child never ran, `result.stderr`
+        //                     always empty — synthesize from `result.error`
+        //                     so callers see a uniform
+        //                     `{ exit_code, stdout, stderr }` shape.
+        //
+        // Codex review history:
+        //   pass 1 — collapsed 'killed' onto 'rejected' (both share
+        //            exit_code: null), causing timeouts to mis-emit
+        //            pre-execution rejection hints. Fixed in a33ed7c.
+        //   pass 2 — collapsed 'spawn_failed' (ENOENT etc.) onto 'killed',
+        //            telling callers the child was launched and killed
+        //            even though it never spawned. This branch.
+        const detail = result.error ?? "wp-cli command failed";
+        const kind = result.failureKind ?? "exited";
+        let message: string;
+        let hint: string;
+        let stderrForData: string;
+        if (kind === "rejected") {
+          message = detail;
+          hint =
+            "Command was rejected before execution. Common causes: not in the allowlist (see DIVIOPS_WP_CLI_ALLOW for opt-ins) or filesystem path outside DIVIOPS_WP_CLI_SAFE_FS_ROOT.";
+          stderrForData = detail;
+        } else if (kind === "spawn_failed") {
+          message = `wp-cli could not spawn: ${detail}`;
+          hint =
+            "The OS refused to start the wp-cli executable — common causes: WP_CLI_CMD points at a missing binary (ENOENT), the binary is not executable (EACCES), or PATH does not include wp-cli. Verify `which wp` (or your WP_CLI_CMD prefix) resolves and is executable. error.data.stdout / error.data.stderr are empty because the child never ran.";
+          stderrForData = detail;
+        } else if (kind === "killed") {
+          message = `wp-cli command terminated: ${detail}`;
+          hint =
+            "Command was launched but killed before it finished (timeout or signal). error.data.stdout / error.data.stderr carry whatever streamed before the kill. Consider raising the timeout or splitting the command into smaller batches.";
+          stderrForData = result.stderr;
+        } else {
+          message = `wp-cli exited with code ${result.exitCode}`;
+          hint =
+            "Inspect error.data.stderr for the failure reason; re-run with WP_CLI_DEBUG=1 in the env to surface PHP traceback.";
+          stderrForData = result.stderr;
+        }
+        withCode("meta_wp_cli.command_failed", message, hint, {
+          exit_code: result.exitCode,
+          stdout: result.stdout,
+          stderr: stderrForData,
+        });
+      }
       return {
-        content: [
-          {
-            type: "text" as const,
-            text: 'WP-CLI not configured. Set the WP_PATH environment variable to your WordPress installation path.\n\nExample:\n  claude mcp add diviops-mcp -- env WP_URL=http://site.local WP_USER=admin WP_APP_PASSWORD="xxxx" WP_PATH="/Users/you/Local Sites/your-site/app/public" npx @diviops/mcp-server\n\nThe Local by Flywheel site ID is auto-detected from WP_PATH. Set LOCAL_SITE_ID explicitly if auto-detection fails.',
-          },
-        ],
+        stdout: result.stdout,
+        stderr: result.stderr,
+        exit_code: 0,
       };
-    }
-
-    const result = await wpCli.run(command);
-    const output = result.success
-      ? result.output
-      : `Error: ${result.error}\n${result.output}`;
-    return { content: [{ type: "text" as const, text: output }] };
+    });
+    return {
+      content: [
+        { type: "text" as const, text: serializeEnvelope(response) },
+      ],
+    };
   },
 );
 
@@ -1925,17 +2215,30 @@ server.registerTool(
 // CLI family (also reachable as `wp acf json …`). The plugin file at
 // wp-content/plugins/secure-custom-fields/src/CLI/JsonCommand.php is the
 // upstream source of truth for flag shapes — keep these wrappers aligned.
+//
+// Envelope adoption: every tool wraps its handler in `wrapResponse` +
+// `serializeEnvelope`. wp-cli failures route through `failScfCommand`
+// which mirrors `meta_wp_cli.command_failed`'s four-failureKind shape but
+// emits a namespace-prefixed `scf.command_failed` code so callers can
+// branch on `error.code` without reading `error.data` to know whether the
+// failed call was `wp scf json …` or `wp post …`.
 
-function ensureWpCli(): { ok: true } | { ok: false; text: string } {
+/**
+ * Short-circuit when wp-cli isn't configured. Throws via `withCode` so the
+ * surrounding `wrapResponse` emits the standard envelope. Adopted from the
+ * `meta_wp_cli` precedent (`meta_wp_cli.not_configured`); reuses the
+ * namespace-prefixed pattern as `scf.not_configured` so callers can
+ * branch on `error.code` without inspecting message strings.
+ */
+function ensureScfWpCli(): NonNullable<typeof wpCli> {
   if (!wpCli) {
-    return {
-      ok: false,
-      text:
-        "WP-CLI not configured. Set WP_PATH (Local by Flywheel auto-detect) " +
-        "or WP_CLI_CMD (containerized wrappers) to enable SCF round-trip tools.",
-    };
+    withCode(
+      "scf.not_configured",
+      "WP-CLI not configured.",
+      "Set WP_PATH (Local by Flywheel auto-detect) or WP_CLI_CMD (containerized wrappers) to enable SCF round-trip tools.",
+    );
   }
-  return { ok: true };
+  return wpCli;
 }
 
 function pushScfFlag(args: string[], name: string, value: string | undefined): void {
@@ -1947,11 +2250,70 @@ function pushScfFlag(args: string[], name: string, value: string | undefined): v
   args.push(`--${name}=${value}`);
 }
 
+/**
+ * Mirror of `meta_wp_cli.command_failed`'s four-failureKind branch logic,
+ * scoped to the scf_* namespace. Inputs:
+ *   - `result`: the raw `wpCli.runArgs(...)` payload (success === false here)
+ *   - `args`: the wp-cli argv (sanitized of secrets at the wrapper level —
+ *     SCF args carry no credentials) so callers can see exactly what was
+ *     attempted
+ *
+ * Throws via `withCode` so the surrounding `wrapResponse` emits the
+ * standard envelope with code `scf.command_failed`. `error.data` mirrors
+ * meta_wp_cli's shape verbatim (`{ exit_code, stdout, stderr, failure_kind,
+ * command }`) — see tools.md "Response shape" for the four failure_kind
+ * branches and the matching hints.
+ */
+function failScfCommand(
+  result: {
+    error?: string;
+    stdout: string;
+    stderr: string;
+    exitCode: number | null;
+    failureKind?: "exited" | "killed" | "spawn_failed" | "rejected";
+  },
+  args: readonly string[],
+): never {
+  const detail = result.error ?? "wp-cli command failed";
+  const kind = result.failureKind ?? "exited";
+  let message: string;
+  let hint: string;
+  let stderrForData: string;
+  if (kind === "rejected") {
+    message = detail;
+    hint =
+      "Command was rejected before execution. Common causes: not in the allowlist (see DIVIOPS_WP_CLI_ALLOW for opt-ins) or filesystem path outside DIVIOPS_WP_CLI_SAFE_FS_ROOT.";
+    stderrForData = detail;
+  } else if (kind === "spawn_failed") {
+    message = `wp-cli could not spawn: ${detail}`;
+    hint =
+      "The OS refused to start the wp-cli executable — common causes: WP_CLI_CMD points at a missing binary (ENOENT), the binary is not executable (EACCES), or PATH does not include wp-cli. Verify `which wp` (or your WP_CLI_CMD prefix) resolves and is executable. error.data.stdout / error.data.stderr are empty because the child never ran.";
+    stderrForData = detail;
+  } else if (kind === "killed") {
+    message = `wp-cli command terminated: ${detail}`;
+    hint =
+      "Command was launched but killed before it finished (timeout or signal). error.data.stdout / error.data.stderr carry whatever streamed before the kill. Consider raising the timeout or splitting the command into smaller batches.";
+    stderrForData = result.stderr;
+  } else {
+    message = `wp-cli exited with code ${result.exitCode}`;
+    hint =
+      "Inspect error.data.stderr for the failure reason; re-run with WP_CLI_DEBUG=1 in the env to surface PHP traceback.";
+    stderrForData = result.stderr;
+  }
+  withCode("scf.command_failed", message, hint, {
+    exit_code: result.exitCode,
+    stdout: result.stdout,
+    stderr: stderrForData,
+    failure_kind: kind,
+    command: [...args],
+  });
+}
+
 server.registerTool(
   "diviops_scf_status",
   {
     description:
-      "Show SCF (Secure Custom Fields) sync status — how many field groups, post types, taxonomies, and options pages have JSON-on-disk newer than the database (or absent from DB). Read-only. Wraps `wp scf json status`. Requires SCF 6.8.4+ and WP_PATH or WP_CLI_CMD.",
+      "Show SCF (Secure Custom Fields) sync status — how many field groups, post types, taxonomies, and options pages have JSON-on-disk newer than the database (or absent from DB). Read-only. Wraps `wp scf json status`. Requires SCF 6.8.4+ and WP_PATH or WP_CLI_CMD. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }; success payload is { stdout: string, stderr: string }. wp-cli failures map to 'scf.command_failed' with `error.data = { exit_code, stdout, stderr, failure_kind, command }` (four failure_kind branches: 'exited'/'killed'/'spawn_failed'/'rejected' — see tools.md). Missing wp-cli configuration surfaces as 'scf.not_configured'.",
     inputSchema: {
       type: z
         .enum(["field-group", "post-type", "taxonomy", "options-page"])
@@ -1966,20 +2328,24 @@ server.registerTool(
           "List the individual pending items (key/title/type/action) instead of just counts.",
         ),
     },
+    annotations: { idempotentHint: true },
+    _meta: { idempotent: "true" },
   },
   async ({ type, detailed }) => {
-    const gate = ensureWpCli();
-    if (!gate.ok) {
-      return { content: [{ type: "text" as const, text: gate.text }] };
-    }
-    const args = ["scf", "json", "status", "--format=json"];
-    pushScfFlag(args, "type", type);
-    if (detailed) args.push("--detailed");
-    const result = await wpCli!.runArgs(args);
-    const output = result.success
-      ? result.output
-      : `Error: ${result.error}\n${result.output}`;
-    return { content: [{ type: "text" as const, text: output }] };
+    const response = await wrapResponse(async () => {
+      const cli = ensureScfWpCli();
+      const args = ["scf", "json", "status", "--format=json"];
+      pushScfFlag(args, "type", type);
+      if (detailed) args.push("--detailed");
+      const result = await cli.runArgs(args);
+      if (!result.success) failScfCommand(result, args);
+      return { stdout: result.stdout, stderr: result.stderr };
+    });
+    return {
+      content: [
+        { type: "text" as const, text: serializeEnvelope(response) },
+      ],
+    };
   },
 );
 
@@ -1987,7 +2353,7 @@ server.registerTool(
   "diviops_scf_export",
   {
     description:
-      "Export SCF field groups, post types, taxonomies, and options pages as JSON — to a directory under the safe-root (`<WP_PATH>/.diviops-tmp/` by default, override via DIVIOPS_WP_CLI_SAFE_FS_ROOT) or to stdout. Wraps `wp scf json export`. Either `dir` or `stdout: true` is required. Filters can be combined; without filters, all items are exported. Note: SCF writes a fixed filename `acf-export-YYYY-MM-DD.json` inside `dir` — two exports on the same day silently overwrite. Copy/rename if you're archiving baselines.",
+      "Export SCF field groups, post types, taxonomies, and options pages as JSON — to a directory under the safe-root (`<WP_PATH>/.diviops-tmp/` by default, override via DIVIOPS_WP_CLI_SAFE_FS_ROOT) or to stdout. Wraps `wp scf json export`. Either `dir` or `stdout: true` is required. Filters can be combined; without filters, all items are exported. Note: SCF writes a fixed filename `acf-export-YYYY-MM-DD.json` inside `dir` — two exports on the same day silently overwrite. Copy/rename if you're archiving baselines. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }; success payload is { stdout: string, stderr: string }. Pre-wp-cli input rejections (neither/both of `dir`/`stdout`) return code 'invalid_input' with `error.data` documenting the failed fields. wp-cli failures map to 'scf.command_failed' (same shape as scf_status). Missing wp-cli configuration surfaces as 'scf.not_configured'.",
     inputSchema: {
       dir: z
         .string()
@@ -2026,44 +2392,44 @@ server.registerTool(
           "Comma-separated options-page def keys or admin titles. Requires ACF PRO.",
         ),
     },
+    annotations: { idempotentHint: true },
+    _meta: { idempotent: "true" },
   },
   async ({ dir, stdout, field_groups, post_types, taxonomies, options_pages }) => {
-    const gate = ensureWpCli();
-    if (!gate.ok) {
-      return { content: [{ type: "text" as const, text: gate.text }] };
-    }
-    if (!dir && !stdout) {
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: "Error: pass either `dir` (absolute path under DIVIOPS_WP_CLI_SAFE_FS_ROOT) or `stdout: true`.",
-          },
-        ],
-      };
-    }
-    if (dir && stdout) {
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: "Error: `dir` and `stdout` are mutually exclusive — pick one.",
-          },
-        ],
-      };
-    }
-    const args = ["scf", "json", "export"];
-    if (stdout) args.push("--stdout");
-    pushScfFlag(args, "dir", dir);
-    pushScfFlag(args, "field-groups", field_groups);
-    pushScfFlag(args, "post-types", post_types);
-    pushScfFlag(args, "taxonomies", taxonomies);
-    pushScfFlag(args, "options-pages", options_pages);
-    const result = await wpCli!.runArgs(args);
-    const output = result.success
-      ? result.output
-      : `Error: ${result.error}\n${result.output}`;
-    return { content: [{ type: "text" as const, text: output }] };
+    const response = await wrapResponse(async () => {
+      const cli = ensureScfWpCli();
+      if (!dir && !stdout) {
+        withCode(
+          ErrorCodes.INVALID_INPUT,
+          "Pass either `dir` or `stdout`, not neither.",
+          "Set `stdout: true` to print JSON, or `dir: '<absolute path under DIVIOPS_WP_CLI_SAFE_FS_ROOT>'` to write a file.",
+          { missing: ["dir", "stdout"] },
+        );
+      }
+      if (dir && stdout) {
+        withCode(
+          ErrorCodes.INVALID_INPUT,
+          "`dir` and `stdout` are mutually exclusive — pick one.",
+          "Pass `dir` to write a file, OR `stdout: true` to print JSON. Not both.",
+          { conflict: ["dir", "stdout"] },
+        );
+      }
+      const args = ["scf", "json", "export"];
+      if (stdout) args.push("--stdout");
+      pushScfFlag(args, "dir", dir);
+      pushScfFlag(args, "field-groups", field_groups);
+      pushScfFlag(args, "post-types", post_types);
+      pushScfFlag(args, "taxonomies", taxonomies);
+      pushScfFlag(args, "options-pages", options_pages);
+      const result = await cli.runArgs(args);
+      if (!result.success) failScfCommand(result, args);
+      return { stdout: result.stdout, stderr: result.stderr };
+    });
+    return {
+      content: [
+        { type: "text" as const, text: serializeEnvelope(response) },
+      ],
+    };
   },
 );
 
@@ -2071,7 +2437,7 @@ server.registerTool(
   "diviops_scf_import",
   {
     description:
-      "Import SCF field groups, post types, taxonomies, options pages from a JSON file. Mutates the database. File path must resolve under the safe-root (`<WP_PATH>/.diviops-tmp/` by default, override via DIVIOPS_WP_CLI_SAFE_FS_ROOT). Idempotent — existing items with matching keys are updated. Wraps `wp scf json import <file>`.",
+      "Import SCF field groups, post types, taxonomies, options pages from a JSON file. Mutates the database. File path must resolve under the safe-root (`<WP_PATH>/.diviops-tmp/` by default, override via DIVIOPS_WP_CLI_SAFE_FS_ROOT). Idempotent — existing items with matching keys are updated. Wraps `wp scf json import <file>`. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }; success payload is { stdout: string, stderr: string }. wp-cli failures (missing/unreadable file, malformed JSON, allowlist or FS-validator rejection) map to 'scf.command_failed' with `error.data = { exit_code, stdout, stderr, failure_kind, command }`. Missing wp-cli configuration surfaces as 'scf.not_configured'.",
     inputSchema: {
       file: z
         .string()
@@ -2079,17 +2445,22 @@ server.registerTool(
           "Absolute path to the .json file to import. Must resolve under DIVIOPS_WP_CLI_SAFE_FS_ROOT.",
         ),
     },
+    annotations: { idempotentHint: true },
+    _meta: { idempotent: "true" },
   },
   async ({ file }) => {
-    const gate = ensureWpCli();
-    if (!gate.ok) {
-      return { content: [{ type: "text" as const, text: gate.text }] };
-    }
-    const result = await wpCli!.runArgs(["scf", "json", "import", file]);
-    const output = result.success
-      ? result.output
-      : `Error: ${result.error}\n${result.output}`;
-    return { content: [{ type: "text" as const, text: output }] };
+    const response = await wrapResponse(async () => {
+      const cli = ensureScfWpCli();
+      const args = ["scf", "json", "import", file];
+      const result = await cli.runArgs(args);
+      if (!result.success) failScfCommand(result, args);
+      return { stdout: result.stdout, stderr: result.stderr };
+    });
+    return {
+      content: [
+        { type: "text" as const, text: serializeEnvelope(response) },
+      ],
+    };
   },
 );
 
@@ -2097,7 +2468,7 @@ server.registerTool(
   "diviops_scf_sync",
   {
     description:
-      "Apply pending JSON-on-disk SCF changes to the database. Reads JSON files from the theme/plugin acf-json directory and creates/updates DB entries. Defaults to `dry_run: true` for safety — caller must opt in to mutation. Wraps `wp scf json sync`.",
+      "Apply pending JSON-on-disk SCF changes to the database. Reads JSON files from the theme/plugin acf-json directory and creates/updates DB entries. Defaults to `dry_run: true` for safety — caller must opt in to mutation. Wraps `wp scf json sync`. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }; success payload is { dry_run: boolean, stdout: string, stderr: string }. NOTE: `dry_run` is passed through as wp-cli's `--dry-run` flag — the upstream output shape is wp-cli's plain-text summary, NOT the standard `data.plan = { summary, changes[] }` shape used by plugin-routed `dry_run` tools. The `dry_run` boolean is reflected in the success payload so callers can branch without re-checking input args, but the SCF-on-disk preview is what wp-cli produced. wp-cli failures map to 'scf.command_failed'; missing wp-cli configuration surfaces as 'scf.not_configured'.",
     inputSchema: {
       type: z
         .enum(["field-group", "post-type", "taxonomy", "options-page"])
@@ -2115,21 +2486,30 @@ server.registerTool(
           "Preview pending changes without mutating the database. Defaults to true. Pass `false` to commit.",
         ),
     },
+    annotations: { idempotentHint: true },
+    _meta: { idempotent: "true" },
   },
   async ({ type, key, dry_run }) => {
-    const gate = ensureWpCli();
-    if (!gate.ok) {
-      return { content: [{ type: "text" as const, text: gate.text }] };
-    }
-    const args = ["scf", "json", "sync"];
-    pushScfFlag(args, "type", type);
-    pushScfFlag(args, "key", key);
-    if (dry_run !== false) args.push("--dry-run");
-    const result = await wpCli!.runArgs(args);
-    const output = result.success
-      ? result.output
-      : `Error: ${result.error}\n${result.output}`;
-    return { content: [{ type: "text" as const, text: output }] };
+    const response = await wrapResponse(async () => {
+      const cli = ensureScfWpCli();
+      const args = ["scf", "json", "sync"];
+      pushScfFlag(args, "type", type);
+      pushScfFlag(args, "key", key);
+      const isDryRun = dry_run !== false;
+      if (isDryRun) args.push("--dry-run");
+      const result = await cli.runArgs(args);
+      if (!result.success) failScfCommand(result, args);
+      return {
+        dry_run: isDryRun,
+        stdout: result.stdout,
+        stderr: result.stderr,
+      };
+    });
+    return {
+      content: [
+        { type: "text" as const, text: serializeEnvelope(response) },
+      ],
+    };
   },
 );
 
@@ -2137,25 +2517,42 @@ server.registerTool(
   "diviops_scf_field_group_list",
   {
     description:
-      "List all SCF/ACF field groups in the database (post_name = ACF key, post_title, post_status, post_modified). Read-only. Queries the underlying `acf-field-group` post type via `wp post list` — works on both SCF 6.8.4+ (which dropped the legacy `wp acf field-group …` family in favor of the `wp scf json` namespace) and older ACF installs.",
+      "List all SCF/ACF field groups in the database (post_name = ACF key, post_title, post_status, post_modified). Read-only. Queries the underlying `acf-field-group` post type via `wp post list` — works on both SCF 6.8.4+ (which dropped the legacy `wp acf field-group …` family in favor of the `wp scf json` namespace) and older ACF installs. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }; success payload is `Array<{ ID, post_name, post_title, post_status, post_modified }>` parsed from wp-cli's JSON output (or an empty array on no results). wp-cli failures map to 'scf.command_failed'; missing wp-cli configuration surfaces as 'scf.not_configured'.",
+    annotations: { idempotentHint: true },
+    _meta: { idempotent: "true" },
   },
   async () => {
-    const gate = ensureWpCli();
-    if (!gate.ok) {
-      return { content: [{ type: "text" as const, text: gate.text }] };
-    }
-    const result = await wpCli!.runArgs([
-      "post",
-      "list",
-      "--post_type=acf-field-group",
-      "--post_status=any",
-      "--fields=ID,post_name,post_title,post_status,post_modified",
-      "--format=json",
-    ]);
-    const output = result.success
-      ? result.output
-      : `Error: ${result.error}\n${result.output}`;
-    return { content: [{ type: "text" as const, text: output }] };
+    const response = await wrapResponse(async () => {
+      const cli = ensureScfWpCli();
+      const args = [
+        "post",
+        "list",
+        "--post_type=acf-field-group",
+        "--post_status=any",
+        "--fields=ID,post_name,post_title,post_status,post_modified",
+        "--format=json",
+      ];
+      const result = await cli.runArgs(args);
+      if (!result.success) failScfCommand(result, args);
+      // wp-cli emits `[]` for no rows; parse so callers get structured data.
+      // Malformed JSON (shouldn't happen with --format=json on a successful
+      // run, but wp-cli has surprised us before) maps to wp_error so the
+      // failure is at least visible rather than silently empty.
+      try {
+        return JSON.parse(result.stdout || "[]");
+      } catch (e) {
+        withCode(
+          ErrorCodes.WP_ERROR,
+          `wp-cli returned non-JSON output for --format=json: ${(e as Error).message}`,
+          "Inspect wp-cli's stdout for malformed output. This usually indicates a wp-cli bootstrap warning bleeding into the JSON stream — re-run with WP_CLI_DEBUG=1 in the env.",
+        );
+      }
+    });
+    return {
+      content: [
+        { type: "text" as const, text: serializeEnvelope(response) },
+      ],
+    };
   },
 );
 
@@ -2163,7 +2560,7 @@ server.registerTool(
   "diviops_scf_field_group_get",
   {
     description:
-      "Fetch a single SCF/ACF field group from the `acf-field-group` post type — by ACF key (`group_abc123`, looked up via `post_name`) or by numeric WP post ID. Returns the WP post fields (post_name, post_title, post_content with serialized fields blob, post_status, post_modified). For the parsed/structured field tree including nested fields, use `diviops_scf_export --field-groups=<key> --stdout` instead. Read-only. SCF 6.8.4 dropped the legacy `wp acf field-group get` command, so this wrapper queries the post type directly via `wp post`.",
+      "Fetch a single SCF/ACF field group from the `acf-field-group` post type — by ACF key (`group_abc123`, looked up via `post_name`) or by numeric WP post ID. Returns the WP post fields (post_name, post_title, post_content with serialized fields blob, post_status, post_modified). For the parsed/structured field tree including nested fields, use `diviops_scf_export --field-groups=<key> --stdout` instead. Read-only. SCF 6.8.4 dropped the legacy `wp acf field-group get` command, so this wrapper queries the post type directly via `wp post`. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }; success payload is the parsed `wp post get --format=json` object. Unresolvable key (no row in the `acf-field-group` post type and not a numeric ID that wp-cli accepts) returns code 'not_found' with hint pointing to diviops_scf_field_group_list. wp-cli failures map to 'scf.command_failed'; missing wp-cli configuration surfaces as 'scf.not_configured'.",
     inputSchema: {
       key: z
         .string()
@@ -2171,77 +2568,86 @@ server.registerTool(
           "ACF field-group key (`group_abc123`, matched against post_name) or numeric WP post ID.",
         ),
     },
+    annotations: { idempotentHint: true },
+    _meta: { idempotent: "true" },
   },
   async ({ key }) => {
-    const gate = ensureWpCli();
-    if (!gate.ok) {
-      return { content: [{ type: "text" as const, text: gate.text }] };
-    }
-    // If the input looks like a numeric ID, hand it to `wp post get` directly.
-    // Otherwise treat it as an ACF key and resolve via post_name first.
-    const isNumericId = /^\d+$/.test(key);
-    if (isNumericId) {
-      const result = await wpCli!.runArgs([
-        "post",
-        "get",
-        key,
-        "--format=json",
-      ]);
-      const output = result.success
-        ? result.output
-        : `Error: ${result.error}\n${result.output}`;
-      return { content: [{ type: "text" as const, text: output }] };
-    }
-    // Resolve ACF key → post ID via `wp post list --name=<key>`. Single-row
-    // lookup; returns [] if the key isn't found.
-    const lookup = await wpCli!.runArgs([
-      "post",
-      "list",
-      "--post_type=acf-field-group",
-      "--post_status=any",
-      `--name=${key}`,
-      "--fields=ID",
-      "--format=json",
-    ]);
-    if (!lookup.success) {
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: `Error looking up field-group key "${key}": ${lookup.error}\n${lookup.output}`,
-          },
-        ],
-      };
-    }
-    let postId: string | null = null;
-    try {
-      const rows = JSON.parse(lookup.output) as Array<{ ID: number }>;
-      if (Array.isArray(rows) && rows.length > 0) {
-        postId = String(rows[0].ID);
+    const response = await wrapResponse(async () => {
+      const cli = ensureScfWpCli();
+      // If the input looks like a numeric ID, hand it to `wp post get` directly.
+      // Otherwise treat it as an ACF key and resolve via post_name first.
+      const isNumericId = /^\d+$/.test(key);
+      let postId: string;
+      if (isNumericId) {
+        postId = key;
+      } else {
+        const lookupArgs = [
+          "post",
+          "list",
+          "--post_type=acf-field-group",
+          "--post_status=any",
+          `--name=${key}`,
+          "--fields=ID",
+          "--format=json",
+        ];
+        const lookup = await cli.runArgs(lookupArgs);
+        if (!lookup.success) failScfCommand(lookup, lookupArgs);
+        let resolved: string | null = null;
+        try {
+          const rows = JSON.parse(lookup.stdout || "[]") as Array<{ ID: number }>;
+          if (Array.isArray(rows) && rows.length > 0) {
+            resolved = String(rows[0].ID);
+          }
+        } catch {
+          // Fall through — resolved stays null, treated as not_found below.
+        }
+        if (!resolved) {
+          withCode(
+            ErrorCodes.NOT_FOUND,
+            `No field-group found for key "${key}".`,
+            'Expected an ACF key (e.g. "group_5f8a1b2c3d4e5") or a numeric WP post ID. Run diviops_scf_field_group_list to see available field groups.',
+            { key },
+          );
+        }
+        postId = resolved;
       }
-    } catch {
-      // Fall through — postId stays null, return a clear "not found" error.
-    }
-    if (!postId) {
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: `No field-group found for key "${key}". Expected an ACF key (e.g. "group_5f8a1b2c3d4e5") or a numeric WP post ID (e.g. "287"). Use diviops_scf_field_group_list to see available keys (post_name field).`,
-          },
-        ],
-      };
-    }
-    const result = await wpCli!.runArgs([
-      "post",
-      "get",
-      postId,
-      "--format=json",
-    ]);
-    const output = result.success
-      ? result.output
-      : `Error: ${result.error}\n${result.output}`;
-    return { content: [{ type: "text" as const, text: output }] };
+      const args = ["post", "get", postId, "--format=json"];
+      const result = await cli.runArgs(args);
+      // For numeric IDs that don't resolve, wp-cli exits non-zero with
+      // "Could not find the post with ID <n>" on stderr — surface as
+      // not_found rather than the generic command_failed so callers can
+      // branch uniformly on `error.code`.
+      if (!result.success) {
+        const stderr = result.stderr ?? "";
+        if (
+          isNumericId &&
+          result.failureKind === "exited" &&
+          /Could not find the post with ID/i.test(stderr)
+        ) {
+          withCode(
+            ErrorCodes.NOT_FOUND,
+            `No field-group found for ID "${key}".`,
+            "Run diviops_scf_field_group_list to see available field groups.",
+            { key },
+          );
+        }
+        failScfCommand(result, args);
+      }
+      try {
+        return JSON.parse(result.stdout);
+      } catch (e) {
+        withCode(
+          ErrorCodes.WP_ERROR,
+          `wp-cli returned non-JSON output for --format=json: ${(e as Error).message}`,
+          "Inspect wp-cli's stdout for malformed output. Re-run with WP_CLI_DEBUG=1 in the env to surface PHP traceback.",
+        );
+      }
+    });
+    return {
+      content: [
+        { type: "text" as const, text: serializeEnvelope(response) },
+      ],
+    };
   },
 );
 
@@ -2251,13 +2657,21 @@ server.registerTool(
   "diviops_meta_ping",
   {
     description:
-      "Test the connection to the WordPress site and verify the Divi MCP plugin is active.",
+      "Test the connection to the WordPress site and verify the Divi MCP plugin is active. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }; success payload is { connected: true, message: \"Connected to Divi <version>\" } and connection failure surfaces as { ok: false, error: { code: 'wp_error', message } } with the underlying transport message preserved.",
+    annotations: { idempotentHint: true },
+    _meta: { idempotent: "true" },
   },
   async () => {
-    const result = await wp.testConnection();
+    const response = await wrapResponse(async () => {
+      const ping = await wp.testConnection();
+      if (!ping.ok) {
+        withCode(ErrorCodes.WP_ERROR, ping.message);
+      }
+      return { connected: true, message: ping.message };
+    });
     return {
       content: [
-        { type: "text" as const, text: JSON.stringify(result) },
+        { type: "text" as const, text: serializeEnvelope(response) },
       ],
     };
   },
@@ -2267,10 +2681,12 @@ server.registerTool(
   "diviops_meta_info",
   {
     description:
-      "Returns DiviOps MCP server identity, version, license type, and available capabilities.",
+      "Returns DiviOps MCP server identity, version, license type, and available capabilities. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }.",
+    annotations: { idempotentHint: true },
+    _meta: { idempotent: "true" },
   },
   async () => {
-    const info = {
+    const response = await wrapResponse(async () => ({
       brand: "DiviOps",
       server: "diviops-mcp",
       version: SERVER_VERSION,
@@ -2289,10 +2705,10 @@ server.registerTool(
         "preview",
       ],
       wp_cli: wpCli ? wpCli.getAllowedCommands() : false,
-    };
+    }));
     return {
       content: [
-        { type: "text" as const, text: JSON.stringify(info) },
+        { type: "text" as const, text: serializeEnvelope(response) },
       ],
     };
   },
@@ -2407,17 +2823,23 @@ server.registerTool(
   "diviops_template_list",
   {
     description:
-      "List available Divi page section templates. Each template contains verified block markup patterns that can be used as a base for page generation.",
+      "List available Divi page section templates. Each template contains verified block markup patterns that can be used as a base for page generation. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }; success payload is an array of { name, description, customizable, requires_css }.",
+    annotations: { idempotentHint: true },
+    _meta: { idempotent: "true" },
   },
   async () => {
-    const list = Array.from(templates.entries()).map(([name, t]) => ({
-      name,
-      description: t.description,
-      customizable: t.customizable,
-      requires_css: t.requires_css ?? false,
-    }));
+    const response = await wrapResponse(async () =>
+      Array.from(templates.entries()).map(([name, t]) => ({
+        name,
+        description: t.description,
+        customizable: t.customizable,
+        requires_css: t.requires_css ?? false,
+      })),
+    );
     return {
-      content: [{ type: "text" as const, text: JSON.stringify(list) }],
+      content: [
+        { type: "text" as const, text: serializeEnvelope(response) },
+      ],
     };
   },
 );
@@ -2426,7 +2848,7 @@ server.registerTool(
   "diviops_template_get",
   {
     description:
-      "Get a specific Divi template with verified block markup, customizable variables, and usage notes. Use this to generate pages based on proven patterns.",
+      "Get a specific Divi template with verified block markup, customizable variables, and usage notes. Use this to generate pages based on proven patterns. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }. Missing template names return ok:false with code 'not_found' and error.data.available: string[] listing the registered template names.",
     inputSchema: {
       template_name: z
         .string()
@@ -2434,23 +2856,25 @@ server.registerTool(
           'Template name (e.g. "hero-centered", "hero-split", "hero-marquee", "features-blurbs", "cta-gradient", "cards-flex")',
         ),
     },
+    annotations: { idempotentHint: true },
+    _meta: { idempotent: "true" },
   },
   async ({ template_name }) => {
-    const template = templates.get(template_name);
-    if (!template) {
-      const available = Array.from(templates.keys()).join(", ");
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: `Template "${template_name}" not found. Available: ${available}`,
-          },
-        ],
-      };
-    }
+    const response = await wrapResponse(async () => {
+      const template = templates.get(template_name);
+      if (!template) {
+        withCode(
+          ErrorCodes.NOT_FOUND,
+          `Template "${template_name}" not found.`,
+          "Run diviops_template_list to see available templates.",
+          { available: Array.from(templates.keys()) },
+        );
+      }
+      return template;
+    });
     return {
       content: [
-        { type: "text" as const, text: JSON.stringify(template) },
+        { type: "text" as const, text: serializeEnvelope(response) },
       ],
     };
   },
@@ -2462,7 +2886,7 @@ registerPluginTool(
   "diviops_variable_list",
   {
     description:
-      "List all design token variables from the Divi Variable Manager. Colors (gcid-*) come from et_global_data, numbers/strings/etc (gvid-*) from et_divi_global_variables. Filter by type or ID prefix.",
+      "List all design token variables from the Divi Variable Manager. Colors (gcid-*) come from et_global_data, numbers/strings/etc (gvid-*) from et_divi_global_variables. Filter by type or ID prefix. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }; invalid `type` returns ok:false with code 'invalid_input'.",
     inputSchema: {
       type: z
         .enum(["colors", "numbers", "strings", "images", "links", "fonts"])
@@ -2475,15 +2899,17 @@ registerPluginTool(
           'Filter by ID prefix (e.g. "gcid-oa-" for oa design system colors)',
         ),
     },
+    annotations: { idempotentHint: true },
+    _meta: { idempotent: "true" },
   },
   async ({ type, prefix }) => {
     const params: Record<string, string> = {};
     if (type) params.type = type;
     if (prefix) params.prefix = prefix;
-    const result = await wp.request("/variable/list", { params });
+    const result = await wp.requestEnveloped("/variable/list", { params });
     return {
       content: [
-        { type: "text" as const, text: JSON.stringify(result) },
+        { type: "text" as const, text: serializeEnvelope(result) },
       ],
     };
   },
@@ -2493,7 +2919,8 @@ registerPluginTool(
   "diviops_variable_create",
   {
     description:
-      'Create a design token variable in the Divi Variable Manager. Colors (type "colors") use gcid-* IDs and hex values. Numbers/strings/etc use gvid-* IDs. For type="numbers" fluid tokens, pass min+max shorthand (anchors default to 320px/1920px) or explicit targets — server generates arithmetically-correct clamp() formulas. All-px inputs emit px (safe default, root-agnostic). Rem inputs OR rem output require explicit opt-in: pass output_unit="rem" (accepts the 1rem=16px default) or root_font_size_px:N (declares your site\'s actual root font-size for correct rem emission on non-16px-root sites). Mutually exclusive with value.',
+      'Create a design token variable in the Divi Variable Manager. Colors (type "colors") use gcid-* IDs and hex values. Numbers/strings/etc use gvid-* IDs. For type="numbers" fluid tokens, pass min+max shorthand (anchors default to 320px/1920px) or explicit targets — server generates arithmetically-correct clamp() formulas. All-px inputs emit px (safe default, root-agnostic). Rem inputs OR rem output require explicit opt-in: pass output_unit="rem" (accepts the 1rem=16px default) or root_font_size_px:N (declares your site\'s actual root font-size for correct rem emission on non-16px-root sites). Mutually exclusive with value. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }; input-shape rejections (invalid type, fluid+value conflict, rem-without-opt-in, malformed id, non-hex color, etc.) return ok:false with code \'invalid_input\' and `error.data` documenting the failed field. Algorithmic clamp() failures return code \'variable.fluid_generation_failed\' with `error.data = { min, max, targets, reason }`.' +
+      DRY_RUN_DESC_SUFFIX,
     inputSchema: {
       type: z
         .enum(["colors", "numbers", "strings", "images", "links", "fonts"])
@@ -2547,7 +2974,10 @@ registerPluginTool(
         .describe(
           "Site's root font-size in px (positive number), used for correct rem↔px conversion in the generated clamp() formula. Defaults to 16 (standard browser default) when omitted. Pass explicitly for sites that customize `html { font-size }` (e.g. 10 for `html { font-size: 62.5% }`, 20 for `html { font-size: 20px }`). Also counts as an opt-in signal for rem emission — passing it alone (without output_unit) implies rem output. Only applies when min/max/targets is used.",
         ),
+      dry_run: DRY_RUN_FIELD,
     },
+    annotations: { idempotentHint: false },
+    _meta: { idempotent: "false" },
   },
   async ({
     type,
@@ -2559,6 +2989,7 @@ registerPluginTool(
     targets,
     output_unit,
     root_font_size_px,
+    dry_run,
   }) => {
     const body: Record<string, unknown> = { type, label };
     if (value !== undefined) body.value = value;
@@ -2568,13 +2999,14 @@ registerPluginTool(
     if (targets !== undefined) body.targets = targets;
     if (output_unit !== undefined) body.output_unit = output_unit;
     if (root_font_size_px !== undefined) body.root_font_size_px = root_font_size_px;
-    const result = await wp.request("/variable/create", {
+    if (dry_run) body.dry_run = true;
+    const result = await wp.requestEnveloped("/variable/create", {
       method: "POST",
       body,
     });
     return {
       content: [
-        { type: "text" as const, text: JSON.stringify(result) },
+        { type: "text" as const, text: serializeEnvelope(result) },
       ],
     };
   },
@@ -2584,7 +3016,7 @@ registerPluginTool(
   "diviops_variable_create_fluid_system",
   {
     description:
-      "Batch-emit a fluid typography + spacing + radius variable set in one call — mirrors Divi 5.4.0's Variable Generator Modal at the algorithm level (clamp() math is identical to diviops_variable_create's fluid mode) but layers profile-selectable anchors over it. Each category is independent and optional. Use for: (1) bootstrapping a design system in one call instead of 20+ individual diviops_variable_create invocations; (2) mirroring ET's variable layout so your tokens coexist with VB-generated ones in the Variable Manager; (3) deterministic preflight via dry_run before committing the registry change. By default, refuses to overwrite existing IDs (returns them in `skipped`) — pass overwrite=true to update in place. Persists in a single atomic write to the variable registry; mid-batch failures roll back cleanly.",
+      "Batch-emit a fluid typography + spacing + radius variable set in one call — mirrors Divi 5.4.0's Variable Generator Modal at the algorithm level (clamp() math is identical to diviops_variable_create's fluid mode) but layers profile-selectable anchors over it. Each category is independent and optional. Use for: (1) bootstrapping a design system in one call instead of 20+ individual diviops_variable_create invocations; (2) mirroring ET's variable layout so your tokens coexist with VB-generated ones in the Variable Manager; (3) deterministic preflight via dry_run before committing the registry change. By default, refuses to overwrite existing IDs (returns them in `skipped`) — pass overwrite=true to update in place. Persists in a single atomic write to the variable registry; mid-batch failures roll back cleanly. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }; input-shape rejections (invalid namespace, no categories, invalid profile, plan ID collision, etc.) return code 'invalid_input' with `error.data` documenting the failed field. Algorithmic scale-generation failures (degenerate ratios/anchors caught inside compute_typography_scale or compute_size_scale) return code 'variable.fluid_system_generation_failed' with `error.data = { profile, categories, reason }`.",
     inputSchema: {
       profile: z
         .enum(["divi-default", "wide", "custom"])
@@ -2758,6 +3190,8 @@ registerPluginTool(
           "When false (default), existing IDs land in `skipped` with the existing value. When true, each existing ID is updated in place (label + value rewritten, order preserved).",
         ),
     },
+    annotations: { idempotentHint: false },
+    _meta: { idempotent: "false" },
   },
   async ({
     profile,
@@ -2781,13 +3215,13 @@ registerPluginTool(
     if (root_font_size_px !== undefined) body.root_font_size_px = root_font_size_px;
     if (dry_run !== undefined) body.dry_run = dry_run;
     if (overwrite !== undefined) body.overwrite = overwrite;
-    const result = await wp.request("/variable/create-fluid-system", {
+    const result = await wp.requestEnveloped("/variable/create-fluid-system", {
       method: "POST",
       body,
     });
     return {
       content: [
-        { type: "text" as const, text: JSON.stringify(result) },
+        { type: "text" as const, text: serializeEnvelope(result) },
       ],
     };
   },
@@ -2797,7 +3231,8 @@ registerPluginTool(
   "diviops_variable_delete",
   {
     description:
-      "Delete a design token variable by ID. Auto-detects storage from ID prefix (gcid-* = colors, gvid-* = numbers/strings/etc). Returns HTTP 409 when live references exist unless force=true — run diviops_variable_scan_orphans to see where the references live. Returns HTTP 403 for Divi's customizer-bound defaults (gcid-primary-color, gcid-secondary-color, gcid-heading-color, gcid-body-color, gcid-link-color); those are managed via WP Customizer theme options and can't be deleted via this tool.",
+      "Delete a design token variable by ID. Auto-detects storage from ID prefix (gcid-* = colors, gvid-* = numbers/strings/etc). Returns the standardized envelope { ok, data?, error: { code, message, hint? } }. Live-reference collision returns ok:false with code 'conflict' (HTTP 409) and `error.data = { id: string, ref_count: number, locations: object[] }` so callers can audit before re-issuing with force=true. The `locations` array is a discriminated union by `type` — content surfaces emit `{ type: 'page'|'post'|'et_header_layout'|'et_body_layout'|'et_footer_layout'|'et_pb_layout'|'et_pb_canvas', post_id: number, title: string }` (post_type as `type` so the Theme Builder + library + canvas flavors are distinguishable); preset-registry refs emit `{ type: 'preset', bucket: 'module'|'group', module: string, preset_uuid: string, preset_name: string }`. This shape is the precedent for any future conflict envelope carrying structured `error.data` collections. Run diviops_variable_scan_orphans first to see where the references live. Customizer-bound color defaults (gcid-primary-color, gcid-secondary-color, gcid-heading-color, gcid-body-color, gcid-link-color) are managed via WP Customizer theme options and reject with code 'variable.customizer_default_immutable' (HTTP 403). Missing IDs return 'not_found' (HTTP 404)." +
+      DRY_RUN_DESC_SUFFIX,
     inputSchema: {
       id: z
         .string()
@@ -2811,16 +3246,21 @@ registerPluginTool(
         .describe(
           "Delete even if live references exist. Orphans will remain in page/preset content and render as invalid CSS on the frontend — run diviops_variable_scan_orphans afterwards to audit.",
         ),
+      dry_run: DRY_RUN_FIELD,
     },
+    annotations: { idempotentHint: true },
+    _meta: { idempotent: "true" },
   },
-  async ({ id, force }) => {
-    const result = await wp.request("/variable/delete", {
+  async ({ id, force, dry_run }) => {
+    const body: Record<string, unknown> = { id, force };
+    if (dry_run) body.dry_run = true;
+    const result = await wp.requestEnveloped("/variable/delete", {
       method: "POST",
-      body: { id, force },
+      body,
     });
     return {
       content: [
-        { type: "text" as const, text: JSON.stringify(result) },
+        { type: "text" as const, text: serializeEnvelope(result) },
       ],
     };
   },
@@ -2830,13 +3270,15 @@ registerPluginTool(
   "diviops_variable_scan_orphans",
   {
     description:
-      "Scan pages, Theme Builder layouts (header/body/footer), Divi Library items, canvas pages, and the preset registry for gvid-/gcid- references that have no backing entry in the Variable Manager (orphans), plus variables defined but referenced nowhere (unused). Orphans render as invalid CSS on the frontend — the $variable()$ resolver falls through with no fallback. Use after a deletion with force=true, or periodically as a hygiene check. Symmetric to diviops_preset_scan_orphans.",
+      "Scan pages, Theme Builder layouts (header/body/footer), Divi Library items, canvas pages, and the preset registry for gvid-/gcid- references that have no backing entry in the Variable Manager (orphans), plus variables defined but referenced nowhere (unused). Orphans render as invalid CSS on the frontend — the $variable()$ resolver falls through with no fallback. Use after a deletion with force=true, or periodically as a hygiene check. Symmetric to diviops_preset_scan_orphans. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }.",
+    annotations: { idempotentHint: true },
+    _meta: { idempotent: "true" },
   },
   async () => {
-    const result = await wp.request("/variable/scan-orphans");
+    const result = await wp.requestEnveloped("/variable/scan-orphans");
     return {
       content: [
-        { type: "text" as const, text: JSON.stringify(result) },
+        { type: "text" as const, text: serializeEnvelope(result) },
       ],
     };
   },
@@ -2846,7 +3288,7 @@ registerPluginTool(
   "diviops_variable_used_on_page",
   {
     description:
-      "Detect which numeric/font variable IDs a single page actually emits — the exact set Divi 5.4.0+ uses to scope selective `:root{--gvid-*}` CSS variable emission. Walks the same content stack the frontend assembles: post_content + active Theme Builder header/body/footer template content + appended canvas content (interaction targets etc.), plus presets referenced by that content. NOTE: this is `gvid-*` only — color variables (`gcid-*`) are emitted via a separate path (`GlobalData` color block) that is NOT scoped per-page in 5.4.0; this tool returns gvid IDs only. Use for per-page orphan validation (complements global diviops_variable_scan_orphans), preflight before bulk variable rename (know which pages are affected), or to debug why a numeric/font variable doesn't render on a specific page. Read-only. Returns variable_ids (sorted, deduped), count, and the tb_template_ids resolved for that post.",
+      "Detect which numeric/font variable IDs a single page actually emits — the exact set Divi 5.4.0+ uses to scope selective `:root{--gvid-*}` CSS variable emission. Walks the same content stack the frontend assembles: post_content + active Theme Builder header/body/footer template content + appended canvas content (interaction targets etc.), plus presets referenced by that content. NOTE: this is `gvid-*` only — color variables (`gcid-*`) are emitted via a separate path (`GlobalData` color block) that is NOT scoped per-page in 5.4.0; this tool returns gvid IDs only. Use for per-page orphan validation (complements global diviops_variable_scan_orphans), preflight before bulk variable rename (know which pages are affected), or to debug why a numeric/font variable doesn't render on a specific page. Read-only. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }; success payload is { post_id, variable_ids (sorted, deduped), count, tb_template_ids }. Missing post_id returns 'not_found'; non-positive post_id returns 'invalid_input'; a Divi 5 environment without the `\\\\ET\\\\Builder\\\\FrontEnd\\\\Assets\\\\DetectFeature` class (e.g. Divi 4 active, or Divi disabled) returns 'wp_error' (HTTP 500) with a hint to activate Divi 5.",
     inputSchema: {
       post_id: z
         .number()
@@ -2856,12 +3298,14 @@ registerPluginTool(
           "WordPress post/page ID. The page does not need to be Divi-built — TB templates and canvases attached to non-Divi posts are still scanned.",
         ),
     },
+    annotations: { idempotentHint: true },
+    _meta: { idempotent: "true" },
   },
   async ({ post_id }) => {
-    const result = await wp.request(`/variable/used-on-page/${post_id}`);
+    const result = await wp.requestEnveloped(`/variable/used-on-page/${post_id}`);
     return {
       content: [
-        { type: "text" as const, text: JSON.stringify(result) },
+        { type: "text" as const, text: serializeEnvelope(result) },
       ],
     };
   },
@@ -2871,7 +3315,9 @@ registerPluginTool(
   "diviops_meta_flush_cache",
   {
     description:
-      "Flush Divi's compiled static CSS cache under wp-content/et-cache/. wp cache flush does NOT touch these files — the frontend can keep serving stale CSS after a preset/variable/module mutation until the cache is cleared. Delegates to Divi's native ET_Core_PageResource::remove_static_resources when available (response backend: \"divi_native\"), which additionally clears Theme Builder CSS scattered across other post dirs, archive/taxonomy/home/notfound CSS, the object cache, module features cache, post features cache, Google Fonts cache, dynamic assets cache, and post meta caches. Falls back to a targeted filesystem walk of numeric-named et-cache subdirs when the Divi class is absent (backend: \"fs_fallback\"). Provide exactly one selector — no site-wide default to prevent accidental full flush. Idempotent: missing cache root returns 200 with empty list.",
+      "Flush Divi's compiled static CSS cache under wp-content/et-cache/. wp cache flush does NOT touch these files — the frontend can keep serving stale CSS after a preset/variable/module mutation until the cache is cleared. Delegates to Divi's native ET_Core_PageResource::remove_static_resources when available (response backend: \"divi_native\"), which additionally clears Theme Builder CSS scattered across other post dirs, archive/taxonomy/home/notfound CSS, the object cache, module features cache, post features cache, Google Fonts cache, dynamic assets cache, and post meta caches. Falls back to a targeted filesystem walk of numeric-named et-cache subdirs when the Divi class is absent (backend: \"fs_fallback\"). Provide exactly one selector — no site-wide default to prevent accidental full flush. Idempotent: missing cache root returns 200 with empty list. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }; namespace-specific error codes: meta_flush_cache.unwritable (filesystem refused), meta_flush_cache.fs_init_failed (WP_Filesystem could not authenticate)." +
+      DRY_RUN_DESC_SUFFIX +
+      " Note: in `after` mode the dry-run plan reports the cutoff only — accurate file count requires the live mtime walk.",
     inputSchema: {
       post_id: z
         .number()
@@ -2896,20 +3342,24 @@ registerPluginTool(
         .describe(
           "Unix timestamp — flush Divi CSS files (et-*.css) with mtime strictly greater than this value. Useful for flushing entries touched since a known deployment or mutation batch. Native backend does a single-pass filesystem sweep covering numeric post dirs AND archive/taxonomy/home/notfound/global subtrees in one walk (Visual Builder -vb-* runtime CSS preserved); fs_fallback iterates numeric post dirs whose latest file mtime > after. `flushed` lists numeric post_ids whose files were actually deleted; `skipped` lists numeric post_ids that exist but had no files pass the filter.",
         ),
+      dry_run: DRY_RUN_FIELD,
     },
+    annotations: { idempotentHint: true },
+    _meta: { idempotent: "true" },
   },
-  async ({ post_id, all, after }) => {
+  async ({ post_id, all, after, dry_run }) => {
     const body: Record<string, unknown> = {};
     if (post_id !== undefined) body.post_id = post_id;
     if (all) body.all = true;
     if (after !== undefined) body.after = after;
-    const result = await wp.request("/meta/flush-cache", {
+    if (dry_run) body.dry_run = true;
+    const result = await wp.requestEnveloped("/meta/flush-cache", {
       method: "POST",
       body,
     });
     return {
       content: [
-        { type: "text" as const, text: JSON.stringify(result) },
+        { type: "text" as const, text: serializeEnvelope(result) },
       ],
     };
   },
