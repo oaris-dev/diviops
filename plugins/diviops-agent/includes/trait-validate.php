@@ -365,6 +365,31 @@ trait DiviOps_Agent_Validate {
 				}
 			}
 
+			// ── flexType on the wrong decoration bucket (warning, any module) ──
+			// Canonical: module.decoration.sizing.desktop.value.flexType (Sizing subName,
+			//            verified at Packages/Module/Options/Sizing/SizingPresetAttrsMap.php:124-128).
+			// Wrong:     module.decoration.layout.{breakpoint}.value.flexType — Layout registers
+			//            no flexType subName, so the value is byte-stored but semantically dropped
+			//            at render. Applies on every breakpoint identically.
+			if ( $is_divi_block ) {
+				foreach ( [ 'desktop', 'tablet', 'phone' ] as $bp ) {
+					$wrong_flex = self::get_nested_array_value( $attrs, [ 'module', 'decoration', 'layout', $bp, 'value', 'flexType' ] );
+					if ( null !== $wrong_flex ) {
+						$warnings[] = [
+							'block'   => $name,
+							'index'   => $index,
+							'code'    => 'flextype_wrong_path',
+							'message' => sprintf(
+								'flexType on module.decoration.layout.%s.value is the wrong decoration bucket — Layout has no flexType subName, so the value is byte-stored but dropped at render. Move to module.decoration.sizing.%s.value.flexType (the canonical Sizing path). Note: flexType is a 24-unit grid for flex children — the parent row/group must also have module.decoration.layout.desktop.value.display = "flex" or it falls back to legacy et_pb_column_N_M classes by count.',
+								$bp,
+								$bp
+							),
+							'path'    => sprintf( 'module.decoration.layout.%s.value.flexType → module.decoration.sizing.%s.value.flexType', $bp, $bp ),
+						];
+					}
+				}
+			}
+
 			// ── Empty text module (error) ───────────────────────────
 
 			if ( 'divi/text' === $name ) {

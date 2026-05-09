@@ -1668,9 +1668,11 @@ trait DiviOps_Agent_Variable {
 					'Pass force=true to override, or remove references first; run diviops_variable_scan_orphans afterwards if forced.',
 					409,
 					[
-						'id'        => $id,
-						'ref_count' => $refs['all_ids'][ $id ],
-						'locations' => $refs['locations'][ $id ] ?? [],
+						'id'             => $id,
+						'ref_count'      => $refs['all_ids'][ $id ],
+						'locations'      => $refs['locations'][ $id ] ?? [],
+						'scan_truncated' => $refs['scan_truncated'],
+						'scanned_posts'  => $refs['scanned_posts'],
 					]
 				);
 			}
