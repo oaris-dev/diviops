@@ -14,8 +14,8 @@ assignees: ''
 
 - **WordPress version:**
 - **Divi theme version:**
-- **MCP server version** (`@diviops/mcp-server`):
-- **DiviOps Agent plugin version** (WP Admin → Plugins):
+- **MCP server version** (`npx @diviops/mcp-server --version`):
+- **DiviOps Agent plugin version** (WP Admin → Plugins, or `wp plugin get diviops-agent --field=version` headless):
 - **Hosting environment:** <!-- Local by Flywheel / DDEV / wp-env / WordPress Studio / DevKinsta / other -->
 - **MCP client:** <!-- Claude Code / Claude Desktop / Cursor / other -->
 - **Node version** (`node --version`):
