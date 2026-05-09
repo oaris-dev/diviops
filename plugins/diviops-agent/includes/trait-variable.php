@@ -54,7 +54,7 @@ trait DiviOps_Agent_Variable {
 	 * every string leaf of every attr tree — most leaves are short values like
 	 * px/color/url that can't possibly carry a variable token.
 	 */
-	private static function walk_value_for_variable_refs( $value, &$all_ids, &$local_ids ) {
+	public static function walk_value_for_variable_refs( $value, &$all_ids, &$local_ids ) {
 		if ( is_string( $value ) ) {
 			if ( false === strpos( $value, '$variable(' ) ) {
 				return;
@@ -78,7 +78,7 @@ trait DiviOps_Agent_Variable {
 	 * Recursively walk a parsed-blocks tree, scanning each block's attrs for
 	 * gvid-/gcid- references via walk_value_for_variable_refs.
 	 */
-	private static function walk_blocks_for_variable_refs( $blocks, &$all_ids, &$local_ids ) {
+	public static function walk_blocks_for_variable_refs( $blocks, &$all_ids, &$local_ids ) {
 		foreach ( $blocks as $block ) {
 			if ( isset( $block['attrs'] ) && is_array( $block['attrs'] ) ) {
 				self::walk_value_for_variable_refs( $block['attrs'], $all_ids, $local_ids );
@@ -115,7 +115,7 @@ trait DiviOps_Agent_Variable {
 	 *   scan_truncated  — true if the post cap was hit
 	 *   scanned_posts   — number of posts actually scanned
 	 */
-	private static function collect_variable_refs() {
+	public static function collect_variable_refs() {
 		$all_ids        = [];
 		$locations      = [];
 		$scan_truncated = false;
@@ -207,7 +207,7 @@ trait DiviOps_Agent_Variable {
 	 * always corresponds to a real ref; on a hit we fall through to the
 	 * full scan to produce an accurate 409 location list anyway.
 	 */
-	private static function variable_id_appears_anywhere( $id ) {
+	public static function variable_id_appears_anywhere( $id ) {
 		global $wpdb;
 		if ( '' === $id ) {
 			return false;

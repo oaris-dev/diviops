@@ -546,7 +546,7 @@ registerPluginTool(
   "diviops_global_color_delete",
   {
     description:
-      "Delete a global color from the registry by gcid. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }. Live-reference soft-block: returns code 'conflict' (HTTP 409) when Divi's `usedInPosts` index lists references — `error.data = { id, ref_count, used_in_posts }` carries Divi's pass-through reference list (Divi-maintained on VB save; element shape is whatever Divi emits, NOT the discriminated-union `locations[]` shape diviops_variable_delete builds via parse_blocks). Pass `force: true` to override; orphan refs will render as invalid CSS until pages are re-saved through VB. Always refuses to delete the 5 customizer-bound defaults (gcid-primary-color, gcid-secondary-color, gcid-heading-color, gcid-body-color, gcid-link-color) regardless of force — returns code 'variable.customizer_default_immutable' (HTTP 403) with `error.data = { id, managed_by: 'wp_customizer' }`. Missing gcids return 'not_found' (HTTP 404). Malformed gcid (empty or missing `gcid-` prefix) returns 'invalid_input'. CONCURRENCY: same VB-session race caveat as diviops_global_color_create — an active VB session's next save can re-introduce a color we just deleted if the session held stale data." +
+      "Delete a global color from the registry by gcid. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }. Live-reference detection uses parse_blocks over post_content across pages / TB layouts / library / canvas + the preset registry (mirrors diviops_variable_delete) — MCP-authored content is detected reliably, not just VB-saved content. Returns code 'conflict' (HTTP 409) when references exist with `error.data = { id, ref_count, locations[], scan_truncated, scanned_posts }`. Pass `force: true` to override; orphan refs will render as invalid CSS until pages are re-authored. Always refuses to delete the 5 customizer-bound defaults (gcid-primary-color, gcid-secondary-color, gcid-heading-color, gcid-body-color, gcid-link-color) regardless of force — returns code 'variable.customizer_default_immutable' (HTTP 403) with `error.data = { id, managed_by: 'wp_customizer' }`. Missing gcids return 'not_found' (HTTP 404). Malformed gcid (empty or missing `gcid-` prefix) returns 'invalid_input'. CONCURRENCY: same VB-session race caveat as diviops_global_color_create — an active VB session's next save can re-introduce a color we just deleted if the session held stale data." +
       DRY_RUN_DESC_SUFFIX,
     inputSchema: {
       gcid: z
@@ -556,7 +556,7 @@ registerPluginTool(
         .boolean()
         .optional()
         .default(false)
-        .describe("If true, delete even when usedInPosts shows live references. Customizer-bound defaults remain protected regardless."),
+        .describe("If true, delete even when live references exist. Customizer-bound defaults remain protected regardless."),
       dry_run: DRY_RUN_FIELD,
     },
     annotations: { idempotentHint: true },
@@ -1893,7 +1893,7 @@ registerPluginTool(
   "diviops_canvas_create",
   {
     description:
-      "Create a canvas (off-canvas workspace) linked to a page. Used for popups, off-canvas menus, modals. Content uses standard Divi block markup. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }; missing parent_page_id returns ok:false with code 'not_found'; non-string content / malformed canvas_id / append_to_main outside {above, below} returns 'invalid_input'." +
+      "Create a canvas (off-canvas workspace) linked to a page. Used for popups, off-canvas menus, modals. Content uses standard Divi block markup. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }; missing parent_page_id returns ok:false with code 'not_found'; non-string content / malformed canvas_id / append_to_main outside {above, below} returns 'invalid_input'. Returns code 'conflict' (HTTP 409) when a canvas with the same title already exists under the same parent_page_id — error.data = { existing_canvas_id, parent_page_id, title }. Mirrors diviops_preset_create's uniqueness contract." +
       DRY_RUN_DESC_SUFFIX,
     inputSchema: {
       title: z
@@ -1920,7 +1920,7 @@ registerPluginTool(
       dry_run: DRY_RUN_FIELD,
     },
     annotations: { idempotentHint: false },
-    _meta: { idempotent: "false" },
+    _meta: { idempotent: "conditional" },
   },
   async ({
     title,

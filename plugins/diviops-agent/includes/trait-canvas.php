@@ -18,10 +18,11 @@
  *                     canvas_create with missing parent_page_id
  *   - invalid_input — canvas_id format violation, non-string content/title,
  *                     append_to_main outside {above, below, ""}, no-op canvas_update payload
- *   - conflict      — canvas_duplicate with explicit `title` colliding with an existing
- *                     canvas under the same parent. Carries
- *                     `error.data = { existing_canvas_id, parent_page_id }` for callers
- *                     that want to retrieve / re-rename the conflicting canvas
+ *   - conflict      — canvas_create or canvas_duplicate with `title` colliding with
+ *                     an existing canvas under the same parent_page_id. Carries
+ *                     `error.data = { existing_canvas_id, parent_page_id, title }` for
+ *                     callers that want to retrieve / re-rename the conflicting canvas.
+ *                     Mirrors diviops_preset_create's uniqueness contract.
  *   - wp_error      — wp_insert_post / wp_update_post / wp_delete_post returned WP_Error
  *                     (or wp_delete_post returned false)
  *   - capability_missing actually surfaces upstream as the REST framework's
@@ -98,6 +99,29 @@ trait DiviOps_Agent_Canvas {
 		// Wrap content in placeholder if it contains Divi blocks but no placeholder wrapper.
 		if ( $content && false !== strpos( $content, '<!-- wp:divi/' ) && false === strpos( $content, '<!-- wp:divi/placeholder' ) ) {
 			$content = "<!-- wp:divi/placeholder -->\n{$content}\n<!-- /wp:divi/placeholder -->";
+		}
+
+		// Uniqueness probe — mirror preset_create's contract.
+		// (parent_page_id, title) is the duplicate-key tuple; matches the
+		// idempotent-create semantics across the suite (preset_create,
+		// library_save with mode='create', canvas_duplicate on explicit
+		// title). Probe runs whether dry_run or not, so dry_run preview
+		// still surfaces the conflict before pretending to insert.
+		// Reuses the same helper canvas_duplicate uses, so both create-paths
+		// share one SQL-backed lookup instead of diverging implementations.
+		$existing_id = self::canvas_existing_id_by_title( $title, $parent_page_id );
+		if ( $existing_id ) {
+			return self::envelope_error(
+				'conflict',
+				sprintf( "A canvas titled '%s' already exists under parent page #%d.", $title, $parent_page_id ),
+				'Use diviops_canvas_update to modify the existing canvas, or pick a different title.',
+				409,
+				[
+					'existing_canvas_id' => $existing_id,
+					'parent_page_id'     => $parent_page_id,
+					'title'              => $title,
+				]
+			);
 		}
 
 		if ( (bool) $request->get_param( 'dry_run' ) ) {
@@ -212,6 +236,7 @@ trait DiviOps_Agent_Canvas {
 					[
 						'existing_canvas_id' => $existing_id,
 						'parent_page_id'     => $parent_page_id ?: null,
+						'title'              => $new_title,
 					]
 				);
 			}

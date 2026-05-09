@@ -384,11 +384,12 @@ trait DiviOps_Agent_GlobalColor {
 	 * removing them from the registry would break theme inheritance even if
 	 * the customizer values stay set.
 	 *
-	 * Soft-warns when a color is referenced by posts (per its `usedInPosts`
-	 * field) — caller must pass `force=true` to delete anyway. Note the
-	 * `usedInPosts` index is maintained by Divi on save, so a color used by
-	 * a page that was never opened in VB after the color was assigned via MCP
-	 * may not be tracked there. The check is best-effort, not authoritative.
+	 * Soft-warns when a color is referenced anywhere in `post_content` across
+	 * pages / TB layouts / library / canvas / preset registry — caller must
+	 * pass `force=true` to delete anyway. Reuses the parse_blocks scan from
+	 * `variable_delete` (`collect_variable_refs`) so MCP-authored content is
+	 * detected reliably; Divi's own `usedInPosts` index is VB-save-bound and
+	 * silently misses headless writes.
 	 */
 	public static function global_color_delete( $request ) {
 		if ( ! current_user_can( 'manage_options' ) ) {
@@ -444,42 +445,68 @@ trait DiviOps_Agent_GlobalColor {
 		}
 
 		$color = $colors[ $gcid ];
-		$used  = isset( $color['usedInPosts'] ) && is_array( $color['usedInPosts'] ) ? $color['usedInPosts'] : [];
 
-		// Live-reference soft-block (best-effort — see method docblock).
-		// Fourth concrete `conflict` adoption (after canvas_duplicate /
-		// library_save / variable_delete). `used_in_posts` is Divi's own
-		// index — its element shape is whatever Divi emits on save (not the
-		// discriminated-union shape variable_delete builds via parse_blocks).
-		// Documented in the tool description so callers don't expect parity.
-		if ( ! $force && ! empty( $used ) ) {
-			return self::envelope_error(
-				'conflict',
-				sprintf(
-					"Color '%s' has %d live reference(s) tracked by Divi. Pass force=true to delete anyway; orphan refs will render as invalid CSS until the pages are re-saved through VB.",
-					$gcid,
-					count( $used )
-				),
-				'Run diviops_variable_scan_orphans to see the broader registry view, or re-issue with force=true to override the soft-block.',
-				409,
-				[
-					'id'            => $gcid,
-					'ref_count'     => count( $used ),
-					'used_in_posts' => $used,
-				]
-			);
+		// Live-reference soft-block via parse_blocks scan — mirrors
+		// variable_delete's contract. Two-tier: cheap SQL LIKE +
+		// preset-option substring scan first; only fall through to the
+		// full collect_variable_refs() walk on a positive hit so the 409
+		// body carries accurate per-location records. The walker's regex
+		// already matches both gvid- and gcid- prefixes
+		// (`/g[vc]id-[A-Za-z0-9_-]+/`) — same scan surfaces, same logic.
+		// Cache the fast-path result so the dry_run branch below can reuse
+		// it without re-issuing the SQL/option scan.
+		$ref_count       = 0;
+		$locations       = [];
+		$refs            = null;
+		$appears         = self::variable_id_appears_anywhere( $gcid );
+		if ( ! $force && $appears ) {
+			$refs = self::collect_variable_refs();
+			if ( isset( $refs['all_ids'][ $gcid ] ) ) {
+				return self::envelope_error(
+					'conflict',
+					sprintf(
+						"Color '%s' has %d live reference(s). Pass force=true to delete anyway; orphan refs will render as invalid CSS until the pages are re-authored.",
+						$gcid,
+						$refs['all_ids'][ $gcid ]
+					),
+					'Pass force=true to override, or remove references first; run diviops_variable_scan_orphans afterwards if forced.',
+					409,
+					[
+						'id'             => $gcid,
+						'ref_count'      => $refs['all_ids'][ $gcid ],
+						'locations'      => $refs['locations'][ $gcid ] ?? [],
+						'scan_truncated' => $refs['scan_truncated'],
+						'scanned_posts'  => $refs['scanned_posts'],
+					]
+				);
+			}
 		}
 
 		if ( (bool) $request->get_param( 'dry_run' ) ) {
+			// Resolve ref data for the preview — when force=true skipped the
+			// fast-path branch above $refs is still null; reuse the cached
+			// $appears probe to decide whether the full scan is worth
+			// running. force=false-with-zero-refs falls through with
+			// $refs unset; treat as zero refs.
+			if ( null === $refs && $appears ) {
+				$refs = self::collect_variable_refs();
+			}
+			if ( null !== $refs ) {
+				$ref_count = $refs['all_ids'][ $gcid ] ?? 0;
+				$locations = $refs['locations'][ $gcid ] ?? [];
+			}
+			$label = $color['label'] ?? '';
+			$value = $color['color'] ?? '';
 			return self::dry_run_response(
-				"Would delete global color '{$gcid}' ('{$color['label']}', {$color['color']}). " . count( $used ) . " tracked reference(s).",
+				"Would delete global color '{$gcid}' ('{$label}', {$value}). {$ref_count} live reference(s).",
 				[ [
 					'kind'   => 'global_color.delete',
 					'target' => "global_color/{$gcid}",
 					'before' => [
-						'color' => $color['color'] ?? '',
-						'label' => $color['label'] ?? '',
-						'used_in_posts' => $used,
+						'color'     => $value,
+						'label'     => $label,
+						'ref_count' => $ref_count,
+						'locations' => $locations,
 					],
 				] ]
 			);
@@ -491,10 +518,10 @@ trait DiviOps_Agent_GlobalColor {
 
 		return self::envelope_success( [
 			'deleted' => [
-				'gcid'          => $gcid,
-				'color'         => $color['color'] ?? '',
-				'label'         => $color['label'] ?? '',
-				'used_in_posts' => $used,
+				'gcid'   => $gcid,
+				'color'  => $color['color'] ?? '',
+				'label'  => $color['label'] ?? '',
+				'forced' => $force,
 			],
 			'message' => "Color '{$gcid}' deleted.",
 		] );
