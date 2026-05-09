@@ -80,6 +80,8 @@ claude plugin install oaris-dev/diviops
 
 Verify with `What skills do you have?` — you should see `divi-5-builder` listed.
 
+This distribution includes a [`.claude-plugin/marketplace.json`](.claude-plugin/marketplace.json) manifest, so the same install command also works from a local clone of this repo (`claude plugin install <path-to-clone>`). The repository is published as a Claude Code plugin marketplace entry.
+
 For alternative skill installation paths (cloned repo, project-local copy), see [SETUP.md](SETUP.md#step-7-load-the-divi-5-builder-skill).
 
 ## Example workflow
