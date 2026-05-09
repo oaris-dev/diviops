@@ -19,6 +19,7 @@ import {
   type DiviopsResponse,
   ErrorCodes,
   envelopeMap,
+  recordIdempotent,
   serializeEnvelope,
   withCode,
   wrapResponse,
@@ -178,7 +179,24 @@ function registerPluginTool<H extends (args: any) => Promise<any>>(
     }
     return handler(args);
   }) as any;
+  recordIdempotent(name, config?._meta);
   server.registerTool(name, config, wrapped);
+}
+
+/**
+ * Server-local tools (no plugin dependency) register via this thin shim
+ * instead of `server.registerTool` directly. Same recording obligation
+ * as `registerPluginTool` — every tool surface needs `_meta.idempotent`
+ * captured into the runtime table so `serializeEnvelope(result, name)`
+ * can emit it on per-call responses (#597).
+ */
+function registerLocalTool<H extends (args: any) => Promise<any>>(
+  name: string,
+  config: any,
+  handler: H,
+): void {
+  recordIdempotent(name, config?._meta);
+  server.registerTool(name, config, handler);
 }
 /* eslint-enable @typescript-eslint/no-explicit-any */
 
@@ -238,7 +256,7 @@ registerPluginTool(
     });
     return {
       content: [
-        { type: "text" as const, text: serializeEnvelope(result) },
+        { type: "text" as const, text: serializeEnvelope(result, "diviops_page_list") },
       ],
     };
   },
@@ -259,7 +277,7 @@ registerPluginTool(
     const result = await wp.requestEnveloped(`/page/get/${page_id}`);
     return {
       content: [
-        { type: "text" as const, text: serializeEnvelope(result) },
+        { type: "text" as const, text: serializeEnvelope(result, "diviops_page_get") },
       ],
     };
   },
@@ -289,7 +307,7 @@ registerPluginTool(
     });
     return {
       content: [
-        { type: "text" as const, text: serializeEnvelope(result) },
+        { type: "text" as const, text: serializeEnvelope(result, "diviops_page_get_layout") },
       ],
     };
   },
@@ -307,7 +325,7 @@ registerPluginTool(
     const result = await wp.requestEnveloped("/schema/modules");
     return {
       content: [
-        { type: "text" as const, text: serializeEnvelope(result) },
+        { type: "text" as const, text: serializeEnvelope(result, "diviops_schema_list_modules") },
       ],
     };
   },
@@ -362,12 +380,12 @@ registerPluginTool(
           },
         };
         return {
-          content: [{ type: "text" as const, text: serializeEnvelope(failure) }],
+          content: [{ type: "text" as const, text: serializeEnvelope(failure, "diviops_schema_get_module") }],
         };
       }
       const result = await wp.requestEnveloped("/schema/module/dump-all");
       return {
-        content: [{ type: "text" as const, text: serializeEnvelope(result) }],
+        content: [{ type: "text" as const, text: serializeEnvelope(result, "diviops_schema_get_module") }],
       };
     }
 
@@ -380,7 +398,7 @@ registerPluginTool(
         },
       };
       return {
-        content: [{ type: "text" as const, text: serializeEnvelope(failure) }],
+        content: [{ type: "text" as const, text: serializeEnvelope(failure, "diviops_schema_get_module") }],
       };
     }
 
@@ -392,7 +410,7 @@ registerPluginTool(
     );
     return {
       content: [
-        { type: "text" as const, text: serializeEnvelope(projected) },
+        { type: "text" as const, text: serializeEnvelope(projected, "diviops_schema_get_module") },
       ],
     };
   },
@@ -410,7 +428,7 @@ registerPluginTool(
     const result = await wp.requestEnveloped("/schema/settings");
     return {
       content: [
-        { type: "text" as const, text: serializeEnvelope(result) },
+        { type: "text" as const, text: serializeEnvelope(result, "diviops_schema_get_settings") },
       ],
     };
   },
@@ -428,7 +446,7 @@ registerPluginTool(
     const result = await wp.requestEnveloped("/global-color/list");
     return {
       content: [
-        { type: "text" as const, text: serializeEnvelope(result) },
+        { type: "text" as const, text: serializeEnvelope(result, "diviops_global_color_list") },
       ],
     };
   },
@@ -473,7 +491,7 @@ registerPluginTool(
       method: "POST",
       body,
     });
-    return { content: [{ type: "text" as const, text: serializeEnvelope(result) }] };
+    return { content: [{ type: "text" as const, text: serializeEnvelope(result, "diviops_global_color_create") }] };
   },
 );
 
@@ -520,7 +538,7 @@ registerPluginTool(
       method: "POST",
       body,
     });
-    return { content: [{ type: "text" as const, text: serializeEnvelope(result) }] };
+    return { content: [{ type: "text" as const, text: serializeEnvelope(result, "diviops_global_color_update") }] };
   },
 );
 
@@ -552,7 +570,7 @@ registerPluginTool(
       method: "POST",
       body,
     });
-    return { content: [{ type: "text" as const, text: serializeEnvelope(result) }] };
+    return { content: [{ type: "text" as const, text: serializeEnvelope(result, "diviops_global_color_delete") }] };
   },
 );
 
@@ -568,7 +586,7 @@ registerPluginTool(
     const result = await wp.requestEnveloped("/global-font/list");
     return {
       content: [
-        { type: "text" as const, text: serializeEnvelope(result) },
+        { type: "text" as const, text: serializeEnvelope(result, "diviops_global_font_list") },
       ],
     };
   },
@@ -605,7 +623,7 @@ registerPluginTool(
     );
     return {
       content: [
-        { type: "text" as const, text: serializeEnvelope(result) },
+        { type: "text" as const, text: serializeEnvelope(result, "diviops_meta_find_icon") },
       ],
     };
   },
@@ -642,7 +660,7 @@ registerPluginTool(
     });
     return {
       content: [
-        { type: "text" as const, text: serializeEnvelope(result) },
+        { type: "text" as const, text: serializeEnvelope(result, "diviops_page_update_content") },
       ],
     };
   },
@@ -666,7 +684,7 @@ registerPluginTool(
     });
     return {
       content: [
-        { type: "text" as const, text: serializeEnvelope(result) },
+        { type: "text" as const, text: serializeEnvelope(result, "diviops_render_preview") },
       ],
     };
   },
@@ -690,7 +708,7 @@ registerPluginTool(
     });
     return {
       content: [
-        { type: "text" as const, text: serializeEnvelope(result) },
+        { type: "text" as const, text: serializeEnvelope(result, "diviops_validate_blocks") },
       ],
     };
   },
@@ -730,7 +748,7 @@ registerPluginTool(
     });
     return {
       content: [
-        { type: "text" as const, text: serializeEnvelope(result) },
+        { type: "text" as const, text: serializeEnvelope(result, "diviops_section_append") },
       ],
     };
   },
@@ -782,7 +800,7 @@ registerPluginTool(
     });
     return {
       content: [
-        { type: "text" as const, text: serializeEnvelope(result) },
+        { type: "text" as const, text: serializeEnvelope(result, "diviops_section_replace") },
       ],
     };
   },
@@ -829,7 +847,7 @@ registerPluginTool(
     });
     return {
       content: [
-        { type: "text" as const, text: serializeEnvelope(result) },
+        { type: "text" as const, text: serializeEnvelope(result, "diviops_section_remove") },
       ],
     };
   },
@@ -871,7 +889,7 @@ registerPluginTool(
     const result = await wp.requestEnveloped(`/section/get/${page_id}?${qs}`);
     return {
       content: [
-        { type: "text" as const, text: serializeEnvelope(result) },
+        { type: "text" as const, text: serializeEnvelope(result, "diviops_section_get") },
       ],
     };
   },
@@ -933,7 +951,7 @@ registerPluginTool(
     });
     return {
       content: [
-        { type: "text" as const, text: serializeEnvelope(result) },
+        { type: "text" as const, text: serializeEnvelope(result, "diviops_module_update") },
       ],
     };
   },
@@ -1030,7 +1048,7 @@ registerPluginTool(
     });
     return {
       content: [
-        { type: "text" as const, text: serializeEnvelope(result) },
+        { type: "text" as const, text: serializeEnvelope(result, "diviops_module_move") },
       ],
     };
   },
@@ -1061,7 +1079,7 @@ registerPluginTool(
     if (occurrence && occurrence > 1) body.occurrence = occurrence;
     if (dry_run) body.dry_run = true;
     const result = await wp.requestEnveloped(`/module/lock/${page_id}`, { method: "POST", body });
-    return { content: [{ type: "text" as const, text: serializeEnvelope(result) }] };
+    return { content: [{ type: "text" as const, text: serializeEnvelope(result, "diviops_module_lock") }] };
   },
 );
 
@@ -1090,7 +1108,7 @@ registerPluginTool(
     if (occurrence && occurrence > 1) body.occurrence = occurrence;
     if (dry_run) body.dry_run = true;
     const result = await wp.requestEnveloped(`/module/unlock/${page_id}`, { method: "POST", body });
-    return { content: [{ type: "text" as const, text: serializeEnvelope(result) }] };
+    return { content: [{ type: "text" as const, text: serializeEnvelope(result, "diviops_module_unlock") }] };
   },
 );
 
@@ -1121,7 +1139,7 @@ registerPluginTool(
     if (position) body.position = position;
     if (dry_run) body.dry_run = true;
     const result = await wp.requestEnveloped(`/module/clone/${page_id}`, { method: "POST", body });
-    return { content: [{ type: "text" as const, text: serializeEnvelope(result) }] };
+    return { content: [{ type: "text" as const, text: serializeEnvelope(result, "diviops_module_clone") }] };
   },
 );
 
@@ -1161,7 +1179,7 @@ registerPluginTool(
     });
     return {
       content: [
-        { type: "text" as const, text: serializeEnvelope(result) },
+        { type: "text" as const, text: serializeEnvelope(result, "diviops_page_create") },
       ],
     };
   },
@@ -1202,7 +1220,7 @@ registerPluginTool(
     });
     return {
       content: [
-        { type: "text" as const, text: serializeEnvelope(result) },
+        { type: "text" as const, text: serializeEnvelope(result, "diviops_page_trash") },
       ],
     };
   },
@@ -1247,7 +1265,7 @@ registerPluginTool(
     });
     return {
       content: [
-        { type: "text" as const, text: serializeEnvelope(result) },
+        { type: "text" as const, text: serializeEnvelope(result, "diviops_page_update_status") },
       ],
     };
   },
@@ -1267,7 +1285,7 @@ registerPluginTool(
     const result = await wp.requestEnveloped("/preset/audit");
     return {
       content: [
-        { type: "text" as const, text: serializeEnvelope(result) },
+        { type: "text" as const, text: serializeEnvelope(result, "diviops_preset_audit") },
       ],
     };
   },
@@ -1327,7 +1345,7 @@ registerPluginTool(
     });
     return {
       content: [
-        { type: "text" as const, text: serializeEnvelope(result) },
+        { type: "text" as const, text: serializeEnvelope(result, "diviops_preset_cleanup") },
       ],
     };
   },
@@ -1372,7 +1390,7 @@ registerPluginTool(
     });
     return {
       content: [
-        { type: "text" as const, text: serializeEnvelope(result) },
+        { type: "text" as const, text: serializeEnvelope(result, "diviops_preset_update") },
       ],
     };
   },
@@ -1404,7 +1422,7 @@ registerPluginTool(
     });
     return {
       content: [
-        { type: "text" as const, text: serializeEnvelope(result) },
+        { type: "text" as const, text: serializeEnvelope(result, "diviops_preset_delete") },
       ],
     };
   },
@@ -1486,7 +1504,7 @@ registerPluginTool(
     const result = await wp.requestEnveloped("/preset/create", { method: "POST", body });
     return {
       content: [
-        { type: "text" as const, text: serializeEnvelope(result) },
+        { type: "text" as const, text: serializeEnvelope(result, "diviops_preset_create") },
       ],
     };
   },
@@ -1552,7 +1570,7 @@ registerPluginTool(
     });
     return {
       content: [
-        { type: "text" as const, text: serializeEnvelope(result) },
+        { type: "text" as const, text: serializeEnvelope(result, "diviops_preset_reassign") },
       ],
     };
   },
@@ -1570,7 +1588,7 @@ registerPluginTool(
     const result = await wp.requestEnveloped("/preset/scan-orphans");
     return {
       content: [
-        { type: "text" as const, text: serializeEnvelope(result) },
+        { type: "text" as const, text: serializeEnvelope(result, "diviops_preset_scan_orphans") },
       ],
     };
   },
@@ -1625,7 +1643,7 @@ registerPluginTool(
     });
     return {
       content: [
-        { type: "text" as const, text: serializeEnvelope(result) },
+        { type: "text" as const, text: serializeEnvelope(result, "diviops_preset_set_default") },
       ],
     };
   },
@@ -1666,7 +1684,7 @@ registerPluginTool(
     const result = await wp.requestEnveloped("/library/items", { params });
     return {
       content: [
-        { type: "text" as const, text: serializeEnvelope(result) },
+        { type: "text" as const, text: serializeEnvelope(result, "diviops_library_list") },
       ],
     };
   },
@@ -1687,7 +1705,7 @@ registerPluginTool(
     const result = await wp.requestEnveloped(`/library/item/${item_id}`);
     return {
       content: [
-        { type: "text" as const, text: serializeEnvelope(result) },
+        { type: "text" as const, text: serializeEnvelope(result, "diviops_library_get") },
       ],
     };
   },
@@ -1730,7 +1748,7 @@ registerPluginTool(
     });
     return {
       content: [
-        { type: "text" as const, text: serializeEnvelope(result) },
+        { type: "text" as const, text: serializeEnvelope(result, "diviops_library_save") },
       ],
     };
   },
@@ -1762,7 +1780,7 @@ registerPluginTool(
     const result = await wp.requestEnveloped("/theme-builder/template/list", { params });
     return {
       content: [
-        { type: "text" as const, text: serializeEnvelope(result) },
+        { type: "text" as const, text: serializeEnvelope(result, "diviops_tb_template_list") },
       ],
     };
   },
@@ -1787,7 +1805,7 @@ registerPluginTool(
     const result = await wp.requestEnveloped(`/theme-builder/layout/get/${layout_id}`);
     return {
       content: [
-        { type: "text" as const, text: serializeEnvelope(result) },
+        { type: "text" as const, text: serializeEnvelope(result, "diviops_tb_layout_get") },
       ],
     };
   },
@@ -1816,7 +1834,7 @@ registerPluginTool(
     });
     return {
       content: [
-        { type: "text" as const, text: serializeEnvelope(result) },
+        { type: "text" as const, text: serializeEnvelope(result, "diviops_tb_layout_update") },
       ],
     };
   },
@@ -1863,7 +1881,7 @@ registerPluginTool(
     });
     return {
       content: [
-        { type: "text" as const, text: serializeEnvelope(result) },
+        { type: "text" as const, text: serializeEnvelope(result, "diviops_tb_template_create") },
       ],
     };
   },
@@ -1925,7 +1943,7 @@ registerPluginTool(
     const result = await wp.requestEnveloped("/canvas/create", { method: "POST", body });
     return {
       content: [
-        { type: "text" as const, text: serializeEnvelope(result) },
+        { type: "text" as const, text: serializeEnvelope(result, "diviops_canvas_create") },
       ],
     };
   },
@@ -1960,7 +1978,7 @@ registerPluginTool(
     const result = await wp.requestEnveloped("/canvas/list", { params });
     return {
       content: [
-        { type: "text" as const, text: serializeEnvelope(result) },
+        { type: "text" as const, text: serializeEnvelope(result, "diviops_canvas_list") },
       ],
     };
   },
@@ -1983,7 +2001,7 @@ registerPluginTool(
     const result = await wp.requestEnveloped(`/canvas/get/${canvas_post_id}`);
     return {
       content: [
-        { type: "text" as const, text: serializeEnvelope(result) },
+        { type: "text" as const, text: serializeEnvelope(result, "diviops_canvas_get") },
       ],
     };
   },
@@ -2025,7 +2043,7 @@ registerPluginTool(
     });
     return {
       content: [
-        { type: "text" as const, text: serializeEnvelope(result) },
+        { type: "text" as const, text: serializeEnvelope(result, "diviops_canvas_update") },
       ],
     };
   },
@@ -2064,7 +2082,7 @@ registerPluginTool(
     });
     return {
       content: [
-        { type: "text" as const, text: serializeEnvelope(result) },
+        { type: "text" as const, text: serializeEnvelope(result, "diviops_canvas_duplicate") },
       ],
     };
   },
@@ -2092,7 +2110,7 @@ registerPluginTool(
     });
     return {
       content: [
-        { type: "text" as const, text: serializeEnvelope(result) },
+        { type: "text" as const, text: serializeEnvelope(result, "diviops_canvas_delete") },
       ],
     };
   },
@@ -2100,7 +2118,7 @@ registerPluginTool(
 
 // ── WP-CLI ──────────────────────────────────────────────────────────
 
-server.registerTool(
+registerLocalTool(
   "diviops_meta_wp_cli",
   {
     description:
@@ -2203,7 +2221,7 @@ server.registerTool(
     });
     return {
       content: [
-        { type: "text" as const, text: serializeEnvelope(response) },
+        { type: "text" as const, text: serializeEnvelope(response, "diviops_meta_wp_cli") },
       ],
     };
   },
@@ -2309,7 +2327,7 @@ function failScfCommand(
   });
 }
 
-server.registerTool(
+registerLocalTool(
   "diviops_scf_status",
   {
     description:
@@ -2343,13 +2361,13 @@ server.registerTool(
     });
     return {
       content: [
-        { type: "text" as const, text: serializeEnvelope(response) },
+        { type: "text" as const, text: serializeEnvelope(response, "diviops_scf_status") },
       ],
     };
   },
 );
 
-server.registerTool(
+registerLocalTool(
   "diviops_scf_export",
   {
     description:
@@ -2427,13 +2445,13 @@ server.registerTool(
     });
     return {
       content: [
-        { type: "text" as const, text: serializeEnvelope(response) },
+        { type: "text" as const, text: serializeEnvelope(response, "diviops_scf_export") },
       ],
     };
   },
 );
 
-server.registerTool(
+registerLocalTool(
   "diviops_scf_import",
   {
     description:
@@ -2458,13 +2476,13 @@ server.registerTool(
     });
     return {
       content: [
-        { type: "text" as const, text: serializeEnvelope(response) },
+        { type: "text" as const, text: serializeEnvelope(response, "diviops_scf_import") },
       ],
     };
   },
 );
 
-server.registerTool(
+registerLocalTool(
   "diviops_scf_sync",
   {
     description:
@@ -2507,13 +2525,13 @@ server.registerTool(
     });
     return {
       content: [
-        { type: "text" as const, text: serializeEnvelope(response) },
+        { type: "text" as const, text: serializeEnvelope(response, "diviops_scf_sync") },
       ],
     };
   },
 );
 
-server.registerTool(
+registerLocalTool(
   "diviops_scf_field_group_list",
   {
     description:
@@ -2550,13 +2568,13 @@ server.registerTool(
     });
     return {
       content: [
-        { type: "text" as const, text: serializeEnvelope(response) },
+        { type: "text" as const, text: serializeEnvelope(response, "diviops_scf_field_group_list") },
       ],
     };
   },
 );
 
-server.registerTool(
+registerLocalTool(
   "diviops_scf_field_group_get",
   {
     description:
@@ -2645,7 +2663,7 @@ server.registerTool(
     });
     return {
       content: [
-        { type: "text" as const, text: serializeEnvelope(response) },
+        { type: "text" as const, text: serializeEnvelope(response, "diviops_scf_field_group_get") },
       ],
     };
   },
@@ -2653,7 +2671,7 @@ server.registerTool(
 
 // ── Connection ──────────────────────────────────────────────────────
 
-server.registerTool(
+registerLocalTool(
   "diviops_meta_ping",
   {
     description:
@@ -2671,13 +2689,13 @@ server.registerTool(
     });
     return {
       content: [
-        { type: "text" as const, text: serializeEnvelope(response) },
+        { type: "text" as const, text: serializeEnvelope(response, "diviops_meta_ping") },
       ],
     };
   },
 );
 
-server.registerTool(
+registerLocalTool(
   "diviops_meta_info",
   {
     description:
@@ -2708,7 +2726,7 @@ server.registerTool(
     }));
     return {
       content: [
-        { type: "text" as const, text: serializeEnvelope(response) },
+        { type: "text" as const, text: serializeEnvelope(response, "diviops_meta_info") },
       ],
     };
   },
@@ -2819,7 +2837,7 @@ function loadTemplates(): Map<string, any> {
 const templates = loadTemplates();
 
 // Register a list tool so Claude can discover available templates
-server.registerTool(
+registerLocalTool(
   "diviops_template_list",
   {
     description:
@@ -2838,13 +2856,13 @@ server.registerTool(
     );
     return {
       content: [
-        { type: "text" as const, text: serializeEnvelope(response) },
+        { type: "text" as const, text: serializeEnvelope(response, "diviops_template_list") },
       ],
     };
   },
 );
 
-server.registerTool(
+registerLocalTool(
   "diviops_template_get",
   {
     description:
@@ -2874,7 +2892,7 @@ server.registerTool(
     });
     return {
       content: [
-        { type: "text" as const, text: serializeEnvelope(response) },
+        { type: "text" as const, text: serializeEnvelope(response, "diviops_template_get") },
       ],
     };
   },
@@ -2909,7 +2927,7 @@ registerPluginTool(
     const result = await wp.requestEnveloped("/variable/list", { params });
     return {
       content: [
-        { type: "text" as const, text: serializeEnvelope(result) },
+        { type: "text" as const, text: serializeEnvelope(result, "diviops_variable_list") },
       ],
     };
   },
@@ -3006,7 +3024,7 @@ registerPluginTool(
     });
     return {
       content: [
-        { type: "text" as const, text: serializeEnvelope(result) },
+        { type: "text" as const, text: serializeEnvelope(result, "diviops_variable_create") },
       ],
     };
   },
@@ -3221,7 +3239,7 @@ registerPluginTool(
     });
     return {
       content: [
-        { type: "text" as const, text: serializeEnvelope(result) },
+        { type: "text" as const, text: serializeEnvelope(result, "diviops_variable_create_fluid_system") },
       ],
     };
   },
@@ -3260,7 +3278,7 @@ registerPluginTool(
     });
     return {
       content: [
-        { type: "text" as const, text: serializeEnvelope(result) },
+        { type: "text" as const, text: serializeEnvelope(result, "diviops_variable_delete") },
       ],
     };
   },
@@ -3278,7 +3296,7 @@ registerPluginTool(
     const result = await wp.requestEnveloped("/variable/scan-orphans");
     return {
       content: [
-        { type: "text" as const, text: serializeEnvelope(result) },
+        { type: "text" as const, text: serializeEnvelope(result, "diviops_variable_scan_orphans") },
       ],
     };
   },
@@ -3305,7 +3323,7 @@ registerPluginTool(
     const result = await wp.requestEnveloped(`/variable/used-on-page/${post_id}`);
     return {
       content: [
-        { type: "text" as const, text: serializeEnvelope(result) },
+        { type: "text" as const, text: serializeEnvelope(result, "diviops_variable_used_on_page") },
       ],
     };
   },
@@ -3359,7 +3377,7 @@ registerPluginTool(
     });
     return {
       content: [
-        { type: "text" as const, text: serializeEnvelope(result) },
+        { type: "text" as const, text: serializeEnvelope(result, "diviops_meta_flush_cache") },
       ],
     };
   },

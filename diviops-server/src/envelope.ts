@@ -203,9 +203,94 @@ export function envelopeMap<T, U>(
 }
 
 /**
+ * Idempotency vocabulary surfaced to clients via `_meta.idempotent` on
+ * every tool response (#597). Mirrors the registration-level `_meta.idempotent`
+ * declared at each `registerTool()` callsite so per-call consumers see the
+ * field where they naturally look (response envelope), not just at
+ * `tools/list` discovery time.
+ */
+export type IdempotentVerdict = "true" | "false" | "conditional";
+
+/**
+ * Tool-name → idempotent-verdict registry, populated at server startup by
+ * `recordIdempotent()` from each tool's registration `_meta`. The audit
+ * doc (`docs/idempotency-audit.md`) remains the single source of truth;
+ * this table is just the runtime mirror used to enrich per-call responses.
+ */
+const IDEMPOTENT_TABLE = new Map<string, IdempotentVerdict>();
+
+/**
+ * Record a tool's idempotency verdict at registration time so per-call
+ * `serializeEnvelope(result, toolName)` can emit it on every response.
+ * Throws if the registration is missing `_meta.idempotent` — fail-loud
+ * matches `feedback_explicit_reject_over_silent_sanitize`: a tool that
+ * skipped the audit would silently lack the field, defeating #597.
+ */
+export function recordIdempotent(
+  name: string,
+  meta: { idempotent?: string } | undefined,
+): void {
+  const verdict = meta?.idempotent;
+  if (verdict !== "true" && verdict !== "false" && verdict !== "conditional") {
+    throw new Error(
+      `Tool '${name}' is missing or has invalid _meta.idempotent declaration ` +
+        `(got: ${verdict === undefined ? "undefined" : JSON.stringify(verdict)}). ` +
+        `Every tool must declare idempotent: "true" | "false" | "conditional" ` +
+        `per docs/idempotency-audit.md.`,
+    );
+  }
+  IDEMPOTENT_TABLE.set(name, verdict);
+}
+
+/**
+ * Look up a tool's idempotency verdict. Returns undefined if the tool
+ * hasn't been recorded — caller decides whether to fail or skip emission.
+ */
+export function getRecordedIdempotent(
+  name: string,
+): IdempotentVerdict | undefined {
+  return IDEMPOTENT_TABLE.get(name);
+}
+
+/**
+ * Snapshot of the recorded table — used by tests + the CI gate. Returns
+ * a fresh object so callers can't mutate the live registry.
+ */
+export function snapshotIdempotentTable(): Record<string, IdempotentVerdict> {
+  return Object.fromEntries(IDEMPOTENT_TABLE.entries());
+}
+
+/**
  * Serialize a `DiviopsResponse` as the JSON string an MCP tool emits in its
  * `content[0].text` slot. Single emit point keeps the wire shape consistent.
+ *
+ * When `toolName` is provided AND the tool has been recorded via
+ * `recordIdempotent()`, injects `_meta.idempotent` onto the response
+ * envelope before serialization (#597). Per-call emission is a strict
+ * superset of the `tools/list` registration-level `_meta` surface — both
+ * keep working, per-call consumers get the field where they look. Applied
+ * to ok:true AND ok:false envelopes since idempotency is a property of
+ * the tool, not the call outcome.
  */
-export function serializeEnvelope<T>(response: DiviopsResponse<T>): string {
-  return JSON.stringify(response);
+export function serializeEnvelope<T>(
+  response: DiviopsResponse<T>,
+  toolName?: string,
+): string {
+  if (toolName === undefined) {
+    return JSON.stringify(response);
+  }
+  const verdict = IDEMPOTENT_TABLE.get(toolName);
+  if (verdict === undefined) {
+    return JSON.stringify(response);
+  }
+  const existingMetaRaw = (response as { _meta?: unknown })._meta;
+  const existingMeta =
+    typeof existingMetaRaw === "object" && existingMetaRaw !== null
+      ? (existingMetaRaw as Record<string, unknown>)
+      : {};
+  const enriched = {
+    ...response,
+    _meta: { ...existingMeta, idempotent: verdict },
+  };
+  return JSON.stringify(enriched);
 }
