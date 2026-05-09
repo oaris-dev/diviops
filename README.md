@@ -1,4 +1,12 @@
-# DiviOps — Setup Guide
+# DiviOps — AI-powered Divi 5 page builder
+
+[![npm](https://img.shields.io/npm/v/@diviops/mcp-server.svg?label=%40diviops%2Fmcp-server)](https://www.npmjs.com/package/@diviops/mcp-server)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Divi 5](https://img.shields.io/badge/Divi-5.1.0%2B-7E3DD3.svg)](https://www.elegantthemes.com/gallery/divi/)
+
+WordPress plugin + MCP server + Claude skill, working in concert. Build Divi 5 pages from natural language with Claude Code — typed module APIs, preset-driven design, and a uniform error envelope across the whole tool surface.
+
+## Setup Guide
 
 Get from zero to generating Divi 5 pages with Claude Code in ~15 minutes.
 
