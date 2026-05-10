@@ -3,7 +3,7 @@
  * Plugin Name: DiviOps Agent
  * Plugin URI: https://github.com/oaris-dev/diviops
  * Description: REST API bridge for DiviOps — connects Claude Code to your Divi 5 site for AI-powered page building and design management.
- * Version: 1.4.5
+ * Version: 1.4.6
  * Author: oaris.de
  * Author URI: https://oaris.de
  * Text Domain: diviops-agent
@@ -60,7 +60,7 @@ class DiviOps_Agent {
 	 * Plugin version — surfaced in /handshake for self-diagnosis only;
 	 * server no longer gates on it (capability map is the gate).
 	 */
-	const VERSION = '1.4.5';
+	const VERSION = '1.4.6';
 
 	/**
 	 * Minimum MCP server version this plugin is compatible with.
@@ -111,6 +111,7 @@ class DiviOps_Agent {
 		'section_append', 'section_get', 'section_remove', 'section_replace',
 		// theme builder
 		'tb_layout_get', 'tb_layout_update', 'tb_template_create', 'tb_template_list',
+		'tb_template_trash',
 		// validate
 		'validate_blocks',
 		// variable
@@ -595,6 +596,27 @@ class DiviOps_Agent {
 				'condition'      => [ 'required' => true, 'type' => 'string' ],
 				'header_content' => [ 'required' => false, 'type' => 'string', 'default' => '' ],
 				'footer_content' => [ 'required' => false, 'type' => 'string', 'default' => '' ],
+			],
+		] );
+
+		register_rest_route( self::REST_NAMESPACE, '/theme-builder/template/trash/(?P<id>\d+)', [
+			'methods'             => 'POST',
+			'callback'            => [ __CLASS__, 'tb_template_trash' ],
+			'permission_callback' => [ __CLASS__, 'check_admin_permission' ],
+			'args'                => [
+				'id'      => [ 'required' => true ],
+				'force'   => [
+					'required'    => false,
+					'type'        => 'boolean',
+					'default'     => false,
+					'description' => 'When true, permanently delete (wp_delete_post). Default false moves to trash.',
+				],
+				'dry_run' => [
+					'required'    => false,
+					'type'        => 'boolean',
+					'default'     => false,
+					'description' => 'When true, return the change plan without mutating state.',
+				],
 			],
 		] );
 

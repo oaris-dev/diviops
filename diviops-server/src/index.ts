@@ -1887,6 +1887,50 @@ registerPluginTool(
   },
 );
 
+registerPluginTool(
+  "diviops_tb_template_trash",
+  {
+    description:
+      "Trash (or permanently delete) a Theme Builder template AND its linked header/body/footer layouts AND scrub the `_et_template` meta refs on the Theme Builder master post. Closes the orphan-meta gap left by `diviops_page_trash` / wp-cli `post delete` on linked layouts: the typed wrapper does the cleanup atomically. Defaults to trash (reversible via WP Admin → Trash). Pass `force=true` to permanently delete (wp_delete_post — irreversible, one-shot: a repeat call after a successful force-delete returns 'not_found' because the template post is gone from the DB). Idempotency applies to the default trash mode only: a repeat call after a successful trash-mode cleanup returns ok:true with `data.already_trashed = true` (mirrors `diviops_page_trash`). If a prior trash-mode call partially succeeded (some layouts already trashed, master meta still carries refs), the next call detects already-trashed targets via pre-state checks, skips the no-op WP destructor calls (which would otherwise return false), and still runs the meta scrub — `data.linked_layouts[].skipped` and `data.template_skipped` flag the targets that were already at the end-state. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }; missing template_id returns 'not_found' (HTTP 404), delete-permission failures return 'forbidden' (HTTP 403); per-step trash/delete/meta-scrub failures return the namespaced 'tb_template.command_failed' (HTTP 500) with `error.data.failed_step` ∈ { 'layout_destroy', 'template_destroy', 'meta_scrub' } plus `template_id` and `force`." +
+      DRY_RUN_DESC_SUFFIX,
+    inputSchema: {
+      template_id: z
+        .number()
+        .int()
+        .describe(
+          "Theme Builder template post ID (the `et_template` post). Discover via diviops_tb_template_list — NOT the linked layout IDs.",
+        ),
+      force: z
+        .boolean()
+        .optional()
+        .default(false)
+        .describe(
+          "When true, permanently delete (skips trash). Default false moves to trash.",
+        ),
+      dry_run: DRY_RUN_FIELD,
+    },
+    annotations: { idempotentHint: false },
+    _meta: { idempotent: "conditional" },
+  },
+  async ({ template_id, force, dry_run }) => {
+    const result = await wp.requestEnveloped(
+      `/theme-builder/template/trash/${template_id}`,
+      {
+        method: "POST",
+        body: {
+          force: force ?? false,
+          dry_run: dry_run ?? false,
+        },
+      },
+    );
+    return {
+      content: [
+        { type: "text" as const, text: serializeEnvelope(result, "diviops_tb_template_trash") },
+      ],
+    };
+  },
+);
+
 // ── Canvas Tools ────────────────────────────────────────────────────
 
 registerPluginTool(

@@ -14,9 +14,17 @@
  *   error:   { ok: false, error: { code, message, hint? } }
  *
  * Error code mapping for this namespace:
- *   - not_found     — layout_id resolves to no post or to a non-TB-layout post type
+ *   - not_found     — layout_id (or template_id on tb_template_trash) resolves to no
+ *                     post or to a wrong post type
  *   - invalid_input — content / header_content / footer_content not a string
- *   - wp_error      — Theme Builder master post missing, or wp_insert_post / wp_update_post returned WP_Error
+ *   - forbidden     — caller lacks delete_post on the et_template / linked layouts
+ *   - wp_error      — Theme Builder master post missing, or wp_insert_post /
+ *                     wp_update_post returned WP_Error
+ *   - tb_template.command_failed — wp_trash_post / wp_delete_post returned a
+ *                     falsy / WP_Error result during tb_template_trash, OR
+ *                     delete_post_meta returned falsy after we counted matching
+ *                     rows (residual stale meta). error.data.failed_step is one
+ *                     of: 'layout_destroy', 'template_destroy', 'meta_scrub'
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
@@ -289,5 +297,327 @@ trait DiviOps_Agent_ThemeBuilder {
 			'condition'        => $condition,
 			'message'          => "Template '{$title}' created and linked to Theme Builder.",
 		] );
+	}
+
+	/**
+	 * Trash (or permanently delete) a Theme Builder template AND its linked
+	 * header/body/footer layouts AND scrub the `_et_template` meta refs on
+	 * the Theme Builder master post.
+	 *
+	 * Closes the orphan-meta gap left by `diviops_page_trash` (or wp-cli
+	 * `post delete`) on a linked layout, which trashes the layout post but
+	 * leaves stale `_et_template = <id>` rows on the master `et_theme_builder`
+	 * post. UI deletion via the Divi Theme Builder cleans them; this typed
+	 * wrapper brings the programmatic path to parity.
+	 *
+	 * Idempotency:
+	 *   - Default trash mode: a repeat call after a successful cleanup returns
+	 *     { ok: true, data: { ..., already_trashed: true } } — repeat-safe
+	 *     semantics matching the `page_trash` precedent. The apply loop also
+	 *     skips per-step trash calls on layouts/template that are already in
+	 *     `trash`, so a partial prior cleanup (e.g. one linked layout already
+	 *     trashed manually) still completes and scrubs the master meta.
+	 *   - `force=true` is **one-shot**: `wp_delete_post` removes the post from
+	 *     the DB, so a repeat call no longer sees the template (the not_found
+	 *     gate fires before any idempotency path). Document the irreversibility
+	 *     to callers; do not advertise `already_deleted`.
+	 */
+	public static function tb_template_trash( $request ) {
+		$template_id = absint( $request['id'] );
+		$force       = (bool) $request->get_param( 'force' );
+		$dry_run     = (bool) $request->get_param( 'dry_run' );
+
+		$post = get_post( $template_id );
+		if ( ! $post || 'et_template' !== $post->post_type ) {
+			return self::envelope_error(
+				'not_found',
+				"Theme Builder template #{$template_id} not found.",
+				'Run diviops_tb_template_list to discover valid template IDs.',
+				404,
+				[ 'template_id' => $template_id ]
+			);
+		}
+		if ( ! current_user_can( 'delete_post', $template_id ) ) {
+			return self::envelope_error(
+				'forbidden',
+				"Cannot delete Theme Builder template #{$template_id}.",
+				'Authenticate as a user with delete rights to this post.',
+				403,
+				[ 'template_id' => $template_id ]
+			);
+		}
+
+		// Resolve linked layouts. Meta values may be stored as strings; cast.
+		$header_id = (int) get_post_meta( $template_id, '_et_header_layout_id', true );
+		$body_id   = (int) get_post_meta( $template_id, '_et_body_layout_id', true );
+		$footer_id = (int) get_post_meta( $template_id, '_et_footer_layout_id', true );
+
+		// Filter to layouts that actually exist (defensive against stale meta).
+		$linked_layouts = [];
+		foreach ( [
+			[ 'role' => 'header', 'id' => $header_id, 'type' => 'et_header_layout' ],
+			[ 'role' => 'body',   'id' => $body_id,   'type' => 'et_body_layout' ],
+			[ 'role' => 'footer', 'id' => $footer_id, 'type' => 'et_footer_layout' ],
+		] as $layout ) {
+			if ( $layout['id'] <= 0 ) {
+				continue;
+			}
+			$layout_post = get_post( $layout['id'] );
+			if ( ! $layout_post ) {
+				continue;
+			}
+			$linked_layouts[] = [
+				'role'   => $layout['role'],
+				'id'     => $layout['id'],
+				'type'   => $layout_post->post_type,
+				'title'  => (string) $layout_post->post_title,
+				'status' => (string) $layout_post->post_status,
+			];
+		}
+
+		// Resolve the Theme Builder master post (the one that carries _et_template
+		// meta refs). Match the discovery shape used by tb_template_create.
+		$master = get_posts( [
+			'post_type'      => 'et_theme_builder',
+			'post_status'    => 'publish',
+			'posts_per_page' => 1,
+		] );
+		$master_id = ! empty( $master ) ? (int) $master[0]->ID : 0;
+
+		// Count master meta refs that name this template (used for plan + idempotent reporting).
+		$master_meta_refs = 0;
+		if ( $master_id > 0 ) {
+			$existing = get_post_meta( $master_id, '_et_template' );
+			if ( is_array( $existing ) ) {
+				foreach ( $existing as $ref ) {
+					if ( (int) $ref === $template_id ) {
+						$master_meta_refs++;
+					}
+				}
+			}
+		}
+
+		$current_status  = (string) $post->post_status;
+		$already_trashed = ( 'trash' === $current_status );
+		// "Already trashed" only counts as already-cleaned-up when there are also
+		// no orphan meta refs to scrub. If the template is in trash but the master
+		// still carries `_et_template = <id>` refs, the cleanup wasn't atomic and
+		// we should run the scrub on apply (idempotency only short-circuits when
+		// the prior call actually finished).
+		//
+		// `force=true` skips the noop branch by design: `wp_delete_post` removed
+		// the post on the prior successful call, so we'd never reach this code
+		// (the not_found gate fires earlier). If someone calls force=true on an
+		// already-trashed template, that's a legitimate "promote trash → delete"
+		// transition and we run the apply path normally.
+		$already_clean = ! $force && $already_trashed && 0 === $master_meta_refs;
+
+		// Build dry-run plan / apply flow.
+		if ( $already_clean ) {
+			$end_state = 'trash';
+			$action    = 'noop';
+		} elseif ( $force ) {
+			$end_state = 'deleted';
+			$action    = 'delete';
+		} else {
+			$end_state = 'trash';
+			$action    = 'trash';
+		}
+
+		$changes = [];
+		if ( 'noop' === $action ) {
+			$summary = "Theme Builder template #{$template_id} (title: '{$post->post_title}') is already trashed and master meta is clean — no-op.";
+		} else {
+			$verb     = $force ? 'permanently delete' : 'move to trash';
+			$summary  = "Would {$verb} Theme Builder template #{$template_id} (title: '{$post->post_title}'), "
+				. count( $linked_layouts ) . ' linked layout(s)'
+				. ( $master_id > 0
+					? ", and scrub {$master_meta_refs} _et_template meta ref(s) on master post #{$master_id}."
+					: ' (no Theme Builder master post found — meta scrub skipped).' );
+
+			$changes[] = [
+				'kind'   => $action,
+				'target' => "et_template#{$template_id}",
+				'before' => [ 'status' => $current_status ],
+				'after'  => [ 'status' => $end_state ],
+			];
+			foreach ( $linked_layouts as $layout ) {
+				$changes[] = [
+					'kind'   => $action,
+					'target' => "{$layout['type']}#{$layout['id']}",
+					'before' => [ 'status' => $layout['status'] ],
+					'after'  => [ 'status' => $end_state ],
+				];
+			}
+			if ( $master_id > 0 && $master_meta_refs > 0 ) {
+				$changes[] = [
+					'kind'   => 'meta.scrub',
+					'target' => "et_theme_builder#{$master_id}/_et_template",
+					'before' => [ 'refs_to_template' => $master_meta_refs ],
+					'after'  => [ 'refs_to_template' => 0 ],
+				];
+			}
+		}
+
+		if ( $dry_run ) {
+			return self::dry_run_response(
+				$summary,
+				$changes,
+				[],
+				[
+					'template_id'      => $template_id,
+					'title'            => (string) $post->post_title,
+					'force'            => $force,
+					'linked_layouts'   => array_map(
+						static function ( $l ) {
+							return [ 'role' => $l['role'], 'id' => $l['id'], 'type' => $l['type'], 'title' => $l['title'] ];
+						},
+						$linked_layouts
+					),
+					'master_id'        => $master_id,
+					'master_meta_refs' => $master_meta_refs,
+					'current_status'   => $current_status,
+				]
+			);
+		}
+
+		// Idempotent silent-success on already-clean targets — matches
+		// the `page_trash` repeat-safe contract. Trash mode only: the
+		// `force=true` retry path is unreachable here because the post
+		// is gone from the DB after a prior force-delete (caught by the
+		// not_found gate above).
+		if ( 'noop' === $action ) {
+			return self::envelope_success( [
+				'template_id'              => $template_id,
+				'title'                    => (string) $post->post_title,
+				'status'                   => $current_status,
+				'already_trashed'          => true,
+				'linked_layouts'           => [],
+				'master_id'                => $master_id,
+				'master_meta_refs_removed' => 0,
+			] );
+		}
+
+		// Apply. Pre-check each target's status before calling the WP destructor:
+		// `wp_trash_post()` returns false on an already-trashed post (because it
+		// short-circuits when post_status is already 'trash'), and treating that
+		// false as a failure would break the partial-cleanup retry contract.
+		// Skip-as-success when the target is already at the end-state.
+		$layout_results = [];
+		foreach ( $linked_layouts as $layout ) {
+			$lid           = $layout['id'];
+			$layout_status = $layout['status'];
+
+			if ( ! $force && 'trash' === $layout_status ) {
+				$layout_results[] = [
+					'role'   => $layout['role'],
+					'id'     => $lid,
+					'type'   => $layout['type'],
+					'status' => $end_state,
+					'skipped'=> 'already_trashed',
+				];
+				continue;
+			}
+
+			$result  = $force ? wp_delete_post( $lid, true ) : wp_trash_post( $lid );
+			$success = $force ? (bool) $result : ( false !== $result && ! is_null( $result ) );
+			if ( ! $success || is_wp_error( $result ) ) {
+				return self::envelope_error(
+					'tb_template.command_failed',
+					$force
+						? "Failed to permanently delete linked layout #{$lid} ({$layout['type']})."
+						: "Failed to trash linked layout #{$lid} ({$layout['type']}).",
+					'Check WordPress error logs; resolve the failure and retry — the call is idempotent on already-trashed layouts in default (non-force) mode.',
+					500,
+					[
+						'template_id'   => $template_id,
+						'failed_step'   => 'layout_destroy',
+						'failed_layout' => [
+							'role' => $layout['role'],
+							'id'   => $lid,
+							'type' => $layout['type'],
+						],
+						'force'         => $force,
+					]
+				);
+			}
+			$layout_results[] = [
+				'role'   => $layout['role'],
+				'id'     => $lid,
+				'type'   => $layout['type'],
+				'status' => $end_state,
+			];
+		}
+
+		// Trash/delete the template post itself. Same pre-check as the layout
+		// loop: skip-as-success when already in trash and we're not promoting
+		// to a hard delete.
+		$template_skipped = false;
+		if ( ! $force && 'trash' === $current_status ) {
+			$template_skipped = true;
+		} else {
+			$tpl_result  = $force ? wp_delete_post( $template_id, true ) : wp_trash_post( $template_id );
+			$tpl_success = $force ? (bool) $tpl_result : ( false !== $tpl_result && ! is_null( $tpl_result ) );
+			if ( ! $tpl_success || is_wp_error( $tpl_result ) ) {
+				return self::envelope_error(
+					'tb_template.command_failed',
+					$force
+						? "Failed to permanently delete Theme Builder template #{$template_id}."
+						: "Failed to trash Theme Builder template #{$template_id}.",
+					'Check WordPress error logs; linked layouts may already be trashed (call is idempotent on retry).',
+					500,
+					[
+						'template_id' => $template_id,
+						'failed_step' => 'template_destroy',
+						'force'       => $force,
+					]
+				);
+			}
+		}
+
+		// Scrub orphan _et_template meta refs on the master post. We already
+		// counted matching rows via $master_meta_refs above — if rows existed
+		// and the delete returned falsy (or removed nothing), that's a real
+		// failure and we surface it rather than silently succeed-with-stale-state.
+		$master_meta_removed = 0;
+		if ( $master_id > 0 && $master_meta_refs > 0 ) {
+			// delete_post_meta with a value matches every row equal to that value.
+			$ok = delete_post_meta( $master_id, '_et_template', $template_id );
+			if ( $ok ) {
+				$master_meta_removed = $master_meta_refs;
+			} else {
+				return self::envelope_error(
+					'tb_template.command_failed',
+					"Failed to scrub _et_template meta ref(s) for template #{$template_id} on master post #{$master_id}.",
+					'Inspect the et_theme_builder master post meta directly; the linked layouts and template post may already be destroyed at this point — the meta scrub is the residual stale state to clear.',
+					500,
+					[
+						'template_id'      => $template_id,
+						'failed_step'      => 'meta_scrub',
+						'master_id'        => $master_id,
+						'master_meta_refs' => $master_meta_refs,
+						'force'            => $force,
+					]
+				);
+			}
+		}
+
+		self::invalidate_divi_cache( $template_id );
+		foreach ( $linked_layouts as $layout ) {
+			self::invalidate_divi_cache( $layout['id'] );
+		}
+
+		$success_payload = [
+			'template_id'              => $template_id,
+			'title'                    => (string) $post->post_title,
+			'status'                   => $end_state,
+			'linked_layouts'           => $layout_results,
+			'master_id'                => $master_id,
+			'master_meta_refs_removed' => $master_meta_removed,
+		];
+		if ( $template_skipped ) {
+			$success_payload['template_skipped'] = 'already_trashed';
+		}
+		return self::envelope_success( $success_payload );
 	}
 }

@@ -23,17 +23,21 @@ export type DiviopsErrorBody = {
   message: string;
   hint?: string;
   /**
-   * Optional structured payload attached to the error envelope. Used by
-   * tools whose failure mode carries machine-readable detail beyond a
-   * code/message pair — e.g. `meta_wp_cli` exposes
-   * `error.data = { exit_code, stdout, stderr }` so callers can branch
-   * on the wp-cli exit code without parsing the message string. Tools
-   * that don't need it omit the field entirely.
+   * Optional structured payload attached to the error envelope. Carried
+   * via `withCode`'s 4th `data` argument (server-local) or the plugin's
+   * `envelope_error()` `$data` parameter (plugin-routed) — e.g.
+   * `meta_wp_cli` emits `{ exit_code, stdout, stderr }`,
+   * `global_color_delete` emits `{ id, ref_count, locations[], ... }` on
+   * `conflict`, and conflict-class adopters echo conflicting fields.
    *
-   * Naming convention: when a namespace-specific error code attaches
-   * `data`, list the field shape in the tool's description and in
-   * tools.md "Response shape" so consumers know what to expect per
-   * code without runtime probing.
+   * The shape is per-tool and documented in each tool's description
+   * prose, not in this canonical type. The type stays `unknown` because
+   * (a) most tools never emit `error.data` so advertising it universally
+   * would be misleading, and (b) the per-tool shape diverges and a
+   * concrete union here would be information-free for consumers.
+   *
+   * See `diviops-server/README.md` "Per-tool error.data extensions" for
+   * the codified convention.
    */
   data?: unknown;
 };
