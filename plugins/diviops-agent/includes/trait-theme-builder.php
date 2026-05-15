@@ -18,13 +18,38 @@
  *                     post or to a wrong post type
  *   - invalid_input — content / header_content / footer_content not a string
  *   - forbidden     — caller lacks delete_post on the et_template / linked layouts
- *   - wp_error      — Theme Builder master post missing, or wp_insert_post /
- *                     wp_update_post returned WP_Error
+ *   - <wp_error_code> — wp_insert_post / wp_update_post returned WP_Error;
+ *                     envelope_from_wp_error() preserves the underlying
+ *                     WP slug (commonly `db_insert_error` /
+ *                     `db_update_error` from the post-insert path,
+ *                     `empty_content` / `invalid_post_type` from the
+ *                     validator path). The literal `wp_error` slug only
+ *                     surfaces when the upstream WP_Error has an empty
+ *                     code — see envelope_from_wp_error() in trait-core
+ *                     for the fallback. Callers should branch on
+ *                     `error.code` against the WP vocabulary, not a
+ *                     hard-coded `wp_error`. The master-post-missing
+ *                     case now auto-bootstraps; only a downstream
+ *                     wp_insert_post failure on the master itself
+ *                     surfaces under this branch.
  *   - tb_template.command_failed — wp_trash_post / wp_delete_post returned a
  *                     falsy / WP_Error result during tb_template_trash, OR
  *                     delete_post_meta returned falsy after we counted matching
  *                     rows (residual stale meta). error.data.failed_step is one
  *                     of: 'layout_destroy', 'template_destroy', 'meta_scrub'
+ *   - tb_template.default_already_exists — tb_template_create called with
+ *                     condition="default" (or "") but the active Theme
+ *                     Builder master's `_et_template` linked list
+ *                     already names an et_template carrying
+ *                     `_et_default = '1'` (regardless of `_et_enabled`
+ *                     status: the router resolves by linked-list
+ *                     position BEFORE the enable-gate, so a disabled
+ *                     existing default linked ahead of the new one
+ *                     would still shadow it). Templates outside the
+ *                     active master's linked list (orphan defaults,
+ *                     library-cloned-master defaults) cannot shadow
+ *                     and DO NOT block. error.data carries
+ *                     `existing_default_id` + `master_post_id`. HTTP 409.
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
@@ -32,6 +57,74 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 trait DiviOps_Agent_ThemeBuilder {
+
+	/**
+	 * Resolve the active Theme Builder master post.
+	 *
+	 * Single source of truth for master discovery across this trait
+	 * (tb_template_create + tb_template_trash + the singleton-default
+	 * scoping). Approximates the discovery conditions used by Divi's
+	 * `et_theme_builder_get_theme_builder_post_id` (theme-builder.php:378):
+	 * publish-status, single result ordered by date descending, excludes
+	 * library-cloned masters via the `_et_library_theme_builder`
+	 * meta-not-exists clause. Divi itself uses WP_Query directly (with
+	 * `fields=ids` + `no_found_rows=true` + cache-update flags disabled);
+	 * we use get_posts() here because it's a one-shot discovery and the
+	 * perf delta is microscopic at this call frequency — readability
+	 * wins. The conditions are what matter for correctness; the
+	 * primitive is an implementation choice. `suppress_filters => false`
+	 * so multi-site / third-party filter chains (WPML, polylang,
+	 * locale-aware post-type filters) see the query — matches Divi's
+	 * WP_Query posture; get_posts() defaults to true, which silently
+	 * bypasses those filters.
+	 *
+	 * @return int Active master post ID, or 0 when none exists.
+	 */
+	private static function find_active_master() {
+		$master = get_posts( [
+			'post_type'        => 'et_theme_builder',
+			'post_status'      => 'publish',
+			'posts_per_page'   => 1,
+			'orderby'          => 'date',
+			'order'            => 'desc',
+			'suppress_filters' => false,
+			'meta_query'       => [
+				[
+					'key'     => '_et_library_theme_builder',
+					'compare' => 'NOT EXISTS',
+				],
+			],
+		] );
+		return empty( $master ) ? 0 : (int) $master[0]->ID;
+	}
+
+	/**
+	 * Read the active master's `_et_template` meta as an int[] of linked
+	 * template post IDs. Returns [] when the master id is 0 or carries no
+	 * meta. Used by the singleton-default scoping (only templates linked
+	 * to the active master can shadow the router's default-pick) and by
+	 * tb_template_trash's meta-scrub counter.
+	 *
+	 * @param int $master_id
+	 * @return int[]
+	 */
+	private static function get_master_template_ids( $master_id ) {
+		if ( $master_id <= 0 ) {
+			return [];
+		}
+		$raw = get_post_meta( $master_id, '_et_template' );
+		if ( ! is_array( $raw ) ) {
+			return [];
+		}
+		$ids = [];
+		foreach ( $raw as $ref ) {
+			$id = (int) $ref;
+			if ( $id > 0 ) {
+				$ids[] = $id;
+			}
+		}
+		return $ids;
+	}
 
 	// ── Theme Builder Operations ────────────────────────────────────
 
@@ -185,35 +278,88 @@ trait DiviOps_Agent_ThemeBuilder {
 			);
 		}
 
-		// Find the Theme Builder master post.
-		$master = get_posts( [
-			'post_type'      => 'et_theme_builder',
-			'post_status'    => 'publish',
-			'posts_per_page' => 1,
-		] );
-		if ( empty( $master ) ) {
-			return self::envelope_error(
-				'wp_error',
-				'Theme Builder master post not found.',
-				'Open the Divi Theme Builder in WP admin once to initialize the master et_theme_builder post.',
-				500
-			);
+		// "default" (case-insensitive) and empty string are both treated as
+		// the catch-all Default Website Template — the Divi router gates
+		// this via `_et_default = '1'` with an empty `_et_use_on`, not via
+		// any literal `_et_use_on` value. Storing the literal string
+		// "default" in `_et_use_on` is a silent-failure shape: the meta
+		// row is non-empty so the unassigned-branch never fires, but the
+		// string isn't a recognized location grammar either, so no chrome
+		// is ever emitted.
+		$is_default_condition = ( '' === $condition || 0 === strcasecmp( $condition, 'default' ) );
+
+		// Resolve the active Theme Builder master before the singleton
+		// check — the check is scoped to templates linked from this
+		// master's `_et_template` meta. Templates outside the active
+		// master (e.g. on library-cloned masters carrying
+		// `_et_library_theme_builder`, or templates orphaned from a
+		// prior master) cannot shadow the router's default-pick and
+		// must NOT block a valid create on the active master.
+		$master_id              = self::find_active_master();
+		$will_bootstrap_master  = 0 === $master_id;
+		$master_template_ids    = self::get_master_template_ids( $master_id );
+
+		// Singleton-default constraint, scoped to the active master.
+		// Divi's TB UI treats "Default Website Template" as a singleton;
+		// the router's enabled-template query at theme-builder.php
+		// resolves by linked-list position BEFORE checking `_et_enabled`,
+		// so an existing default linked ahead of the new one would
+		// shadow it even when the existing default is disabled. Reject
+		// any existing default in the active master's linked list,
+		// regardless of `_et_enabled` status — matches the router's
+		// position-first ordering and avoids the alternative
+		// (re-positioning the new default to front of linked list,
+		// which has a bigger blast radius). Caller resolves by trashing
+		// the existing default via diviops_tb_template_trash or pinning
+		// to a specific condition. Namespaced runtime code per the
+		// namespace_gate_vs_runtime_codes convention; rejection rather
+		// than silent flip per destructive_idempotent_silent (constraint
+		// violation creating new state-truth conflict, not a no-op
+		// repeat).
+		if ( $is_default_condition && ! empty( $master_template_ids ) ) {
+			$existing_default_id = 0;
+			foreach ( $master_template_ids as $linked_id ) {
+				if ( '1' === get_post_meta( $linked_id, '_et_default', true ) ) {
+					$existing_default_id = $linked_id;
+					break;
+				}
+			}
+			if ( $existing_default_id > 0 ) {
+				return self::envelope_error(
+					'tb_template.default_already_exists',
+					"A Default Website Template already exists in the active master (et_template #{$existing_default_id}).",
+					'Trash the existing default via diviops_tb_template_trash, or pin this template to a specific condition (e.g. "singular:post_type:page:all", "homepage", "404") instead of "default".',
+					409,
+					[
+						'existing_default_id' => $existing_default_id,
+						'master_post_id'      => $master_id,
+					]
+				);
+			}
 		}
-		$master_id = $master[0]->ID;
 
 		if ( (bool) $request->get_param( 'dry_run' ) ) {
-			$changes = [ [
+			$changes = [];
+			if ( $will_bootstrap_master ) {
+				$changes[] = [
+					'kind'   => 'tb_master.create',
+					'target' => 'et_theme_builder',
+					'after'  => [ 'post_title' => 'Theme Builder', 'post_status' => 'publish' ],
+				];
+			}
+			$changes[] = [
 				'kind'   => 'tb_template.create',
 				'target' => 'et_template',
 				'after'  => [
 					'title'              => $title,
 					'condition'          => $condition,
+					'is_default'         => $is_default_condition,
 					'header_bytes'       => strlen( $header_content ),
 					'footer_bytes'       => strlen( $footer_content ),
 					'will_create_header' => '' !== $header_content,
 					'will_create_footer' => '' !== $footer_content,
 				],
-			] ];
+			];
 			if ( '' !== $header_content ) {
 				$changes[] = [
 					'kind'   => 'tb_layout.create',
@@ -228,10 +374,34 @@ trait DiviOps_Agent_ThemeBuilder {
 					'after'  => [ 'title' => $title . ' Footer Layout', 'bytes' => strlen( $footer_content ) ],
 				];
 			}
+			$master_clause = $will_bootstrap_master
+				? 'under a freshly-bootstrapped Theme Builder master'
+				: "under master #{$master_id}";
+			$default_clause = $is_default_condition
+				? ' as the Default Website Template'
+				: " (condition='{$condition}')";
 			return self::dry_run_response(
-				"Would create Theme Builder template '{$title}' (condition='{$condition}') under master #{$master_id}.",
+				"Would create Theme Builder template '{$title}'{$default_clause} {$master_clause}.",
 				$changes
 			);
+		}
+
+		// Auto-bootstrap the master post if missing. Side-effect matches
+		// Divi's own lazy-creation at theme-builder.php:404-410
+		// (`et_theme_builder_get_theme_builder_post_id`):
+		// `post_type=et_theme_builder`, `post_status=publish`,
+		// `post_title='Theme Builder'`. Identical shape so a subsequent
+		// admin TB-screen visit picks up our master instead of creating
+		// a second one.
+		if ( $will_bootstrap_master ) {
+			$master_id = wp_insert_post( [
+				'post_type'   => 'et_theme_builder',
+				'post_status' => 'publish',
+				'post_title'  => 'Theme Builder',
+			], true );
+			if ( is_wp_error( $master_id ) ) {
+				return self::envelope_from_wp_error( $master_id );
+			}
 		}
 
 		$header_id = 0;
@@ -275,8 +445,12 @@ trait DiviOps_Agent_ThemeBuilder {
 			return self::envelope_from_wp_error( $template_id );
 		}
 
-		// Set template meta.
-		update_post_meta( $template_id, '_et_default', '0' );
+		// Set template meta. Default-condition templates use the
+		// `_et_default = '1'` flag with an empty `_et_use_on` — that is
+		// the exact shape Divi's TB router checks at theme-builder.php:1815-1820
+		// for the "Default Website Template" catch-all. Specific-condition
+		// templates use `_et_use_on` with the condition string.
+		update_post_meta( $template_id, '_et_default', $is_default_condition ? '1' : '0' );
 		update_post_meta( $template_id, '_et_enabled', '1' );
 		update_post_meta( $template_id, '_et_header_layout_id', $header_id );
 		update_post_meta( $template_id, '_et_header_layout_enabled', $header_id ? '1' : '0' );
@@ -284,19 +458,26 @@ trait DiviOps_Agent_ThemeBuilder {
 		update_post_meta( $template_id, '_et_body_layout_enabled', '1' );
 		update_post_meta( $template_id, '_et_footer_layout_id', $footer_id );
 		update_post_meta( $template_id, '_et_footer_layout_enabled', $footer_id ? '1' : '0' );
-		add_post_meta( $template_id, '_et_use_on', $condition );
+		if ( ! $is_default_condition ) {
+			add_post_meta( $template_id, '_et_use_on', $condition );
+		}
 
 		// Link to Theme Builder master.
 		add_post_meta( $master_id, '_et_template', $template_id );
 
-		return self::envelope_success( [
-			'success'          => true,
-			'template_id'      => $template_id,
-			'header_layout_id' => $header_id,
-			'footer_layout_id' => $footer_id,
-			'condition'        => $condition,
-			'message'          => "Template '{$title}' created and linked to Theme Builder.",
-		] );
+		$payload = [
+			'success'                  => true,
+			'template_id'              => $template_id,
+			'header_layout_id'         => $header_id,
+			'footer_layout_id'         => $footer_id,
+			'condition'                => $condition,
+			'is_default'               => $is_default_condition,
+			'master_post_id'           => $master_id,
+			'master_post_bootstrapped' => $will_bootstrap_master,
+			'message'                  => "Template '{$title}' created and linked to Theme Builder.",
+		];
+
+		return self::envelope_success( $payload );
 	}
 
 	/**
@@ -375,16 +556,19 @@ trait DiviOps_Agent_ThemeBuilder {
 			];
 		}
 
-		// Resolve the Theme Builder master post (the one that carries _et_template
-		// meta refs). Match the discovery shape used by tb_template_create.
-		$master = get_posts( [
-			'post_type'      => 'et_theme_builder',
-			'post_status'    => 'publish',
-			'posts_per_page' => 1,
-		] );
-		$master_id = ! empty( $master ) ? (int) $master[0]->ID : 0;
+		// Resolve the active Theme Builder master via the shared helper —
+		// same discovery shape (`_et_library_theme_builder NOT EXISTS`,
+		// `suppress_filters => false`, ordered by date desc) used by
+		// tb_template_create. Earlier versions of this route used a
+		// loose lookup that could resolve to a library-cloned master on
+		// sites carrying one, scrubbing `_et_template` meta on the
+		// wrong post.
+		$master_id = self::find_active_master();
 
 		// Count master meta refs that name this template (used for plan + idempotent reporting).
+		// Re-walk via get_post_meta() rather than helper-filter so the
+		// `0` returns and duplicate-row scrubs in the apply loop stay
+		// in lockstep with the live row count.
 		$master_meta_refs = 0;
 		if ( $master_id > 0 ) {
 			$existing = get_post_meta( $master_id, '_et_template' );

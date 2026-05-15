@@ -1844,14 +1844,14 @@ registerPluginTool(
   "diviops_tb_template_create",
   {
     description:
-      "Create a Theme Builder template with custom header and/or footer. Automatically creates layout posts, sets conditions, and links to Theme Builder. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }; missing Theme Builder master post returns ok:false with code 'wp_error' and a hint to open the Divi Theme Builder once to initialize it." +
+      "Create a Theme Builder template with custom header and/or footer. Automatically creates layout posts, sets conditions, and links to Theme Builder. Pass condition=\"default\" (case-insensitive) or an empty string to register the template as the catch-all Default Website Template — the route writes the `_et_default = '1'` flag with an empty `_et_use_on`, matching the meta shape Divi's TB router gates the default route on; any other condition string lands in `_et_use_on` unchanged. Default Website Template is a singleton scoped to the active Theme Builder master: if the active master's `_et_template` linked list already names an et_template carrying `_et_default = '1'` (regardless of `_et_enabled` status — the router resolves by linked-list position before checking the enable-gate, so a disabled existing default linked ahead of the new one would still shadow it), the route rejects with code `tb_template.default_already_exists` (HTTP 409) and `error.data.existing_default_id` + `error.data.master_post_id`. Templates outside the active master's linked list (orphan defaults, library-cloned-master defaults) cannot shadow the router's pick and DO NOT block creation. Caller resolves a real conflict by trashing the existing default (diviops_tb_template_trash) or pinning this template to a specific condition; the route never silently flips the existing default's flag or proceeds with non-deterministic router state. If the Theme Builder master post is missing (fresh substrate that never opened Divi → Theme Builder in WP Admin), the route auto-bootstraps one with the same shape Divi creates on first admin visit and returns `data.master_post_bootstrapped: true` so callers can audit the side-effect. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }; failures during master-post bootstrap or template/layout insert surface the underlying WP_Error code (commonly `db_insert_error`, `db_update_error`, or other slugs from the WordPress vocabulary), not a generic `wp_error` — branch on `error.code` against the WP slug, not against a hard-coded string. The literal `wp_error` slug only surfaces when the upstream WP_Error has an empty code." +
       DRY_RUN_DESC_SUFFIX,
     inputSchema: {
       title: z.string().describe('Template name (e.g. "Landing Pages")'),
       condition: z
         .string()
         .describe(
-          'Condition string (e.g. "singular:post_type:page:all", "singular:post_type:project:all", "archive:taxonomy:category:all")',
+          'Condition string. Pass "default" (case-insensitive) or "" for the catch-all Default Website Template (sets `_et_default = 1`). Otherwise a Divi router-recognized location string such as "singular:post_type:page:all", "singular:post_type:project:all", "archive:taxonomy:category:all", "homepage", or "404" (lands in `_et_use_on`).',
         ),
       header_content: z
         .string()

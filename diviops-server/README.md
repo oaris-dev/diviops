@@ -1,8 +1,8 @@
 # DiviOps MCP Server
 
-**AI-driven WordPress site authoring — Divi-native, with the rest of WP in scope.**
+**An AI harness for WordPress site authoring — Divi-native today, WordPress-wide by design.**
 
-Programmatic site authoring through Claude Code, Claude Desktop, and any other MCP client. Built on Divi 5 as the page authoring foundation, the suite also handles WordPress data models — custom post types, Secure Custom Fields, taxonomies, site audits, and hybrid sites where Divi authors the marketing pages and custom PHP templates handle the dynamic ones, with design tokens harmonized across both surfaces. Pairs with a WordPress companion plugin and ships alongside a Claude skill that knows the Divi 5 block format.
+The Node.js MCP server inside the DiviOps harness. It gives Claude Code, Claude Desktop, and other MCP clients a typed control layer over WordPress site state, dispatching to the DiviOps Agent plugin for Divi 5 page authoring, SCF and CPT data models, design tokens, presets, library and Theme Builder templates, site audits, and safe WP-CLI passthrough. Pairs with the `divi-5-builder` Claude skill so the agent applies Divi's block format and design rules correctly.
 
 ```
 Claude Code <-> MCP Server (stdio) <-> WordPress REST API <-> DiviOps Agent plugin
