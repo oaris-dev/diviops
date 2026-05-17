@@ -57,14 +57,14 @@ Claude orchestrates a few tool calls in sequence:
 1. `diviops_global_color_list` — discovers your brand palette.
 2. `diviops_template_list` / `diviops_template_get` — pulls a verified hero template that matches the request.
 3. `diviops_page_create` — creates `Spring Launch` as a draft with the hero block markup.
-4. `diviops_validate_blocks` — confirms the markup is well-formed before save.
-5. `diviops_render_preview` — returns the rendered HTML so you can verify before publishing.
+4. `diviops_validate_blocks` — confirms the markup is well-formed before save. Accepts inline `content` or a `page_id` to validate already-saved markup.
+5. `diviops_render_preview` — returns the rendered HTML so you can verify before publishing. Accepts inline `content` or a `page_id` to preview an existing page.
 
 The skill enforces the Divi block format, the design system, and the response contract throughout — you stay at the prompt level.
 
 ## Tools at a glance
 
-The server exposes **67 tools** across the categories below. Each category links to representative tools; the full table lives in [server-reference.md](../docs/server-reference.md).
+The server exposes **70 tools** across the categories below. Each category links to representative tools; the full table lives in [server-reference.md](../docs/server-reference.md).
 
 | Category | Use case | Tool prefixes |
 |----------|----------|---------------|

@@ -3,7 +3,7 @@
  * Plugin Name: DiviOps Agent
  * Plugin URI: https://github.com/oaris-dev/diviops
  * Description: REST API bridge for DiviOps — connects Claude Code to your Divi 5 site for AI-powered page building and design management.
- * Version: 1.4.6
+ * Version: 1.4.8
  * Author: oaris.de
  * Author URI: https://oaris.de
  * Text Domain: diviops-agent
@@ -60,7 +60,7 @@ class DiviOps_Agent {
 	 * Plugin version — surfaced in /handshake for self-diagnosis only;
 	 * server no longer gates on it (capability map is the gate).
 	 */
-	const VERSION = '1.4.6';
+	const VERSION = '1.4.8';
 
 	/**
 	 * Minimum MCP server version this plugin is compatible with.
@@ -90,7 +90,7 @@ class DiviOps_Agent {
 		'canvas_create', 'canvas_delete', 'canvas_duplicate', 'canvas_get', 'canvas_list', 'canvas_update',
 		// global colors / fonts
 		'global_color_create', 'global_color_delete', 'global_color_list', 'global_color_update',
-		'global_font_list',
+		'global_font_create', 'global_font_delete', 'global_font_list', 'global_font_update',
 		// library
 		'library_get', 'library_list', 'library_save',
 		// meta
@@ -114,6 +114,9 @@ class DiviOps_Agent {
 		'tb_template_trash',
 		// validate
 		'validate_blocks',
+		// page_id overload on validate_blocks + render_preview (#700) —
+		// single bundle key; both tools accept exactly-one of {content, page_id}.
+		'validate_render_by_page_id',
 		// variable
 		'variable_create', 'variable_create_fluid_system', 'variable_delete',
 		'variable_list', 'variable_scan_orphans', 'variable_used_on_page',
@@ -379,6 +382,55 @@ class DiviOps_Agent {
 			'methods'             => 'GET',
 			'callback'            => [ __CLASS__, 'global_font_list' ],
 			'permission_callback' => [ __CLASS__, 'check_read_permission' ],
+		] );
+
+		// Global fonts CRUD — parallel to /global-color/* but with
+		// gfid-* IDs stored under `et_global_data.global_fonts`. Distinct
+		// from /variable/* which writes `gvid-*` fonts under
+		// `et_global_data.global_variables.fonts` (variable manager surface).
+		register_rest_route( self::REST_NAMESPACE, '/global-font/create', [
+			'methods'             => 'POST',
+			'callback'            => [ __CLASS__, 'global_font_create' ],
+			'permission_callback' => [ __CLASS__, 'check_admin_permission' ],
+			'args'                => [
+				'id'       => [ 'required' => false, 'type' => 'string' ],
+				'family'   => [ 'required' => false, 'type' => 'string' ],
+				'source'   => [ 'required' => false, 'type' => 'string' ],
+				'weights'  => [ 'required' => false, 'type' => 'array' ],
+				'subsets'  => [ 'required' => false, 'type' => 'array' ],
+				'label'    => [ 'required' => false, 'type' => 'string' ],
+				'fallback' => [ 'required' => false, 'type' => 'string' ],
+				'status'   => [ 'required' => false, 'type' => 'string' ],
+				'dry_run'  => [ 'required' => false, 'type' => 'boolean', 'default' => false ],
+			],
+		] );
+
+		register_rest_route( self::REST_NAMESPACE, '/global-font/update', [
+			'methods'             => 'POST',
+			'callback'            => [ __CLASS__, 'global_font_update' ],
+			'permission_callback' => [ __CLASS__, 'check_admin_permission' ],
+			'args'                => [
+				'id'       => [ 'required' => true,  'type' => 'string' ],
+				'family'   => [ 'required' => false, 'type' => 'string' ],
+				'source'   => [ 'required' => false, 'type' => 'string' ],
+				'weights'  => [ 'required' => false, 'type' => 'array' ],
+				'subsets'  => [ 'required' => false, 'type' => 'array' ],
+				'label'    => [ 'required' => false, 'type' => 'string' ],
+				'fallback' => [ 'required' => false, 'type' => 'string' ],
+				'status'   => [ 'required' => false, 'type' => 'string' ],
+				'dry_run'  => [ 'required' => false, 'type' => 'boolean', 'default' => false ],
+			],
+		] );
+
+		register_rest_route( self::REST_NAMESPACE, '/global-font/delete', [
+			'methods'             => 'POST',
+			'callback'            => [ __CLASS__, 'global_font_delete' ],
+			'permission_callback' => [ __CLASS__, 'check_admin_permission' ],
+			'args'                => [
+				'id'      => [ 'required' => true,  'type' => 'string' ],
+				'force'   => [ 'required' => false, 'type' => 'boolean', 'default' => false ],
+				'dry_run' => [ 'required' => false, 'type' => 'boolean', 'default' => false ],
+			],
 		] );
 
 		register_rest_route( self::REST_NAMESPACE, '/global-color/upsert', [
@@ -943,14 +995,28 @@ class DiviOps_Agent {
 			],
 		] );
 
+		// /render + /validate/blocks: accept EITHER `content` (inline markup)
+		// OR `page_id` (load post_content from DB). Exactly-one contract is
+		// enforced in the handler via self::resolve_content_or_page_id(); both
+		// args are 'required' => false at the REST layer so the resolver can
+		// emit the typed `invalid_input` envelope (which beats a generic
+		// rest_missing_callback_param 400 from the REST framework).
 		register_rest_route( self::REST_NAMESPACE, '/render', [
 			'methods'             => 'POST',
 			'callback'            => [ __CLASS__, 'render_block_markup' ],
 			'permission_callback' => [ __CLASS__, 'check_read_permission' ],
 			'args'                => [
 				'content' => [
-					'required' => true,
-					'type'     => 'string',
+					'required'          => false,
+					'type'              => 'string',
+				],
+				'page_id' => [
+					'required' => false,
+					'type'     => 'integer',
+					// No `absint` sanitize: it coerces -1 → 1 (a valid post),
+					// masking the negative-input case. We validate >0 in the
+					// handler via self::resolve_content_or_page_id() to keep
+					// the explicit invalid_input branch reachable.
 				],
 			],
 		] );
@@ -961,8 +1027,16 @@ class DiviOps_Agent {
 			'permission_callback' => [ __CLASS__, 'check_read_permission' ],
 			'args'                => [
 				'content' => [
-					'required' => true,
-					'type'     => 'string',
+					'required'          => false,
+					'type'              => 'string',
+				],
+				'page_id' => [
+					'required' => false,
+					'type'     => 'integer',
+					// No `absint` sanitize: it coerces -1 → 1 (a valid post),
+					// masking the negative-input case. We validate >0 in the
+					// handler via self::resolve_content_or_page_id() to keep
+					// the explicit invalid_input branch reachable.
 				],
 			],
 		] );

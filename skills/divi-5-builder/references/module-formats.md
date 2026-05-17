@@ -337,7 +337,7 @@ Upgrade to Pro: https://diviops.com
 
 > Generated mechanically by `diviops-server/scripts/regen-module-formats.mjs` from `diviops_schema_get_module` dump-all output. Each module block lives between `BEGIN GENERATED:module:divi/<slug>` / `END GENERATED:module:divi/<slug>` HTML-comment sentinels (see `diviops-server/CONTRIBUTING.md` for the full convention). Do **not** edit between sentinels — edits are clobbered on regen.
 
-> Generated against Divi `5.4.1`, schema `c5046273f617…`.
+> Generated against Divi `5.5.1`, schema `a0ec14d562a4…`.
 
 Per CLAUDE.md "Suite architecture coherence": schema dump is the canonical index; VB-verified prose above is the canonical interpretation. The two sections are complementary, not competing — prose explains surprises, this index enumerates paths exhaustively. On conflicts, the prose above wins (per `feedback_vb_first_verification`).
 
@@ -364,7 +364,7 @@ Per CLAUDE.md "Suite architecture coherence": schema dump is the canonical index
 
 - **content** — `content.decoration.bodyFont` _(+innerContent)_
 - **contentContainer** — `contentContainer.decoration.sizing`
-- **imageIcon** — `imageIcon.decoration.animation`, `imageIcon.decoration.background`, `imageIcon.decoration.border`, `imageIcon.decoration.boxShadow`, `imageIcon.decoration.filters`, `imageIcon.decoration.sizing`, `imageIcon.decoration.spacing` _(+innerContent, +advanced)_
+- **imageIcon** — `imageIcon.decoration.animation`, `imageIcon.decoration.background`, `imageIcon.decoration.spacing` _(+innerContent, +advanced)_
 - **module** — `module.decoration.animation`, `module.decoration.attributes`, `module.decoration.background`, `module.decoration.border`, `module.decoration.boxShadow`, `module.decoration.conditions`, `module.decoration.disabledOn`, `module.decoration.filters`, `module.decoration.interactions`, `module.decoration.layout`, `module.decoration.order`, `module.decoration.overflow`, `module.decoration.position`, `module.decoration.scroll`, `module.decoration.sizing`, `module.decoration.spacing`, `module.decoration.sticky`, `module.decoration.transform`, `module.decoration.transition`, `module.decoration.zIndex` _(+advanced)_
 - **title** — `title.decoration.font` _(+innerContent)_
 
@@ -475,7 +475,7 @@ Per CLAUDE.md "Suite architecture coherence": schema dump is the canonical index
 <!-- TIER: free -->
 #### `divi/image`
 
-- **image** — `image.decoration.border`, `image.decoration.boxShadow` _(+innerContent, +advanced)_
+- **image** — `image.decoration.border`, `image.decoration.boxShadow`, `image.decoration.fit` _(+innerContent, +advanced)_
 - **module** — `module.decoration.animation`, `module.decoration.attributes`, `module.decoration.background`, `module.decoration.conditions`, `module.decoration.disabledOn`, `module.decoration.filters`, `module.decoration.interactions`, `module.decoration.layout`, `module.decoration.order`, `module.decoration.overflow`, `module.decoration.position`, `module.decoration.scroll`, `module.decoration.sticky`, `module.decoration.transform`, `module.decoration.transition`, `module.decoration.zIndex` _(+advanced)_
 
 <!-- END GENERATED:module:divi/image -->
@@ -533,12 +533,22 @@ Per CLAUDE.md "Suite architecture coherence": schema dump is the canonical index
 - **children** — `children.decoration.background`, `children.decoration.border` _(+advanced)_
 - **content** — `content.decoration.bodyFont`, `content.decoration.sizing`
 - **dotNav** — `dotNav.decoration.background`
-- **image** — `image.decoration.border`, `image.decoration.boxShadow` _(+advanced)_
+- **image** — `image.decoration.image` _(+advanced)_
 - **module** — `module.decoration.animation`, `module.decoration.attributes`, `module.decoration.border`, `module.decoration.boxShadow`, `module.decoration.conditions`, `module.decoration.disabledOn`, `module.decoration.filters`, `module.decoration.interactions`, `module.decoration.layout`, `module.decoration.order`, `module.decoration.overflow`, `module.decoration.position`, `module.decoration.scroll`, `module.decoration.sizing`, `module.decoration.spacing`, `module.decoration.sticky`, `module.decoration.transform`, `module.decoration.transition`, `module.decoration.zIndex` _(+advanced)_
 - **pagination** — _(no decoration groups)_ _(+advanced)_
 - **title** — `title.decoration.font`
 
 <!-- END GENERATED:module:divi/slider -->
+
+<!-- BEGIN GENERATED:module:divi/svg -->
+
+<!-- TIER: free -->
+#### `divi/svg`
+
+- **module** — `module.decoration.animation`, `module.decoration.attributes`, `module.decoration.background`, `module.decoration.border`, `module.decoration.boxShadow`, `module.decoration.conditions`, `module.decoration.disabledOn`, `module.decoration.filters`, `module.decoration.interactions`, `module.decoration.layout`, `module.decoration.order`, `module.decoration.overflow`, `module.decoration.position`, `module.decoration.scroll`, `module.decoration.sizing`, `module.decoration.spacing`, `module.decoration.sticky`, `module.decoration.transform`, `module.decoration.transition`, `module.decoration.zIndex` _(+advanced)_
+- **svg** — _(no decoration groups)_ _(+innerContent, +advanced)_
+
+<!-- END GENERATED:module:divi/svg -->
 
 <!-- BEGIN GENERATED:module:divi/tabs -->
 
@@ -562,7 +572,7 @@ Per CLAUDE.md "Suite architecture coherence": schema dump is the canonical index
 - **content** — `content.decoration.bodyFont` _(+innerContent)_
 - **jobTitle** — `jobTitle.decoration.font` _(+innerContent)_
 - **module** — `module.decoration.animation`, `module.decoration.attributes`, `module.decoration.background`, `module.decoration.border`, `module.decoration.boxShadow`, `module.decoration.conditions`, `module.decoration.disabledOn`, `module.decoration.filters`, `module.decoration.interactions`, `module.decoration.layout`, `module.decoration.order`, `module.decoration.overflow`, `module.decoration.position`, `module.decoration.scroll`, `module.decoration.sizing`, `module.decoration.spacing`, `module.decoration.sticky`, `module.decoration.transform`, `module.decoration.transition`, `module.decoration.zIndex` _(+advanced)_
-- **portrait** — `portrait.decoration.border`, `portrait.decoration.boxShadow`, `portrait.decoration.filters`, `portrait.decoration.sizing` _(+innerContent)_
+- **portrait** — `portrait.decoration.image` _(+innerContent)_
 - **quoteIcon** — `quoteIcon.decoration.background`, `quoteIcon.decoration.icon`
 - **testimonialDescription** — _(no decoration groups)_
 
@@ -577,6 +587,47 @@ Per CLAUDE.md "Suite architecture coherence": schema dump is the canonical index
 - **module** — `module.decoration.animation`, `module.decoration.attributes`, `module.decoration.background`, `module.decoration.border`, `module.decoration.boxShadow`, `module.decoration.conditions`, `module.decoration.disabledOn`, `module.decoration.filters`, `module.decoration.interactions`, `module.decoration.layout`, `module.decoration.order`, `module.decoration.overflow`, `module.decoration.position`, `module.decoration.scroll`, `module.decoration.sizing`, `module.decoration.spacing`, `module.decoration.sticky`, `module.decoration.transform`, `module.decoration.transition`, `module.decoration.zIndex` _(+advanced)_
 
 <!-- END GENERATED:module:divi/text -->
+
+<!-- BEGIN GENERATED:module:divi/timeline -->
+
+<!-- TIER: free -->
+#### `divi/timeline`
+
+- **card** — `card.decoration.background`, `card.decoration.border`, `card.decoration.boxShadow`, `card.decoration.layout`, `card.decoration.sizing`, `card.decoration.spacing`
+- **cardEven** — `cardEven.decoration.background`, `cardEven.decoration.border`, `cardEven.decoration.boxShadow`, `cardEven.decoration.layout`, `cardEven.decoration.sizing`, `cardEven.decoration.spacing`
+- **children** — _(no decoration groups)_ _(+advanced)_
+- **connector** — `connector.decoration.background`, `connector.decoration.border`, `connector.decoration.boxShadow`, `connector.decoration.sizing`, `connector.decoration.spacing`
+- **content** — `content.decoration.bodyFont`
+- **contentEven** — `contentEven.decoration.bodyFont`
+- **date** — `date.decoration.font`
+- **dateEven** — `dateEven.decoration.font`
+- **item** — `item.decoration.background`, `item.decoration.border`, `item.decoration.boxShadow`, `item.decoration.sizing`, `item.decoration.spacing`
+- **itemEven** — `itemEven.decoration.background`, `itemEven.decoration.border`, `itemEven.decoration.boxShadow`, `itemEven.decoration.sizing`, `itemEven.decoration.spacing`
+- **marker** — `marker.decoration.background`, `marker.decoration.border`, `marker.decoration.boxShadow`, `marker.decoration.icon`, `marker.decoration.sizing`, `marker.decoration.spacing` _(+advanced)_
+- **module** — `module.decoration.animation`, `module.decoration.attributes`, `module.decoration.background`, `module.decoration.border`, `module.decoration.boxShadow`, `module.decoration.conditions`, `module.decoration.disabledOn`, `module.decoration.filters`, `module.decoration.order`, `module.decoration.overflow`, `module.decoration.position`, `module.decoration.scroll`, `module.decoration.sizing`, `module.decoration.spacing`, `module.decoration.sticky`, `module.decoration.transform`, `module.decoration.transition`, `module.decoration.zIndex` _(+advanced)_
+- **spacer** — `spacer.decoration.background`, `spacer.decoration.border`, `spacer.decoration.boxShadow`, `spacer.decoration.layout`, `spacer.decoration.sizing`, `spacer.decoration.spacing`
+- **spacerEven** — `spacerEven.decoration.background`, `spacerEven.decoration.border`, `spacerEven.decoration.boxShadow`, `spacerEven.decoration.layout`, `spacerEven.decoration.sizing`, `spacerEven.decoration.spacing`
+- **title** — `title.decoration.font`
+- **titleEven** — `titleEven.decoration.font`
+- **track** — `track.decoration.background`, `track.decoration.border`, `track.decoration.boxShadow`, `track.decoration.sizing`, `track.decoration.spacing`
+
+<!-- END GENERATED:module:divi/timeline -->
+
+<!-- BEGIN GENERATED:module:divi/timeline-item -->
+
+<!-- TIER: free -->
+#### `divi/timeline-item`
+
+- **card** — `card.decoration.background`, `card.decoration.border`, `card.decoration.boxShadow`, `card.decoration.layout`, `card.decoration.sizing`, `card.decoration.spacing`
+- **connector** — `connector.decoration.background`, `connector.decoration.border`, `connector.decoration.boxShadow`, `connector.decoration.sizing`, `connector.decoration.spacing`
+- **content** — `content.decoration.bodyFont` _(+innerContent, +advanced)_
+- **date** — `date.decoration.font` _(+innerContent)_
+- **marker** — `marker.decoration.background`, `marker.decoration.border`, `marker.decoration.boxShadow`, `marker.decoration.icon`, `marker.decoration.sizing`, `marker.decoration.spacing` _(+innerContent, +advanced)_
+- **module** — `module.decoration.animation`, `module.decoration.attributes`, `module.decoration.background`, `module.decoration.border`, `module.decoration.boxShadow`, `module.decoration.conditions`, `module.decoration.disabledOn`, `module.decoration.filters`, `module.decoration.order`, `module.decoration.overflow`, `module.decoration.position`, `module.decoration.scroll`, `module.decoration.sizing`, `module.decoration.spacing`, `module.decoration.transform`, `module.decoration.transition`, `module.decoration.zIndex` _(+advanced)_
+- **spacer** — `spacer.decoration.background`, `spacer.decoration.border`, `spacer.decoration.boxShadow`, `spacer.decoration.layout`, `spacer.decoration.sizing`, `spacer.decoration.spacing` _(+advanced)_
+- **title** — `title.decoration.font` _(+innerContent)_
+
+<!-- END GENERATED:module:divi/timeline-item -->
 
 <!-- BEGIN GENERATED:module:divi/toggle -->
 

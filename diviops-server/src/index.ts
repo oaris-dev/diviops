@@ -578,7 +578,7 @@ registerPluginTool(
   "diviops_global_font_list",
   {
     description:
-      "Get the global font definitions from Divi settings. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }.",
+      "List the DiviOps-managed global fonts registered under `et_global_data.global_fonts`. ALWAYS returns the normalized shape `{ count: number, fonts: { <gfid>: <record>, ... } }` — even on empty substrates (count:0, fonts:{}), never bare `false`. Distinct from the variable-manager font tokens (`gvid-*` under `et_global_data.global_variables.fonts`, surfaced via `diviops_variable_list({type:\"fonts\"})`) — `global_font_*` is the DiviOps-controlled font catalog presets bind to via canonical `gfid-` slugs. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }.",
     annotations: { idempotentHint: true },
     _meta: { idempotent: "true" },
   },
@@ -589,6 +589,159 @@ registerPluginTool(
         { type: "text" as const, text: serializeEnvelope(result, "diviops_global_font_list") },
       ],
     };
+  },
+);
+
+registerPluginTool(
+  "diviops_global_font_create",
+  {
+    description:
+      "Create a new global font in DiviOps's registry under `et_global_data.global_fonts`. Mints a fresh `gfid-<uuid>` if `id` is omitted; otherwise uses the supplied id (must match `gfid-[0-9a-z-]{1,80}`; auto-prefixes `gfid-` if missing). Strict create — collision on existing id returns `conflict` (HTTP 409) with `error.data = { id, existing }`; use diviops_global_font_update to modify an existing record. Stored shape: `{ family, source, weights[], subsets[], label, fallback, status, lastUpdated }`. Required: `family` (CSS family name, e.g. \"Sora\") + `source` (one of `google`/`system`/`custom`). Distinct from `diviops_variable_create({type:\"fonts\"})` which writes `gvid-*` font tokens to the variable manager — `global_font_*` is the DiviOps catalog presets bind via `gfid-` slugs. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }; input-shape rejections (malformed id, invalid source enum, non-array weights/subsets, missing required `family`/`source` for a new entry) collapse onto `invalid_input` with structured `error.data`." +
+      DRY_RUN_DESC_SUFFIX,
+    inputSchema: {
+      family: z
+        .string()
+        .describe('CSS font family name (e.g. "Sora", "Inter", "JetBrains Mono"). Stored as the bare name; consumers wrap in single quotes when emitting CSS.'),
+      source: z
+        .enum(["google", "system", "custom"])
+        .describe('Font source: "google" (Google Fonts), "system" (system/web-safe families), or "custom" (self-hosted/CDN).'),
+      id: z
+        .string()
+        .optional()
+        .describe('Optional explicit gfid (e.g. "gfid-oa-sora"). Auto-prefixes `gfid-` if missing; must match `[0-9a-z-]{1,80}` after the prefix. Omit to mint a fresh `gfid-<uuid>`.'),
+      weights: z
+        .array(z.union([z.number(), z.string()]))
+        .optional()
+        .describe('Font weights to load. Accepts integers (100,200,...,900) or keyword strings ("normal","bold","lighter","bolder"). Defaults to []. Drives Google Fonts URL composition + loader hints.'),
+      subsets: z
+        .array(z.string())
+        .optional()
+        .describe('Character subsets (e.g. ["latin","latin-ext"]). Defaults to []. Permissive — not allowlisted server-side (Google adds new subsets regularly).'),
+      label: z
+        .string()
+        .optional()
+        .describe('Human-readable display label. Defaults to the family name.'),
+      fallback: z
+        .string()
+        .optional()
+        .describe('CSS fallback chain appended after the family name (e.g. "sans-serif", "Georgia, serif"). Defaults to empty.'),
+      status: z
+        .enum(["active", "archived"])
+        .optional()
+        .default("active")
+        .describe('Font status — "active" (visible) or "archived" (hidden but preserved).'),
+      dry_run: DRY_RUN_FIELD,
+    },
+    annotations: { idempotentHint: false },
+    _meta: { idempotent: "false" },
+  },
+  async ({ family, source, id, weights, subsets, label, fallback, status, dry_run }) => {
+    const body: Record<string, unknown> = { family, source };
+    if (id !== undefined) body.id = id;
+    if (weights !== undefined) body.weights = weights;
+    if (subsets !== undefined) body.subsets = subsets;
+    if (label !== undefined) body.label = label;
+    if (fallback !== undefined) body.fallback = fallback;
+    if (status) body.status = status;
+    if (dry_run) body.dry_run = true;
+    const result = await wp.requestEnveloped("/global-font/create", {
+      method: "POST",
+      body,
+    });
+    return { content: [{ type: "text" as const, text: serializeEnvelope(result, "diviops_global_font_create") }] };
+  },
+);
+
+registerPluginTool(
+  "diviops_global_font_update",
+  {
+    description:
+      "Update an existing global font by gfid. Strict update — `id` must reference an existing record; unknown gfid returns `not_found` (HTTP 404) with `error.data = { id }` (unlike `diviops_global_color_update`'s merge-mode semantics). Partial: only supplied fields are written, omitted fields preserved; `lastUpdated` bumped on every write. To rename a font's family slug, use diviops_global_font_delete + diviops_global_font_create — `family` itself can be updated in place but the `gfid` identity is immutable via this tool. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }; malformed id charset/length returns 'invalid_input'; missing `id` returns 'invalid_input' with `error.data.missing = \"id\"`; invalid source enum / non-array weights / non-array subsets return 'invalid_input' with structured `error.data`." +
+      DRY_RUN_DESC_SUFFIX,
+    inputSchema: {
+      id: z
+        .string()
+        .describe('Global font ID (e.g. "gfid-oa-sora"). Required. Get from diviops_global_font_list.'),
+      family: z
+        .string()
+        .optional()
+        .describe('New CSS family name. Omit to keep existing.'),
+      source: z
+        .enum(["google", "system", "custom"])
+        .optional()
+        .describe('New source. Omit to keep existing.'),
+      weights: z
+        .array(z.union([z.number(), z.string()]))
+        .optional()
+        .describe('New weights array. Omit to keep existing; pass [] to clear.'),
+      subsets: z
+        .array(z.string())
+        .optional()
+        .describe('New subsets array. Omit to keep existing; pass [] to clear.'),
+      label: z
+        .string()
+        .optional()
+        .describe('New label. Pass empty string to clear.'),
+      fallback: z
+        .string()
+        .optional()
+        .describe('New CSS fallback chain. Pass empty string to clear.'),
+      status: z
+        .enum(["active", "archived"])
+        .optional()
+        .describe('New status — "active" or "archived". Omit to keep existing.'),
+      dry_run: DRY_RUN_FIELD,
+    },
+    annotations: { idempotentHint: false },
+    _meta: { idempotent: "conditional" },
+  },
+  async ({ id, family, source, weights, subsets, label, fallback, status, dry_run }) => {
+    const body: Record<string, unknown> = { id };
+    if (family !== undefined) body.family = family;
+    if (source !== undefined) body.source = source;
+    if (weights !== undefined) body.weights = weights;
+    if (subsets !== undefined) body.subsets = subsets;
+    if (label !== undefined) body.label = label;
+    if (fallback !== undefined) body.fallback = fallback;
+    if (status) body.status = status;
+    if (dry_run) body.dry_run = true;
+    const result = await wp.requestEnveloped("/global-font/update", {
+      method: "POST",
+      body,
+    });
+    return { content: [{ type: "text" as const, text: serializeEnvelope(result, "diviops_global_font_update") }] };
+  },
+);
+
+registerPluginTool(
+  "diviops_global_font_delete",
+  {
+    description:
+      "Delete a global font from the registry by gfid. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }. Live-reference detection uses parse_blocks over post_content across pages / TB layouts / library / canvas + the preset registry (parallel to diviops_variable_delete / diviops_global_color_delete) — MCP-authored content is detected reliably. Returns code 'conflict' (HTTP 409) when references exist with `error.data = { id, ref_count, locations[], scan_truncated, scanned_posts }`. Pass `force: true` to override; orphan refs will fall back to the browser default until pages are re-authored. Missing gfid returns 'not_found' (HTTP 404) with `error.data = { id }`. Malformed gfid (empty or missing `gfid-` prefix) returns 'invalid_input'. Unlike global_color_delete, no customizer-bound `gfid-*` defaults exist to protect — the Divi customizer-bound font defaults live in `heading_font` / `body_font` plain WP options, not this registry." +
+      DRY_RUN_DESC_SUFFIX,
+    inputSchema: {
+      id: z
+        .string()
+        .describe('Global font ID to delete (must start with "gfid-").'),
+      force: z
+        .boolean()
+        .optional()
+        .default(false)
+        .describe("If true, delete even when live references exist."),
+      dry_run: DRY_RUN_FIELD,
+    },
+    annotations: { idempotentHint: true },
+    _meta: { idempotent: "true" },
+  },
+  async ({ id, force, dry_run }) => {
+    const body: Record<string, any> = { id };
+    if (force) body.force = true;
+    if (dry_run) body.dry_run = true;
+    const result = await wp.requestEnveloped("/global-font/delete", {
+      method: "POST",
+      body,
+    });
+    return { content: [{ type: "text" as const, text: serializeEnvelope(result, "diviops_global_font_delete") }] };
   },
 );
 
@@ -670,17 +823,42 @@ registerPluginTool(
   "diviops_render_preview",
   {
     description:
-      "Render Divi block markup to HTML. Use this to preview what the output will look like before saving. Useful for validation. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }; success payload is { rendered_html: string }. Errors map to `invalid_input` (non-string content) or `divi_error` (parser/render exception, with truncated message and full detail in `error.data.detail`).",
+      "Render Divi block markup to HTML. Accepts EITHER inline `content` (string of block markup) OR `page_id` (loads `post_content` from the DB, requires edit_post capability on the page — useful for previewing shipped pages without round-tripping the markup blob). Provide exactly one. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }; success payload is { rendered_html: string }. Errors map to `invalid_input` (neither/both supplied, or invalid page_id), `forbidden` (caller lacks edit_post on the page), `not_found` (page_id does not exist), or `divi_error` (parser/render exception, with truncated message and full detail in `error.data.detail`).",
     inputSchema: {
-      content: z.string().describe("Divi block markup to render to HTML"),
+      content: z
+        .string()
+        .optional()
+        .describe(
+          "Divi block markup to render to HTML. Provide exactly one of {content, page_id}.",
+        ),
+      page_id: z
+        .number()
+        .int()
+        .optional()
+        .describe(
+          "WordPress post/page ID to read post_content from the DB. Requires edit_post capability on the page. Provide exactly one of {content, page_id}.",
+        ),
     },
     annotations: { idempotentHint: true },
     _meta: { idempotent: "true" },
   },
-  async ({ content }) => {
+  async ({ content, page_id }) => {
+    if (page_id !== undefined) {
+      try {
+        requireCapability("validate_render_by_page_id");
+      } catch (e) {
+        if (e instanceof MissingCapabilityError) {
+          return {
+            content: [{ type: "text" as const, text: e.message }],
+            isError: true,
+          };
+        }
+        throw e;
+      }
+    }
     const result = await wp.requestEnveloped("/render", {
       method: "POST",
-      body: { content },
+      body: { content, page_id },
     });
     return {
       content: [
@@ -694,17 +872,42 @@ registerPluginTool(
   "diviops_validate_blocks",
   {
     description:
-      "Validate Divi block markup before saving. Checks structure (malformed comments, unknown blocks, missing builderVersion), required attributes (layout display on containers), and known pitfalls (button padding path, icon.enable, gradient enabled/positions). Returns the standardized envelope { ok, data?, error: { code, message, hint? } }; success payload is { valid: bool, total_blocks: number, errors: Finding[], warnings: Finding[] } where each Finding is { block, index, code, message, path? }. Note: shape errors detected in the markup surface as success-branch `data.errors[]` entries (NOT `validation_failed` envelopes) — the findings array is the payload, not an error. The envelope's error branch fires only for tool-level failures (`invalid_input` for non-string content; `divi_error` for an exception in the walker).",
+      "Validate Divi block markup before saving. Accepts EITHER inline `content` (string of block markup) OR `page_id` (loads `post_content` from the DB, requires edit_post capability on the page — useful for regression checks on shipped pages without round-tripping the markup blob). Provide exactly one. Checks structure (malformed comments, unknown blocks, missing builderVersion), required attributes (layout display on containers), and known pitfalls (button padding path, icon.enable, gradient enabled/positions). Returns the standardized envelope { ok, data?, error: { code, message, hint? } }; success payload is { valid: bool, total_blocks: number, errors: Finding[], warnings: Finding[] } where each Finding is { block, index, code, message, path? }. Note: shape errors detected in the markup surface as success-branch `data.errors[]` entries (NOT `validation_failed` envelopes) — the findings array is the payload, not an error. The envelope's error branch fires only for tool-level failures (`invalid_input` for neither/both supplied or invalid page_id; `forbidden` for missing edit_post; `not_found` for unknown page_id; `divi_error` for an exception in the walker).",
     inputSchema: {
-      content: z.string().describe("Divi block markup to validate"),
+      content: z
+        .string()
+        .optional()
+        .describe(
+          "Divi block markup to validate. Provide exactly one of {content, page_id}.",
+        ),
+      page_id: z
+        .number()
+        .int()
+        .optional()
+        .describe(
+          "WordPress post/page ID to read post_content from the DB. Requires edit_post capability on the page. Provide exactly one of {content, page_id}.",
+        ),
     },
     annotations: { idempotentHint: true },
     _meta: { idempotent: "true" },
   },
-  async ({ content }) => {
+  async ({ content, page_id }) => {
+    if (page_id !== undefined) {
+      try {
+        requireCapability("validate_render_by_page_id");
+      } catch (e) {
+        if (e instanceof MissingCapabilityError) {
+          return {
+            content: [{ type: "text" as const, text: e.message }],
+            isError: true,
+          };
+        }
+        throw e;
+      }
+    }
     const result = await wp.requestEnveloped("/validate/blocks", {
       method: "POST",
-      body: { content },
+      body: { content, page_id },
     });
     return {
       content: [

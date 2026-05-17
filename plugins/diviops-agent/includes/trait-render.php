@@ -29,15 +29,11 @@ trait DiviOps_Agent_Render {
 	 * `error.data.detail` for callers that need it.
 	 */
 	public static function render_block_markup( $request ) {
-		$content = $request->get_param( 'content' );
-		if ( ! is_string( $content ) ) {
-			return self::envelope_error(
-				'invalid_input',
-				'content must be a string of block markup.',
-				null,
-				400
-			);
+		$resolved = self::resolve_content_or_page_id( $request );
+		if ( $resolved instanceof WP_REST_Response ) {
+			return $resolved;
 		}
+		$content = $resolved;
 
 		try {
 			$blocks = parse_blocks( $content );

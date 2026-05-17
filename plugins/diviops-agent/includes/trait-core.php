@@ -206,6 +206,89 @@ trait DiviOps_Agent_Core {
 	}
 
 	/**
+	 * Resolve the source-of-truth content string for tools that accept either
+	 * an inline `content` string OR a `page_id` to read `post_content` from
+	 * the database.
+	 *
+	 * Used by `render_block_markup` and `validate_blocks` (and any future tool
+	 * adopting the exactly-one-of-{content,page_id} input contract).
+	 *
+	 * Contract:
+	 *   - Both supplied OR neither supplied → `invalid_input` envelope (400).
+	 *   - `page_id` must be a positive integer → `invalid_input` (400).
+	 *   - Caller must hold `edit_post` capability on the page → `forbidden` (403).
+	 *   - Post must exist → `not_found` (404).
+	 *
+	 * On success returns the resolved `$content` string. On failure returns
+	 * a `WP_REST_Response` envelope ready to be returned from the handler.
+	 *
+	 * @param WP_REST_Request $request The incoming request.
+	 * @return string|WP_REST_Response Resolved content string on success,
+	 *                                 envelope error response on failure.
+	 */
+	private static function resolve_content_or_page_id( $request ) {
+		$content = $request->get_param( 'content' );
+		$page_id = $request->get_param( 'page_id' );
+
+		$has_content = is_string( $content );
+		$has_page_id = null !== $page_id;
+
+		if ( $has_content && $has_page_id ) {
+			return self::envelope_error(
+				'invalid_input',
+				'Provide exactly one of {content, page_id}, not both.',
+				'Use `content` for ad-hoc/pre-save markup; use `page_id` to read post_content from the DB.',
+				400
+			);
+		}
+		if ( ! $has_content && ! $has_page_id ) {
+			return self::envelope_error(
+				'invalid_input',
+				'Provide exactly one of {content, page_id}.',
+				null,
+				400
+			);
+		}
+
+		if ( $has_page_id ) {
+			$page_id = (int) $page_id;
+			if ( $page_id <= 0 ) {
+				return self::envelope_error(
+					'invalid_input',
+					'page_id must be a positive integer.',
+					null,
+					400
+				);
+			}
+			// Existence check FIRST: `current_user_can('edit_post', $id)` on a
+			// non-existent post returns false (no post to test against), which
+			// would surface as `forbidden` and mask the real condition. Resolve
+			// existence before capability so missing pages get `not_found` and
+			// only real auth misses get `forbidden`.
+			$post = get_post( $page_id );
+			if ( ! $post ) {
+				return self::envelope_error(
+					'not_found',
+					sprintf( 'Post %d not found.', $page_id ),
+					null,
+					404
+				);
+			}
+			if ( ! current_user_can( 'edit_post', $page_id ) ) {
+				return self::envelope_error(
+					'forbidden',
+					sprintf( 'Cannot edit post %d.', $page_id ),
+					'The current user does not have edit_post capability for this page.',
+					403
+				);
+			}
+			return (string) $post->post_content;
+		}
+
+		return (string) $content;
+	}
+
+	/**
 	 * Translate a `WP_Error` from a private resolver helper into the canonical
 	 * envelope shape used by `module_*` / `section_*` handlers.
 	 *
