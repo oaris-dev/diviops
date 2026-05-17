@@ -82,6 +82,34 @@ const BLOCK_CONTENT_KEYS = new Set([
   'footer_content',  // create_tb_template
 ]);
 
+/**
+ * Endpoints whose target storage is a PHP-serialized WP option (or other
+ * non-JSON serialization) rather than block-markup `post_content`. For these,
+ * quote-escape normalization is harmful: the under-escape pass inserts literal
+ * `\` characters into bare-`"`-containing `$variable(...)$` token strings,
+ * which are then PHP-serialized verbatim into the option — producing the
+ * pathological `\"` (literal backslash + quote) byte sequence inside the
+ * stored value where canonical VB output stores a bare `"` (the surrounding
+ * PHP array provides all the structure; the string itself is uninterpreted).
+ *
+ * The frontend-render side tolerates the malformed bytes via a regex-based
+ * extractor, but the VB-UI field-display layer strict-parses the inner
+ * payload and silently falls back to placeholder values when it can't decode
+ * — see #716.
+ *
+ * Match by endpoint prefix so any future `/preset/*` route inherits the
+ * exclusion automatically. Block-markup writers (`/section/*`, `/module/*`,
+ * `/page/*`, `/canvas/*`, `/tb-layout/*`, `/tb-template/*`, `/library/save`,
+ * `/render-preview`, `/validate-blocks`) still receive normalization.
+ */
+const NON_BLOCK_STORAGE_PREFIXES: readonly string[] = [
+  '/preset/',
+];
+
+function endpointSkipsNormalization(endpoint: string): boolean {
+  return NON_BLOCK_STORAGE_PREFIXES.some((prefix) => endpoint.startsWith(prefix));
+}
+
 function normalizeBody(value: unknown, withinBlockTree = false): unknown {
   if (typeof value === 'string') {
     return withinBlockTree ? normalizeQuoteEscapes(value) : value;
@@ -154,7 +182,8 @@ export class WPClient {
     };
 
     if (body && method !== 'GET') {
-      fetchOptions.body = JSON.stringify(normalizeBody(body));
+      const normalized = endpointSkipsNormalization(endpoint) ? body : normalizeBody(body);
+      fetchOptions.body = JSON.stringify(normalized);
     }
 
     const response = await fetch(url, fetchOptions);
@@ -234,7 +263,8 @@ export class WPClient {
       },
     };
     if (body && method !== 'GET') {
-      fetchOptions.body = JSON.stringify(normalizeBody(body));
+      const normalized = endpointSkipsNormalization(endpoint) ? body : normalizeBody(body);
+      fetchOptions.body = JSON.stringify(normalized);
     }
 
     const response = await fetch(url, fetchOptions);
