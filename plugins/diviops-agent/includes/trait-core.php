@@ -28,23 +28,453 @@ trait DiviOps_Agent_Core {
 		return $value;
 	}
 
-	// ── Preset Management ───────────────────────────────────────────
+	private static function normalize_storage_array( $value ): ?array {
+		if ( is_array( $value ) || is_object( $value ) ) {
+			return (array) $value;
+		}
+		return null;
+	}
+
+	// ── Storage-path contract (#719) ────────────────────────────────
+	//
+	// The Divi 5.5.x storage-path landscape is materially more complex than a
+	// single hardcoded option key. Per #719's CONTRACT REVISED 2026-05-19
+	// banner, the agent implements a uniform "read-probe + write-canonical +
+	// audit-aggregates" contract per surface:
+	//
+	//   READ  — probe documented candidate paths in priority order; return
+	//           content from the FIRST non-empty path with `_meta.source_path`
+	//           + `_meta.probed_paths`. Never silently merge.
+	//   WRITE — always target the canonical 5.5.x path; surface
+	//           `_meta.legacy_path_detected` when a legacy path also holds
+	//           content. Never auto-migrate.
+	//   AUDIT — aggregate across all candidate paths with per-entry
+	//           `_meta.entry_sources = { path, provenance }` + warnings for
+	//           ID collisions, shape inconsistencies, and reserved-store
+	//           anomalies (e.g. `_ng` non-empty).
+	//
+	// `_ng` (`et_divi_builder_global_presets_ng`) is D4-legacy, out-of-band.
+	// Divi 5 only touches it for deletion-sync; never CREATE/UPDATE. The
+	// agent NEVER writes to `_ng` and NEVER uses it as a D5 READ fallback.
+	// AUDIT surfaces non-empty `_ng` content with `provenance: "legacy_d4_ng"`
+	// (distinct from any D5 provenance) so consumers cannot confuse it with
+	// canonical D5 entries. Source: GlobalPreset.php:461, 921 (D5 side) +
+	// includes/builder/feature/global-presets/Settings.php (D4 side). Runtime
+	// corroboration: 5.5.1→5.5.2 migration test confirms `_ng` byte-
+	// identical-empty across the transition (see #719 comment thread).
 
 	/**
-	 * Get D5 presets from the standalone WP option.
+	 * Candidate storage paths for the D5 preset surface, in READ priority
+	 * order. `_ng` is OUT-OF-BAND and not listed here — AUDIT consults it
+	 * separately via `audit_d5_preset_storage()`.
+	 *
+	 * Path shape:
+	 *   - "option_key" → top-level WP option
+	 *   - "et_divi.<sub>" → nested under the et_divi umbrella option (read
+	 *     via `et_get_option(<sub>)` when et_options_stored_in_one_row()
+	 *     resolves true — the standard Divi storage routing). Inner key is
+	 *     plain `builder_global_presets_d5` with NO `et_divi_` prefix; the
+	 *     #719 original-body reference to `et_divi.et_divi_builder_global_presets_d5`
+	 *     was incorrect, banner-corrected.
 	 */
-	private static function get_d5_presets() {
-		$raw = get_option( 'et_divi_builder_global_presets_d5', '' );
-		$d5  = ! empty( $raw ) ? maybe_unserialize( $raw ) : [];
-		return is_array( $d5 ) || is_object( $d5 ) ? (array) $d5 : [];
+	private static function d5_preset_paths(): array {
+		return [
+			[ 'path' => 'et_divi_builder_global_presets_d5',  'provenance' => 'd5_top_level' ],
+			[ 'path' => 'et_divi.builder_global_presets_d5',  'provenance' => 'd5_nested_scratchpad' ],
+		];
 	}
 
 	/**
-	 * Save D5 presets to both storage locations.
+	 * Read raw content at a single storage-path descriptor.
+	 *
+	 * Returns the deserialized array (possibly empty), or `null` if the path
+	 * holds no usable content. Callers distinguish "empty array seeded" from
+	 * "path not present" by null-check.
+	 */
+	private static function read_storage_path( string $path_str ) {
+		if ( false !== strpos( $path_str, '.' ) ) {
+			// Nested under et_divi umbrella. Inner key is the part after the dot.
+			$parts = explode( '.', $path_str, 2 );
+			if ( 'et_divi' !== $parts[0] ) {
+				return null;
+			}
+			$raw = et_get_option( $parts[1] );
+			if ( empty( $raw ) ) {
+				return null;
+			}
+			$val = maybe_unserialize( $raw );
+			return self::normalize_storage_array( $val );
+		}
+		// Top-level option.
+		$raw = get_option( $path_str, '' );
+		if ( empty( $raw ) ) {
+			return null;
+		}
+		$val = maybe_unserialize( $raw );
+		return self::normalize_storage_array( $val );
+	}
+
+	/**
+	 * Probe a path list in priority order and return the first non-empty
+	 * content plus the canonical `_meta` shape.
+	 *
+	 * Shape:
+	 *   [
+	 *     'data'         => array,        // first non-empty content (or [] when all empty)
+	 *     'source_path'  => string|null,  // path that yielded content (null when all empty)
+	 *     'probed_paths' => string[],     // all paths probed, in priority order
+	 *   ]
+	 *
+	 * "Non-empty" means a non-empty array after the per-path normalization
+	 * in `read_storage_path()`. An empty array seeded at the canonical path
+	 * (e.g. `update_option(..., [])` on first save then trash) does NOT
+	 * stop the probe; the next path gets a chance.
+	 */
+	private static function probe_storage_paths( array $candidates ): array {
+		$probed_paths = [];
+		$source_path  = null;
+		$data         = [];
+		foreach ( $candidates as $c ) {
+			$probed_paths[] = $c['path'];
+			if ( null !== $source_path ) {
+				continue;
+			}
+			$content = self::read_storage_path( $c['path'] );
+			if ( null !== $content && ! empty( $content ) ) {
+				$data        = $content;
+				$source_path = $c['path'];
+			}
+		}
+		return [
+			'data'         => $data,
+			'source_path'  => $source_path,
+			'probed_paths' => $probed_paths,
+		];
+	}
+
+	// ── Preset Management ───────────────────────────────────────────
+
+	/**
+	 * Get D5 presets via priority-ordered read-probe.
+	 *
+	 * Probes the canonical-then-legacy D5 paths (`d5_preset_paths()`) and
+	 * returns content from the first non-empty path. `_ng` is OUT-OF-BAND
+	 * (#719 banner) — never consulted by READ.
+	 *
+	 * For callers that need the source-path provenance and probed_paths
+	 * envelope shape, use `get_d5_presets_with_meta()`. This bare helper
+	 * returns just the data array for backward compatibility with existing
+	 * callers that don't yet thread `_meta` through.
+	 */
+	private static function get_d5_presets() {
+		$probe = self::probe_storage_paths( self::d5_preset_paths() );
+		return $probe['data'];
+	}
+
+	/**
+	 * Get D5 presets WITH `_meta` shape — data + source_path + probed_paths.
+	 *
+	 * Returns:
+	 *   [
+	 *     'data'         => array,        // content from first non-empty path (or [] when all empty)
+	 *     'source_path'  => string|null,  // path that yielded content (null when all empty)
+	 *     'probed_paths' => string[],     // all D5 paths probed, in priority order
+	 *   ]
+	 *
+	 * Used by LIST surfaces and by WRITE handlers that need to detect a
+	 * `legacy_path_detected` hint when writing to the canonical path.
+	 */
+	private static function get_d5_presets_with_meta(): array {
+		return self::probe_storage_paths( self::d5_preset_paths() );
+	}
+
+	/**
+	 * Detect any legacy storage path that holds content beyond the canonical
+	 * write target. Returns the legacy path string (e.g.
+	 * `"et_divi.builder_global_presets_d5"`) when present, else null.
+	 *
+	 * Used after a WRITE to surface `_meta.legacy_path_detected` — agents do
+	 * NOT auto-migrate; surfacing state is the contract.
+	 */
+	private static function detect_d5_legacy_path(): ?string {
+		$canonical = 'et_divi_builder_global_presets_d5';
+		foreach ( self::d5_preset_paths() as $c ) {
+			if ( $c['path'] === $canonical ) {
+				continue;
+			}
+			$content = self::read_storage_path( $c['path'] );
+			if ( null !== $content && ! empty( $content ) ) {
+				return $c['path'];
+			}
+		}
+		return null;
+	}
+
+	/**
+	 * Save D5 presets — canonical-target write only (#719 banner).
+	 *
+	 * Writes to the canonical 5.5.x storage path:
+	 * `et_divi_builder_global_presets_d5` (top-level WP option).
+	 *
+	 * Previous behavior dual-wrote to `et_divi.builder_global_presets_d5`
+	 * via `et_update_option('builder_global_presets_d5', ...)` as well —
+	 * that dual-write created two synchronized copies that drift on substrate
+	 * upgrades. Banner-mandated reduction to canonical-only.
+	 *
+	 * Never writes to `_ng` (`et_divi_builder_global_presets_ng`) — that
+	 * store is D4-legacy and out-of-band per #719 banner. Divi 5's
+	 * GlobalPreset only touches `_ng` for deletion-sync (and only in-process
+	 * within VB save flows), not for CREATE/UPDATE. The agent does NOT
+	 * implement deletion-sync in this PR.
 	 */
 	private static function save_d5_presets( $d5 ) {
 		update_option( 'et_divi_builder_global_presets_d5', $d5, false );
-		et_update_option( 'builder_global_presets_d5', $d5 );
+	}
+
+	/**
+	 * Attach top-level `_meta` keys to a WP_REST_Response envelope.
+	 *
+	 * Merges into any existing `_meta` (preserving keys not in `$extra`) so
+	 * callers can layer their own routing-provenance fields onto the
+	 * server-side `idempotent` enrichment without clobbering. Returns the
+	 * mutated response by reference for chaining-ergonomic use.
+	 *
+	 * Used by write paths to thread `_meta.canonical_path` + the optional
+	 * `_meta.legacy_path_detected` hint per the #719 contract WRITE shape.
+	 */
+	private static function attach_meta( $response, array $extra ) {
+		if ( ! ( $response instanceof WP_REST_Response ) ) {
+			return $response;
+		}
+		$body          = $response->get_data();
+		$existing_meta = ( is_array( $body ) && isset( $body['_meta'] ) && is_array( $body['_meta'] ) )
+			? $body['_meta']
+			: [];
+		$body['_meta'] = array_merge( $existing_meta, $extra );
+		$response->set_data( $body );
+		return $response;
+	}
+
+	/**
+	 * Build the standard WRITE `_meta` payload for a D5-preset mutation.
+	 *
+	 * Always sets `canonical_path`; conditionally adds `legacy_path_detected`
+	 * when a legacy D5 storage path also holds content. Does NOT trigger any
+	 * write — purely advisory.
+	 */
+	private static function d5_preset_write_meta(): array {
+		$meta = [ 'canonical_path' => 'et_divi_builder_global_presets_d5' ];
+		$legacy = self::detect_d5_legacy_path();
+		if ( null !== $legacy ) {
+			$meta['legacy_path_detected'] = $legacy;
+		}
+		return $meta;
+	}
+
+	/**
+	 * Flatten the D5 registry shape into audit rows keyed by actual preset UUID.
+	 *
+	 * D5 storage is bucketed as:
+	 *   { module: { <moduleName>: { items: { <uuid>: <preset> } } },
+	 *     group:  { <groupName>:  { items: { <uuid>: <preset> } } } }
+	 *
+	 * AUDIT provenance is per preset UUID, not per top-level bucket.
+	 */
+	private static function collect_d5_preset_audit_entries( array $registry ): array {
+		$rows = [];
+		foreach ( [ 'module', 'group' ] as $bucket ) {
+			$bucket_items = self::normalize_storage_array( $registry[ $bucket ] ?? null );
+			if ( null === $bucket_items ) {
+				continue;
+			}
+			foreach ( $bucket_items as $bucket_key => $bucket_data ) {
+				if ( ! is_string( $bucket_key ) ) {
+					continue;
+				}
+				$bucket_data = self::normalize_storage_array( $bucket_data );
+				if ( null === $bucket_data ) {
+					continue;
+				}
+				$items = self::normalize_storage_array( $bucket_data['items'] ?? null );
+				if ( null === $items ) {
+					continue;
+				}
+				foreach ( $items as $preset_id => $entry ) {
+					if ( ! is_string( $preset_id ) ) {
+						continue;
+					}
+					$rows[] = [
+						'id'         => $preset_id,
+						'entry'      => self::normalize_storage_array( $entry ) ?? $entry,
+						'bucket'     => $bucket,
+						'bucket_key' => $bucket_key,
+					];
+				}
+			}
+		}
+		return $rows;
+	}
+
+	/**
+	 * Flatten the D4 `_ng` legacy shape into audit rows keyed by preset ID.
+	 *
+	 * D4 stores by module slug:
+	 *   { <d4ModuleSlug>: { presets: { <presetId>: <preset> }, default: ... } }
+	 */
+	private static function collect_legacy_ng_preset_audit_entries( array $registry ): array {
+		$rows = [];
+		foreach ( $registry as $module_slug => $module_data ) {
+			if ( ! is_string( $module_slug ) ) {
+				continue;
+			}
+			$module_data = self::normalize_storage_array( $module_data );
+			if ( null === $module_data ) {
+				continue;
+			}
+			$presets = self::normalize_storage_array( $module_data['presets'] ?? null );
+			if ( null === $presets ) {
+				continue;
+			}
+			foreach ( $presets as $preset_id => $entry ) {
+				if ( ! is_string( $preset_id ) ) {
+					continue;
+				}
+				$rows[] = [
+					'id'         => $preset_id,
+					'entry'      => self::normalize_storage_array( $entry ) ?? $entry,
+					'bucket'     => 'legacy_ng',
+					'bucket_key' => $module_slug,
+				];
+			}
+		}
+		return $rows;
+	}
+
+	/**
+	 * Aggregate AUDIT across all D5 preset storage paths PLUS the OUT-OF-BAND
+	 * `_ng` (`et_divi_builder_global_presets_ng`) legacy D4 store.
+	 *
+	 * Returns:
+	 *   [
+	 *     'aggregated'    => array<string,mixed>,  // union of entries by ID (D5 entries; first-write-wins per priority)
+	 *     'probed_paths'  => string[],             // all paths consulted (D5 priority list + _ng)
+	 *     'entry_sources' => array<string,array{path:string,provenance:string}>,
+	 *     'warnings'      => array<int,array{type:string,...}>,
+	 *   ]
+	 *
+	 * Provenance vocabulary:
+	 *   - "d5_top_level"          — canonical 5.5.x path
+	 *   - "d5_nested_scratchpad"  — legacy nested migration scratchpad
+	 *   - "legacy_d4_ng"          — D4-era `_ng` store (out-of-band)
+	 *
+	 * Warning vocabulary:
+	 *   - "id_collision"       — same ID in two D5 paths with shape divergence
+	 *   - "shape_inconsistency" — same ID, same value-shape topology mismatch
+	 *   - "ng_non_empty"       — `_ng` holds content (anomaly; surface for manual review)
+	 *
+	 * `_ng` content is NEVER merged into the D5-aggregated entries; it is
+	 * surfaced in its own `entry_sources` entries with `legacy_d4_ng`
+	 * provenance + an `ng_non_empty` warning. Consumers filtering for
+	 * canonical D5 by `provenance` cannot accidentally include `_ng` content.
+	 */
+	private static function audit_d5_preset_storage(): array {
+		$aggregated    = [];
+		$entry_sources = [];
+		$warnings      = [];
+		$probed_paths  = [];
+
+		// D5 paths — priority-ordered. First write wins on ID collision; we
+		// still record the collision in warnings so consumers can reconcile.
+		foreach ( self::d5_preset_paths() as $c ) {
+			$probed_paths[] = $c['path'];
+			$content        = self::read_storage_path( $c['path'] );
+			if ( null === $content || empty( $content ) ) {
+				continue;
+			}
+			foreach ( self::collect_d5_preset_audit_entries( $content ) as $row ) {
+				$id    = $row['id'];
+				$entry = $row['entry'];
+				if ( isset( $aggregated[ $id ] ) ) {
+					$shape_match = self::entries_shape_match( $aggregated[ $id ], $entry );
+					$warnings[]  = [
+						'type'        => $shape_match ? 'id_collision' : 'shape_inconsistency',
+						'id'          => $id,
+						'first_path'  => $entry_sources[ $id ]['path'] ?? null,
+						'second_path' => $c['path'],
+						'bucket'      => $row['bucket'],
+						'bucket_key'  => $row['bucket_key'],
+					];
+					continue; // First-write wins by priority.
+				}
+				$aggregated[ $id ]    = $entry;
+				$entry_sources[ $id ] = [
+					'path'       => $c['path'],
+					'provenance' => $c['provenance'],
+					'bucket'     => $row['bucket'],
+					'bucket_key' => $row['bucket_key'],
+				];
+			}
+		}
+
+		// `_ng` — out-of-band D4-legacy store. Probe and surface separately.
+		$ng_path        = 'et_divi_builder_global_presets_ng';
+		$probed_paths[] = $ng_path;
+		$ng_content     = self::read_storage_path( $ng_path );
+		if ( null !== $ng_content && ! empty( $ng_content ) ) {
+			$ng_entries = self::collect_legacy_ng_preset_audit_entries( $ng_content );
+			$warnings[] = [
+				'type'        => 'ng_non_empty',
+				'path'        => $ng_path,
+				'entry_count' => count( $ng_entries ),
+				'hint'        => 'Legacy D4 preset store contains content. Divi 5 does not consume this for primary storage; surfaced for inventory only. Never merge into D5 entries.',
+			];
+			foreach ( $ng_entries as $row ) {
+				// `_ng` entries get their OWN entry_sources record with the
+				// legacy_d4_ng provenance. They do NOT enter $aggregated (which
+				// is D5-only by contract).
+				$entry_sources[ $row['id'] ] = [
+					'path'       => $ng_path,
+					'provenance' => 'legacy_d4_ng',
+					'bucket'     => $row['bucket'],
+					'bucket_key' => $row['bucket_key'],
+				];
+			}
+		}
+
+		return [
+			'aggregated'    => $aggregated,
+			'probed_paths'  => $probed_paths,
+			'entry_sources' => $entry_sources,
+			'warnings'      => $warnings,
+		];
+	}
+
+	/**
+	 * Compare two preset registry entries for structural shape match.
+	 *
+	 * Used by `audit_d5_preset_storage()` to discriminate `id_collision`
+	 * (same id, same shape — caller can pick a winner) from
+	 * `shape_inconsistency` (same id, different shape — caller must
+	 * reconcile manually).
+	 *
+	 * Compares top-level keys only — preset entries are deeply nested and a
+	 * recursive shape-diff would generate noise on cosmetic differences (e.g.
+	 * key ordering) that don't materially affect rendering. If both entries
+	 * carry the same top-level keys (regardless of value), they're treated
+	 * as the same shape; structural divergence at the top level is the
+	 * signal that matters for reconciliation.
+	 */
+	private static function entries_shape_match( $a, $b ): bool {
+		$a = self::normalize_storage_array( $a );
+		$b = self::normalize_storage_array( $b );
+		if ( null === $a || null === $b ) {
+			return false;
+		}
+		$a_keys = array_keys( $a );
+		$b_keys = array_keys( $b );
+		sort( $a_keys );
+		sort( $b_keys );
+		return $a_keys === $b_keys;
 	}
 
 	/**

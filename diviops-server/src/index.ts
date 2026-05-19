@@ -438,7 +438,7 @@ registerPluginTool(
   "diviops_global_color_list",
   {
     description:
-      "Get the global color palette defined in Divi. Returns all global colors that can be referenced by modules. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }.",
+      "Get the global color palette defined in Divi. Returns `{ colors, customizer }` — `colors` is the user-defined palette stored under `et_divi.et_global_data.global_colors` (read via the #719 priority-ordered probe); `customizer` surfaces the five WP-customizer-bound defaults (gcid-primary-color / gcid-secondary-color / gcid-heading-color / gcid-body-color / gcid-link-color) sourced from `\\ET\\Builder\\Packages\\GlobalData\\GlobalData::$customizer_colors`. Top-level `_meta.source_path` + `_meta.probed_paths` document which storage path yielded the user palette; `_meta.customizer_source` describes the customizer-bound default surface. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }.",
     annotations: { idempotentHint: true },
     _meta: { idempotent: "true" },
   },
@@ -447,6 +447,24 @@ registerPluginTool(
     return {
       content: [
         { type: "text" as const, text: serializeEnvelope(result, "diviops_global_color_list") },
+      ],
+    };
+  },
+);
+
+registerPluginTool(
+  "diviops_global_color_audit_storage",
+  {
+    description:
+      "Audit the global_colors STORAGE LOCATION landscape (#719 contract). Aggregates entries across all candidate paths for the global_colors surface with per-entry provenance via `_meta.entry_sources = { <id>: { path, provenance } }`. Provenance vocabulary: `et_divi_nested` (canonical 5.x — `et_divi.et_global_data.global_colors`), `top_level` (hypothetical standalone option, not observed on tested 5.5.x substrates), `wp_customizer` (the five WP-customizer-bound defaults — gcid-primary-color / gcid-secondary-color / gcid-heading-color / gcid-body-color / gcid-link-color, sourced from GlobalData::$customizer_colors). Warnings: `id_collision` (same id across two paths). The user palette overrides customizer defaults when both present (matches Divi's render-side behavior at GlobalData::get_global_colors). Returns the standardized envelope { ok, data?, error: { code, message, hint? } }.",
+    annotations: { idempotentHint: true },
+    _meta: { idempotent: "true" },
+  },
+  async () => {
+    const result = await wp.requestEnveloped("/global-color/audit-storage");
+    return {
+      content: [
+        { type: "text" as const, text: serializeEnvelope(result, "diviops_global_color_audit_storage") },
       ],
     };
   },
@@ -578,7 +596,7 @@ registerPluginTool(
   "diviops_global_font_list",
   {
     description:
-      "List the DiviOps-managed global fonts registered under `et_global_data.global_fonts`. ALWAYS returns the normalized shape `{ count: number, fonts: { <gfid>: <record>, ... } }` — even on empty substrates (count:0, fonts:{}), never bare `false`. Distinct from the variable-manager font tokens (`gvid-*` under `et_global_data.global_variables.fonts`, surfaced via `diviops_variable_list({type:\"fonts\"})`) — `global_font_*` is the DiviOps-controlled font catalog presets bind to via canonical `gfid-` slugs. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }.",
+      "List the DiviOps-managed global fonts registered under `et_divi.et_global_data.global_fonts` (gfid-* Google catalog) AND the local-hosted Pattern B fonts registered under `et_uploaded_fonts` (per #719 AC #9). Returns `{ count, fonts, uploaded_count, uploaded_fonts }` — both maps always emitted as JSON objects (consistent shape across empty/populated substrates). Top-level `_meta.sources` discriminates the two surfaces with `provenance: \"gfid_catalog\"` vs `provenance: \"uploaded_local\"`. Distinct from the variable-manager font tokens (`gvid-*` under `et_global_data.global_variables.fonts`, surfaced via `diviops_variable_list({type:\"fonts\"})`) — `global_font_*` is the DiviOps-controlled font catalog presets bind to via canonical `gfid-` slugs. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }.",
     annotations: { idempotentHint: true },
     _meta: { idempotent: "true" },
   },
@@ -587,6 +605,24 @@ registerPluginTool(
     return {
       content: [
         { type: "text" as const, text: serializeEnvelope(result, "diviops_global_font_list") },
+      ],
+    };
+  },
+);
+
+registerPluginTool(
+  "diviops_global_font_audit_storage",
+  {
+    description:
+      "Audit the global_fonts STORAGE LOCATION landscape (#719 contract). Aggregates entries across the gfid-* catalog (`et_divi.et_global_data.global_fonts`) AND the local-hosted `et_uploaded_fonts` Pattern B surface with per-entry provenance via `_meta.entry_sources = { <id>: { path, provenance } }`. Provenance vocabulary: `gfid_catalog` (Google CDN canonical), `uploaded_local` (file-uploaded local-hosted fonts per `reference_local_hosted_fonts_eu_pattern`). Warnings: `id_collision` (same id in both — upstream contract violation since the two surfaces are key-namespace-disjoint by convention). Returns the standardized envelope { ok, data?, error: { code, message, hint? } }.",
+    annotations: { idempotentHint: true },
+    _meta: { idempotent: "true" },
+  },
+  async () => {
+    const result = await wp.requestEnveloped("/global-font/audit-storage");
+    return {
+      content: [
+        { type: "text" as const, text: serializeEnvelope(result, "diviops_global_font_audit_storage") },
       ],
     };
   },
@@ -1489,6 +1525,24 @@ registerPluginTool(
     return {
       content: [
         { type: "text" as const, text: serializeEnvelope(result, "diviops_preset_audit") },
+      ],
+    };
+  },
+);
+
+registerPluginTool(
+  "diviops_preset_audit_storage",
+  {
+    description:
+      "Audit the D5 preset STORAGE LOCATION landscape (#719 contract). Distinct from `diviops_preset_audit` (which audits preset CONTENT — usage refs, orphans, defaults). Aggregates entries across the canonical top-level `et_divi_builder_global_presets_d5` and the legacy nested `et_divi.builder_global_presets_d5` scratchpad on upgraded substrates, with per-entry provenance via `_meta.entry_sources = { <id>: { path, provenance } }`. Provenance vocabulary: `d5_top_level` (canonical), `d5_nested_scratchpad` (upgrade artifact), `legacy_d4_ng` (D4-era `et_divi_builder_global_presets_ng` store — OUT-OF-BAND per the banner, surfaced via entry_sources only, NEVER merged into the D5 aggregate). Warnings: `id_collision` (same id across D5 paths, same top-level shape), `shape_inconsistency` (same id, divergent top-level keys), `ng_non_empty` (legacy D4 store contains content; surface for inventory). Use this to diagnose substrate state before/after upgrades — agents do NOT auto-migrate; surfacing state is the contract. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }; the routing-provenance fields sit on top-level `_meta`.",
+    annotations: { idempotentHint: true },
+    _meta: { idempotent: "true" },
+  },
+  async () => {
+    const result = await wp.requestEnveloped("/preset/audit-storage");
+    return {
+      content: [
+        { type: "text" as const, text: serializeEnvelope(result, "diviops_preset_audit_storage") },
       ],
     };
   },

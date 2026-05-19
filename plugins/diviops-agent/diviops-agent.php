@@ -3,7 +3,7 @@
  * Plugin Name: DiviOps Agent
  * Plugin URI: https://github.com/oaris-dev/diviops
  * Description: REST API bridge for DiviOps — connects Claude Code to your Divi 5 site for AI-powered page building and design management.
- * Version: 1.4.8
+ * Version: 1.4.9
  * Author: oaris.de
  * Author URI: https://oaris.de
  * Text Domain: diviops-agent
@@ -60,7 +60,7 @@ class DiviOps_Agent {
 	 * Plugin version — surfaced in /handshake for self-diagnosis only;
 	 * server no longer gates on it (capability map is the gate).
 	 */
-	const VERSION = '1.4.8';
+	const VERSION = '1.4.9';
 
 	/**
 	 * Minimum MCP server version this plugin is compatible with.
@@ -89,8 +89,8 @@ class DiviOps_Agent {
 		// canvas
 		'canvas_create', 'canvas_delete', 'canvas_duplicate', 'canvas_get', 'canvas_list', 'canvas_update',
 		// global colors / fonts
-		'global_color_create', 'global_color_delete', 'global_color_list', 'global_color_update',
-		'global_font_create', 'global_font_delete', 'global_font_list', 'global_font_update',
+		'global_color_audit_storage', 'global_color_create', 'global_color_delete', 'global_color_list', 'global_color_update',
+		'global_font_audit_storage', 'global_font_create', 'global_font_delete', 'global_font_list', 'global_font_update',
 		// library
 		'library_get', 'library_list', 'library_save',
 		// meta
@@ -101,7 +101,7 @@ class DiviOps_Agent {
 		'page_create', 'page_get', 'page_get_layout', 'page_list',
 		'page_trash', 'page_update_content', 'page_update_status',
 		// preset
-		'preset_audit', 'preset_cleanup', 'preset_create', 'preset_delete',
+		'preset_audit', 'preset_audit_storage', 'preset_cleanup', 'preset_create', 'preset_delete',
 		'preset_reassign', 'preset_scan_orphans', 'preset_set_default', 'preset_update',
 		// render
 		'render_preview',
@@ -120,6 +120,17 @@ class DiviOps_Agent {
 		// variable
 		'variable_create', 'variable_create_fluid_system', 'variable_delete',
 		'variable_list', 'variable_scan_orphans', 'variable_used_on_page',
+		// Storage-path contract (#719). Single contract-level key advertises
+		// implementation of the full read-probe + write-canonical + audit-
+		// aggregates contract across preset / global_color / global_font
+		// surfaces. Per-surface keys (preset_storage_multipath_v1,
+		// global_color_storage_multipath_v1, global_font_storage_multipath_v1)
+		// also emitted so consumers can detect partial implementations on
+		// future plugins that ship the contract per-surface.
+		'storage_multipath_probe_v1',
+		'preset_storage_multipath_v1',
+		'global_color_storage_multipath_v1',
+		'global_font_storage_multipath_v1',
 	];
 
 	/**
@@ -378,10 +389,33 @@ class DiviOps_Agent {
 			'permission_callback' => [ __CLASS__, 'check_read_permission' ],
 		] );
 
+		// Storage-path contract (#719) — admin-only audit aggregator.
+		// Surfaces per-entry provenance + warnings across all candidate
+		// storage paths for the global_colors surface (D5 nested,
+		// hypothetical top-level, and WP-customizer-bound defaults). Like
+		// /preset/scan-orphans this is admin-only because the union
+		// payload includes synthetic-id metadata derived from the
+		// GlobalData class property, which carries inventory-leak
+		// implications via Editor read access.
+		register_rest_route( self::REST_NAMESPACE, '/global-color/audit-storage', [
+			'methods'             => 'GET',
+			'callback'            => [ __CLASS__, 'global_color_audit_storage' ],
+			'permission_callback' => [ __CLASS__, 'check_admin_permission' ],
+		] );
+
 		register_rest_route( self::REST_NAMESPACE, '/global-font/list', [
 			'methods'             => 'GET',
 			'callback'            => [ __CLASS__, 'global_font_list' ],
 			'permission_callback' => [ __CLASS__, 'check_read_permission' ],
+		] );
+
+		// Storage-path contract (#719) — admin-only audit aggregator across
+		// the gfid-* catalog (et_divi.et_global_data.global_fonts) AND the
+		// `et_uploaded_fonts` local-hosted Pattern B surface.
+		register_rest_route( self::REST_NAMESPACE, '/global-font/audit-storage', [
+			'methods'             => 'GET',
+			'callback'            => [ __CLASS__, 'global_font_audit_storage' ],
+			'permission_callback' => [ __CLASS__, 'check_admin_permission' ],
 		] );
 
 		// Global fonts CRUD — parallel to /global-color/* but with
@@ -472,6 +506,19 @@ class DiviOps_Agent {
 			'methods'             => 'GET',
 			'callback'            => [ __CLASS__, 'preset_audit' ],
 			// Admin-only: response includes per-preset page_refs (page IDs + titles correlated with preset usage) — inventory-leak risk via Editor read access. Symmetric with /preset/scan-orphans and /variable/scan-orphans (#501).
+			'permission_callback' => [ __CLASS__, 'check_admin_permission' ],
+		] );
+
+		// Storage-path contract (#719) — admin-only audit aggregator across
+		// all candidate D5 preset paths PLUS the OUT-OF-BAND `_ng` legacy
+		// D4 store. Distinct from /preset/audit (which audits preset
+		// CONTENT — usage refs, orphans, defaults, etc.); this surface
+		// audits preset STORAGE LOCATION with per-entry provenance and
+		// `legacy_d4_ng` tagging. Admin-only for symmetry with the existing
+		// /preset/audit gate.
+		register_rest_route( self::REST_NAMESPACE, '/preset/audit-storage', [
+			'methods'             => 'GET',
+			'callback'            => [ __CLASS__, 'preset_audit_storage' ],
 			'permission_callback' => [ __CLASS__, 'check_admin_permission' ],
 		] );
 

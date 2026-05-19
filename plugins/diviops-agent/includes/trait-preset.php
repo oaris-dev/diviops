@@ -18,26 +18,103 @@ trait DiviOps_Agent_Preset {
 
 	/**
 	 * Get all presets (Divi 5 + legacy Divi 4).
+	 *
+	 * Storage-path contract (#719): `divi5_presets` is sourced via the
+	 * priority-ordered probe in `get_d5_presets_with_meta()` — top-level
+	 * `et_divi_builder_global_presets_d5` first, then nested
+	 * `et_divi.builder_global_presets_d5` legacy scratchpad. `_ng`
+	 * (`et_divi_builder_global_presets_ng`) is OUT-OF-BAND per the banner
+	 * — surfaced here under `legacy_presets` for inventory/diagnostic
+	 * symmetry only; it is NOT a D5 READ fallback, NEVER written by
+	 * create/update/delete, and tagged with `provenance: "legacy_d4_ng"`
+	 * in the `diviops_preset_audit_storage` aggregate view.
+	 *
+	 * Response carries top-level `_meta.source_path` + `_meta.probed_paths`
+	 * so callers can distinguish "actually empty" from "we probed the
+	 * wrong place." `_meta.legacy_path_detected` is set when a legacy D5
+	 * path also holds content (advisory; no auto-migration).
 	 */
 	public static function preset_list( $request ) {
-		// Divi 5 presets.
-		$d5_raw = et_get_option( 'builder_global_presets_d5', '', '', true, false, '', '', true );
-		$d5     = ! empty( $d5_raw ) ? maybe_unserialize( $d5_raw ) : [];
+		// Divi 5 presets — read-probe with provenance (#719 contract).
+		$probe = self::get_d5_presets_with_meta();
+		$d5    = $probe['data'];
 
-		// Legacy Divi 4 presets.
-		$d4_raw = et_get_option( 'builder_global_presets_ng', (object) [], '', true, false, '', '', true );
+		// Legacy Divi 4 / out-of-band `_ng` store. Surfaced for visibility;
+		// per #719 banner this is NOT a D5 fallback — `audit_storage` tags
+		// it with `legacy_d4_ng` provenance for unambiguous classification.
+		$d4_raw = get_option( 'et_divi_builder_global_presets_ng', '' );
 		$d4     = ! empty( $d4_raw ) ? maybe_unserialize( $d4_raw ) : [];
 
 		// Also get from et_global_data presets.
-		$global_raw  = et_get_option( 'et_global_data', '' );
-		$global_data = ! empty( $global_raw ) ? maybe_unserialize( $global_raw ) : [];
+		$global_raw     = et_get_option( 'et_global_data', '' );
+		$global_data    = ! empty( $global_raw ) ? maybe_unserialize( $global_raw ) : [];
 		$global_presets = is_array( $global_data ) ? ( $global_data['presets'] ?? [] ) : [];
 
-		return self::envelope_success( [
+		// Detect legacy-path-also-populated state for advisory _meta.
+		$legacy_path = null;
+		if ( 'et_divi_builder_global_presets_d5' === $probe['source_path'] ) {
+			$legacy_path = self::detect_d5_legacy_path();
+		}
+
+		$meta = [
+			'source_path'  => $probe['source_path'],
+			'probed_paths' => $probe['probed_paths'],
+		];
+		if ( null !== $legacy_path ) {
+			$meta['legacy_path_detected'] = $legacy_path;
+		}
+
+		$response = self::envelope_success( [
 			'divi5_presets'  => $d5,
 			'legacy_presets' => $d4,
 			'global_presets' => $global_presets,
 		] );
+		// Top-level `_meta` is preserved through `serializeEnvelope` per the
+		// envelope contract (envelope.ts:290-297). Attach after
+		// envelope_success() so the merge on the server side enriches with
+		// `idempotent` without clobbering our routing-provenance fields.
+		$body         = $response->get_data();
+		$body['_meta'] = $meta;
+		$response->set_data( $body );
+		return $response;
+	}
+
+	/**
+	 * Audit the D5 preset storage landscape — aggregate across all candidate
+	 * paths with per-entry provenance and warnings.
+	 *
+	 * Storage-path contract (#719): the aggregate union is D5-only — entries
+	 * surfaced from `_ng` (`et_divi_builder_global_presets_ng`) appear ONLY
+	 * via `_meta.entry_sources` with `provenance: "legacy_d4_ng"` and the
+	 * top-level `ng_non_empty` warning. They never enter `aggregated[]`.
+	 *
+	 * Response shape:
+	 *   {
+	 *     ok: true,
+	 *     data: {
+	 *       aggregated:   { <id>: <entry>, ... }   // D5-only union
+	 *     },
+	 *     _meta: {
+	 *       probed_paths:  [ ... ],
+	 *       entry_sources: { <id>: { path, provenance } },
+	 *       warnings:      [ { type, ... }, ... ]
+	 *     }
+	 *   }
+	 */
+	public static function preset_audit_storage( $request ) {
+		$audit = self::audit_d5_preset_storage();
+
+		$response = self::envelope_success( [
+			'aggregated' => $audit['aggregated'],
+		] );
+		$body = $response->get_data();
+		$body['_meta'] = [
+			'probed_paths'  => $audit['probed_paths'],
+			'entry_sources' => $audit['entry_sources'],
+			'warnings'      => $audit['warnings'],
+		];
+		$response->set_data( $body );
+		return $response;
 	}
 
 	/**
@@ -770,11 +847,14 @@ trait DiviOps_Agent_Preset {
 
 		self::save_d5_presets( $d5 );
 
-		return self::envelope_success( [
-			'success' => true,
-			'preset'  => $found,
-			'message' => "Preset '{$preset_id}' updated.",
-		] );
+		return self::attach_meta(
+			self::envelope_success( [
+				'success' => true,
+				'preset'  => $found,
+				'message' => "Preset '{$preset_id}' updated.",
+			] ),
+			self::d5_preset_write_meta()
+		);
 	}
 
 	/**
@@ -869,7 +949,10 @@ trait DiviOps_Agent_Preset {
 			$response['message'] .= " Default pointer for {$default_cleared['type']}/{$default_cleared['module']} cleared.";
 		}
 
-		return self::envelope_success( $response );
+		return self::attach_meta(
+			self::envelope_success( $response ),
+			self::d5_preset_write_meta()
+		);
 	}
 
 	/**
@@ -1044,11 +1127,14 @@ trait DiviOps_Agent_Preset {
 			? "Default preset cleared for {$found['type']}/{$found['module']}."
 			: "Preset '{$preset_id}' is now the default for {$found['type']}/{$found['module']}.";
 
-		return self::envelope_success( [
-			'success' => true,
-			'preset'  => $found,
-			'message' => $msg,
-		] );
+		return self::attach_meta(
+			self::envelope_success( [
+				'success' => true,
+				'preset'  => $found,
+				'message' => $msg,
+			] ),
+			self::d5_preset_write_meta()
+		);
 	}
 
 	/**
@@ -1257,7 +1343,10 @@ trait DiviOps_Agent_Preset {
 			$response['preset']['is_default']     = true;
 			$response['preset']['was_default_id'] = $was_default_id;
 		}
-		return self::envelope_success( $response );
+		return self::attach_meta(
+			self::envelope_success( $response ),
+			self::d5_preset_write_meta()
+		);
 	}
 
 	/**

@@ -496,10 +496,26 @@ trait DiviOps_Agent_Variable {
 			}
 		}
 
-		return self::envelope_success( [
+		// Storage-path contract (#719) — symmetry-only `_meta` (AC #11).
+		// `variable_list` already routes correctly for both surfaces on
+		// tested 5.5.x substrates; no routing change. The `_meta` shape
+		// matches the canonical READ shape so consumers can rely on the
+		// same response key topology across all `*_list` tools.
+		$response      = self::envelope_success( [
 			'count'     => count( $result ),
 			'variables' => $result,
 		] );
+		$body          = $response->get_data();
+		$body['_meta'] = [
+			'source_path'  => 'et_divi.et_global_data.global_colors+et_divi_global_variables',
+			'probed_paths' => [
+				'et_divi.et_global_data.global_colors',
+				'et_divi_global_variables',
+			],
+			'note'         => 'variable_list reads from two parallel storages by type (colors vs others); single-path probe contract does not apply. Surfaced for #719 symmetry.',
+		];
+		$response->set_data( $body );
+		return $response;
 	}
 
 	/**

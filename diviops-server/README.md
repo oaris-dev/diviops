@@ -64,7 +64,7 @@ The skill enforces the Divi block format, the design system, and the response co
 
 ## Tools at a glance
 
-The server exposes **70 tools** across the categories below. Each category links to representative tools; the full table lives in [server-reference.md](../docs/server-reference.md).
+The server exposes **73 tools** across the categories below. Each category links to representative tools; the full table lives in [server-reference.md](../docs/server-reference.md).
 
 | Category | Use case | Tool prefixes |
 |----------|----------|---------------|

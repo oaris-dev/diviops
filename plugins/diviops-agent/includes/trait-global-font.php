@@ -57,21 +57,125 @@ trait DiviOps_Agent_GlobalFont {
 	 * canonical fix.
 	 */
 	public static function global_font_list( $request ) {
+		// Google fonts catalog (gfid-* records) — primary surface.
+		$gfid_path = 'et_divi.et_global_data.global_fonts';
 		$raw         = et_get_option( 'et_global_data' );
-		$global_data = ! empty( $raw ) ? maybe_unserialize( $raw ) : [];
-		$fonts       = ( is_array( $global_data ) && is_array( $global_data['global_fonts'] ?? null ) )
-			? $global_data['global_fonts']
-			: [];
+		$global_data = self::normalize_storage_array( ! empty( $raw ) ? maybe_unserialize( $raw ) : [] ) ?? [];
+		$fonts       = self::normalize_storage_array( $global_data['global_fonts'] ?? null ) ?? [];
+
+		// Locally-hosted fonts (Pattern B / EU-GDPR) — parallel surface at
+		// the top-level `et_uploaded_fonts` option. Per `reference_local_hosted_fonts_eu_pattern`
+		// these are populated by the divi-oafontz MIME expander + WP file-upload
+		// flow; they are distinct from gfid-* (Google CDN catalog) and from
+		// gvid-* (variable manager). Surface them under their own `uploaded_fonts`
+		// key with explicit `_meta` discrimination per #719 AC #9.
+		$uploaded_path = 'et_uploaded_fonts';
+		$uploaded_raw  = get_option( 'et_uploaded_fonts', '' );
+		$uploaded      = [];
+		if ( ! empty( $uploaded_raw ) ) {
+			$decoded = maybe_unserialize( $uploaded_raw );
+			$uploaded = self::normalize_storage_array( $decoded ) ?? [];
+		}
+
 		// Cast to object so the JSON shape stays consistent across states.
 		// PHP serializes empty arrays as `[]` and associative arrays as `{}`,
 		// which would silently change the field's type between empty and
 		// populated substrates. The `fonts` field is a keyed map (gfid → record);
 		// emit it as an object always so callers can deserialize against a
 		// fixed schema.
-		return self::envelope_success( [
-			'count' => count( $fonts ),
-			'fonts' => (object) $fonts,
+		$response = self::envelope_success( [
+			'count'          => count( $fonts ),
+			'fonts'          => (object) $fonts,
+			'uploaded_count' => count( $uploaded ),
+			'uploaded_fonts' => (object) $uploaded,
 		] );
+		$body          = $response->get_data();
+		$body['_meta'] = [
+			'source_path'  => empty( $fonts ) ? null : $gfid_path,
+			'probed_paths' => [ $gfid_path, $uploaded_path ],
+			'sources'      => [
+				'fonts'          => [ 'path' => $gfid_path,     'provenance' => 'gfid_catalog' ],
+				'uploaded_fonts' => [ 'path' => $uploaded_path, 'provenance' => 'uploaded_local' ],
+			],
+		];
+		$response->set_data( $body );
+		return $response;
+	}
+
+	/**
+	 * Audit the global_fonts storage landscape — aggregate across the gfid-*
+	 * Google catalog AND the `et_uploaded_fonts` local-hosted surface.
+	 *
+	 * Storage-path contract (#719): the two surfaces are parallel (not
+	 * priority-ordered) and disjoint by key namespace — gfid-* vs upload-id
+	 * keys — so entries are aggregated with explicit provenance and a
+	 * collision warning is logged only if a literal id appears in both
+	 * (which would be a contract violation upstream).
+	 */
+	public static function global_font_audit_storage( $request ) {
+		$aggregated    = [];
+		$entry_sources = [];
+		$warnings      = [];
+		$probed_paths  = [];
+
+		// gfid-* catalog.
+		$gfid_path      = 'et_divi.et_global_data.global_fonts';
+		$probed_paths[] = $gfid_path;
+		$raw            = et_get_option( 'et_global_data' );
+		$global_data    = self::normalize_storage_array( ! empty( $raw ) ? maybe_unserialize( $raw ) : [] ) ?? [];
+		$gfid_fonts     = self::normalize_storage_array( $global_data['global_fonts'] ?? null ) ?? [];
+		foreach ( $gfid_fonts as $id => $entry ) {
+			if ( ! is_string( $id ) ) {
+				continue;
+			}
+			$aggregated[ $id ]    = $entry;
+			$entry_sources[ $id ] = [
+				'path'       => $gfid_path,
+				'provenance' => 'gfid_catalog',
+			];
+		}
+
+		// et_uploaded_fonts surface.
+		$uploaded_path  = 'et_uploaded_fonts';
+		$probed_paths[] = $uploaded_path;
+		$uploaded_raw   = get_option( 'et_uploaded_fonts', '' );
+		if ( ! empty( $uploaded_raw ) ) {
+			$uploaded = self::normalize_storage_array( maybe_unserialize( $uploaded_raw ) );
+			if ( null !== $uploaded ) {
+				foreach ( $uploaded as $id => $entry ) {
+					if ( ! is_string( $id ) ) {
+						continue;
+					}
+					if ( isset( $aggregated[ $id ] ) ) {
+						$warnings[] = [
+							'type'        => 'id_collision',
+							'id'          => $id,
+							'first_path'  => $entry_sources[ $id ]['path'] ?? null,
+							'second_path' => $uploaded_path,
+							'note'        => 'Same id appears in both gfid-* catalog and et_uploaded_fonts — upstream contract violation; verify substrate.',
+						];
+						continue;
+					}
+					$aggregated[ $id ]    = $entry;
+					$entry_sources[ $id ] = [
+						'path'       => $uploaded_path,
+						'provenance' => 'uploaded_local',
+					];
+				}
+			}
+		}
+
+		$response = self::envelope_success( [
+			'aggregated' => (object) $aggregated,
+		] );
+		$body          = $response->get_data();
+		$body['_meta'] = [
+			'probed_paths'  => $probed_paths,
+			'entry_sources' => $entry_sources,
+			'warnings'      => $warnings,
+		];
+		$response->set_data( $body );
+		return $response;
 	}
 
 	/**
@@ -427,10 +531,13 @@ trait DiviOps_Agent_GlobalFont {
 		$global_data['global_fonts'] = $fonts;
 		et_update_option( 'et_global_data', $global_data );
 
-		return self::envelope_success( [
-			'id'    => $id,
-			'font'  => $record,
-		] );
+		return self::attach_meta(
+			self::envelope_success( [
+				'id'    => $id,
+				'font'  => $record,
+			] ),
+			[ 'canonical_path' => 'et_divi.et_global_data.global_fonts' ]
+		);
 	}
 
 	/**
@@ -520,10 +627,13 @@ trait DiviOps_Agent_GlobalFont {
 		$global_data['global_fonts'] = $fonts;
 		et_update_option( 'et_global_data', $global_data );
 
-		return self::envelope_success( [
-			'id'   => $id,
-			'font' => $record,
-		] );
+		return self::attach_meta(
+			self::envelope_success( [
+				'id'   => $id,
+				'font' => $record,
+			] ),
+			[ 'canonical_path' => 'et_divi.et_global_data.global_fonts' ]
+		);
 	}
 
 	/**
@@ -641,15 +751,18 @@ trait DiviOps_Agent_GlobalFont {
 		$global_data['global_fonts'] = $fonts;
 		et_update_option( 'et_global_data', $global_data );
 
-		return self::envelope_success( [
-			'deleted' => [
-				'gfid'   => $id,
-				'family' => $font['family'] ?? '',
-				'label'  => $font['label'] ?? '',
-				'forced' => $force,
-			],
-			'message' => "Font '{$id}' deleted.",
-		] );
+		return self::attach_meta(
+			self::envelope_success( [
+				'deleted' => [
+					'gfid'   => $id,
+					'family' => $font['family'] ?? '',
+					'label'  => $font['label'] ?? '',
+					'forced' => $force,
+				],
+				'message' => "Font '{$id}' deleted.",
+			] ),
+			[ 'canonical_path' => 'et_divi.et_global_data.global_fonts' ]
+		);
 	}
 
 	/**

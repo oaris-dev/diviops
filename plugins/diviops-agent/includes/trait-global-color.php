@@ -41,13 +41,248 @@ if ( ! defined( 'ABSPATH' ) ) {
 trait DiviOps_Agent_GlobalColor {
 
 	/**
-	 * Get global colors.
+	 * Candidate storage paths for the global_colors surface, in READ priority
+	 * order. Per #719 contract, the LIST handler probes these in order and
+	 * returns content from the first non-empty path.
+	 *
+	 * Path 1 is what `et_get_option('et_global_data')` reads on
+	 * one-row-stored substrates (which is the standard 5.x layout); kept as
+	 * an explicit probe entry so the `_meta.source_path` provenance is
+	 * unambiguous to consumers regardless of how Divi happens to resolve
+	 * `et_get_option` on a given substrate. Path 2 is the standalone
+	 * top-level `et_global_data` option — not observed on either tested
+	 * 5.5.x substrate, but kept as a defensive probe in case a non-row-
+	 * stored layout writes it.
+	 */
+	private static function global_color_paths(): array {
+		return [
+			[ 'path' => 'et_divi.et_global_data.global_colors', 'provenance' => 'et_divi_nested' ],
+			[ 'path' => 'et_global_data.global_colors',         'provenance' => 'top_level' ],
+		];
+	}
+
+	/**
+	 * Probe a `et_divi.et_global_data.<sub>` style nested path.
+	 *
+	 * Returns the deserialized array (possibly empty) or null when the path
+	 * holds no usable content. Distinguishes "key absent" from "empty array
+	 * seeded" via null-vs-`[]`.
+	 */
+	private static function read_et_global_data_subkey( string $sub_key ) {
+		$raw         = et_get_option( 'et_global_data' );
+		$global_data = ! empty( $raw ) ? maybe_unserialize( $raw ) : null;
+		$global_data = self::normalize_storage_array( $global_data );
+		if ( null === $global_data ) {
+			return null;
+		}
+		if ( ! array_key_exists( $sub_key, $global_data ) ) {
+			return null;
+		}
+		$value = $global_data[ $sub_key ];
+		return self::normalize_storage_array( $value );
+	}
+
+	/**
+	 * Read one configured global-color path.
+	 */
+	private static function read_global_color_path( string $path ) {
+		if ( 'et_divi.et_global_data.global_colors' === $path ) {
+			return self::read_et_global_data_subkey( 'global_colors' );
+		}
+		if ( 'et_global_data.global_colors' === $path ) {
+			$raw = get_option( 'et_global_data', '' );
+			if ( empty( $raw ) ) {
+				return null;
+			}
+			$top = self::normalize_storage_array( maybe_unserialize( $raw ) );
+			if ( null === $top ) {
+				return null;
+			}
+			return self::normalize_storage_array( $top['global_colors'] ?? null );
+		}
+		return null;
+	}
+
+	/**
+	 * Current WP Customizer color values, keyed by synthetic gcid.
+	 *
+	 * Divi's own GlobalData::get_customizer_colors() reads
+	 * et_get_option($option_name, $default); using the default map alone would
+	 * ignore actual site-level Customizer selections.
+	 */
+	private static function customizer_color_entries(): array {
+		if ( ! class_exists( '\ET\Builder\Packages\GlobalData\GlobalData' ) ) {
+			return [];
+		}
+		$src = \ET\Builder\Packages\GlobalData\GlobalData::$customizer_colors ?? [];
+		$out = [];
+		foreach ( (array) $src as $id => $meta ) {
+			if ( ! is_string( $id ) || '' === $id || ! is_array( $meta ) ) {
+				continue;
+			}
+			$option_name = isset( $meta['option_name'] ) ? (string) $meta['option_name'] : '';
+			$default     = isset( $meta['default'] ) ? (string) $meta['default'] : '';
+			$value       = '' !== $option_name ? et_get_option( $option_name, $default ) : $default;
+			$out[ $id ]  = [
+				'color'       => sanitize_text_field( (string) $value ),
+				'folder'      => 'customizer',
+				'label'       => $meta['label'] ?? $id,
+				'lastUpdated' => null,
+				'status'      => 'active',
+				'usedInPosts' => [],
+				'source'      => 'wp_customizer',
+				'managed_by'  => 'wp_customizer',
+			];
+		}
+		return $out;
+	}
+
+	/**
+	 * Get global colors via the documented priority-ordered probe.
+	 *
+	 * Storage-path contract (#719): per AC #7, returns user-added `gcid-oa-*`
+	 * colors from `et_divi.et_global_data.global_colors` on substrates where
+	 * that path holds them. Per AC #8, also surfaces WP-customizer-default
+	 * colors from `et_divi.{accent_color, header_color, font_color, link_color}`
+	 * with synthetic `gcid-{primary, secondary, heading, body, link}-color`
+	 * IDs (sourced via the GlobalData::$customizer_colors class property so
+	 * future upstream additions land automatically — matches the
+	 * `variable_list` pattern at trait-variable.php:319-332).
+	 *
+	 * Response shape (always top-level `_meta`):
+	 *   {
+	 *     ok: true,
+	 *     data: { colors: { <gcid>: <record>, ... }, customizer: { <gcid>: <record>, ... } },
+	 *     _meta: {
+	 *       source_path:   "et_divi.et_global_data.global_colors" | "et_global_data.global_colors" | null,
+	 *       probed_paths:  [ ... ],
+	 *       customizer_source: "et_divi.<slot>" (always present when customizer-bound colors exist)
+	 *     }
+	 *   }
+	 *
+	 * Response carries the `colors` map as a JSON object regardless of
+	 * emptiness (`(object) []` cast) so consumers can deserialize against
+	 * a fixed schema.
 	 */
 	public static function global_color_list( $request ) {
-		$raw = et_get_option( 'et_global_data' );
-		$global_data = ! empty( $raw ) ? maybe_unserialize( $raw ) : [];
-		$colors = is_array( $global_data ) ? ( $global_data['global_colors'] ?? [] ) : [];
-		return self::envelope_success( $colors );
+		$probed_paths = [];
+		$source_path  = null;
+		$colors       = [];
+		foreach ( self::global_color_paths() as $c ) {
+			$probed_paths[] = $c['path'];
+			if ( null !== $source_path ) {
+				continue;
+			}
+			$content = self::read_global_color_path( $c['path'] );
+			if ( null !== $content && ! empty( $content ) ) {
+				$colors      = $content;
+				$source_path = $c['path'];
+			}
+		}
+
+		// Customizer-bound defaults — parallel surface, always merged when
+		// the GlobalData class exposes them. Per AC #8, surface with synthetic
+		// `gcid-{primary,...}-color` IDs. These are sourced from the class
+		// property at trait-variable.php:319-332 so the pin-defaults pattern
+		// stays in lockstep with `variable_list`.
+		$customizer = self::customizer_color_entries();
+
+		$response = self::envelope_success( [
+			'colors'     => (object) $colors,
+			'customizer' => (object) $customizer,
+		] );
+		$body          = $response->get_data();
+		$meta          = [
+			'source_path'  => $source_path,
+			'probed_paths' => $probed_paths,
+		];
+		if ( ! empty( $customizer ) ) {
+			$meta['customizer_source'] = 'et_divi.{accent_color, header_color, font_color, link_color, ...}';
+		}
+		$body['_meta'] = $meta;
+		$response->set_data( $body );
+		return $response;
+	}
+
+	/**
+	 * Audit the global_colors storage landscape — aggregate across all
+	 * candidate paths with per-entry provenance and warnings.
+	 *
+	 * Storage-path contract (#719): probes every `et_global_data.global_colors`
+	 * candidate path PLUS the customizer-bound defaults at
+	 * `et_divi.{accent_color, header_color, font_color, link_color, ...}`.
+	 * Entries surfaced from the customizer get `provenance: "wp_customizer"`
+	 * distinct from D5 entries. Per-path collisions surface as warnings;
+	 * first-write wins by priority into `aggregated`.
+	 */
+	public static function global_color_audit_storage( $request ) {
+		$aggregated    = [];
+		$entry_sources = [];
+		$warnings      = [];
+		$probed_paths  = [];
+
+		foreach ( self::global_color_paths() as $c ) {
+			$probed_paths[] = $c['path'];
+			$content        = self::read_global_color_path( $c['path'] );
+			if ( null === $content || empty( $content ) ) {
+				continue;
+			}
+			foreach ( $content as $id => $entry ) {
+				if ( ! is_string( $id ) ) {
+					continue;
+				}
+				if ( isset( $aggregated[ $id ] ) ) {
+					$shape_match = self::entries_shape_match( $aggregated[ $id ], $entry );
+					$warnings[]  = [
+						'type'        => $shape_match ? 'id_collision' : 'shape_inconsistency',
+						'id'          => $id,
+						'first_path'  => $entry_sources[ $id ]['path'] ?? null,
+						'second_path' => $c['path'],
+					];
+					continue;
+				}
+				$aggregated[ $id ]    = $entry;
+				$entry_sources[ $id ] = [
+					'path'       => $c['path'],
+					'provenance' => $c['provenance'],
+				];
+			}
+		}
+
+		// Customizer-bound defaults — parallel surface with its own provenance.
+		$customizer_path = 'et_divi.{accent_color, header_color, font_color, link_color, ...}';
+		$probed_paths[]  = $customizer_path;
+		foreach ( self::customizer_color_entries() as $id => $entry ) {
+			if ( isset( $aggregated[ $id ] ) ) {
+				// User override in global_colors wins by D5 priority; record
+				// the customizer as a parallel source for full audit symmetry.
+				$warnings[] = [
+					'type'        => 'id_collision',
+					'id'          => $id,
+					'first_path'  => $entry_sources[ $id ]['path'] ?? null,
+					'second_path' => $customizer_path,
+					'note'        => 'User palette overrides the customizer default; audit surfaces both for inventory.',
+				];
+				continue;
+			}
+			$aggregated[ $id ]    = $entry;
+			$entry_sources[ $id ] = [
+				'path'       => $customizer_path,
+				'provenance' => 'wp_customizer',
+			];
+		}
+
+		$response = self::envelope_success( [
+			'aggregated' => (object) $aggregated,
+		] );
+		$body          = $response->get_data();
+		$body['_meta'] = [
+			'probed_paths'  => $probed_paths,
+			'entry_sources' => $entry_sources,
+			'warnings'      => $warnings,
+		];
+		$response->set_data( $body );
+		return $response;
 	}
 
 	/**
@@ -367,11 +602,14 @@ trait DiviOps_Agent_GlobalColor {
 		$global_data['global_colors'] = $color_map;
 		et_update_option( 'et_global_data', $global_data );
 
-		return self::envelope_success( [
-			'count'   => count( $color_map ),
-			'added'   => $added,
-			'colors'  => $color_map,
-		] );
+		return self::attach_meta(
+			self::envelope_success( [
+				'count'   => count( $color_map ),
+				'added'   => $added,
+				'colors'  => $color_map,
+			] ),
+			[ 'canonical_path' => 'et_divi.et_global_data.global_colors' ]
+		);
 	}
 
 	/**
@@ -516,14 +754,17 @@ trait DiviOps_Agent_GlobalColor {
 		$global_data['global_colors'] = $colors;
 		et_update_option( 'et_global_data', $global_data );
 
-		return self::envelope_success( [
-			'deleted' => [
-				'gcid'   => $gcid,
-				'color'  => $color['color'] ?? '',
-				'label'  => $color['label'] ?? '',
-				'forced' => $force,
-			],
-			'message' => "Color '{$gcid}' deleted.",
-		] );
+		return self::attach_meta(
+			self::envelope_success( [
+				'deleted' => [
+					'gcid'   => $gcid,
+					'color'  => $color['color'] ?? '',
+					'label'  => $color['label'] ?? '',
+					'forced' => $force,
+				],
+				'message' => "Color '{$gcid}' deleted.",
+			] ),
+			[ 'canonical_path' => 'et_divi.et_global_data.global_colors' ]
+		);
 	}
 }
