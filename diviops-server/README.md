@@ -85,18 +85,31 @@ See [server-reference.md](../docs/server-reference.md) for per-tool descriptions
 The package also ships a standalone command-line preset emitter, `diviops-preset`,
 that produces byte-canonical Divi 5.5.x preset JSON gated by the verified-attrs
 registry (`data/verified-attrs.json`). It is independent of the MCP stdio server —
-run it directly:
+run it directly. Current commands:
+
+| Command | Emits |
+|---|---|
+| `diviops-preset button [options]` | `divi/button` group preset |
+| `diviops-preset heading-font [options]` | `divi/font` group preset for `divi/heading` (Pattern A — Google Fonts — or Pattern B — local-hosted) |
 
 ```bash
 diviops-preset button --name "Primary" --bg-color gcid-primary-color \
   --bg-color-hover gcid-secondary-color --radius 8px \
   --font-family Inter --font-weight 600 --font-color gcid-body-color
+
+diviops-preset heading-font --name "Heading H1" --pattern google \
+  --font-family Inter --font-weight 700 \
+  --font-color gcid-heading-color --font-size 48px
 ```
 
 `--dry-run` (the default) composes and prints the canonical JSON with no
 credentials and no network. `--apply` posts to the existing `/preset/create`
 REST route, reusing the same `WP_URL` / `WP_USER` / `WP_APP_PASSWORD` env vars.
-The current scope is one emitter — `divi/button` group presets. See the
+
+The CLI's coverage is intentionally narrow: only the (module, group, variant)
+combinations whose canonical shape is VB-verified in the registry are
+emittable. It is **not** an all-module or all-font-family emitter — each
+additional vertical slice lands with its own verified evidence. See the
 [preset-cli reference](https://github.com/oaris-dev/diviops/blob/main/diviops-server/src/preset-cli/README.md)
 for the full command reference (the `src/` tree is not part of the published
 npm package — this link resolves on the repository).
