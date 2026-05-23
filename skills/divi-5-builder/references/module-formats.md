@@ -337,7 +337,7 @@ Upgrade to Pro: https://diviops.com
 
 > Generated mechanically by `diviops-server/scripts/regen-module-formats.mjs` from `diviops_schema_get_module` dump-all output. Each module block lives between `BEGIN GENERATED:module:divi/<slug>` / `END GENERATED:module:divi/<slug>` HTML-comment sentinels (see `diviops-server/CONTRIBUTING.md` for the full convention). Do **not** edit between sentinels — edits are clobbered on regen.
 
-> Generated against Divi `5.5.1`, schema `a0ec14d562a4…`.
+> Generated against Divi `5.6.0`, schema `e4a89f645f3d…`.
 
 Per CLAUDE.md "Suite architecture coherence": schema dump is the canonical index; VB-verified prose above is the canonical interpretation. The two sections are complementary, not competing — prose explains surprises, this index enumerates paths exhaustively. On conflicts, the prose above wins (per `feedback_vb_first_verification`).
 
@@ -480,6 +480,19 @@ Per CLAUDE.md "Suite architecture coherence": schema dump is the canonical index
 
 <!-- END GENERATED:module:divi/image -->
 
+<!-- BEGIN GENERATED:module:divi/instagram-feed -->
+
+<!-- TIER: free -->
+#### `divi/instagram-feed`
+
+- **feed** — `feed.decoration.background`, `feed.decoration.border`, `feed.decoration.boxShadow`, `feed.decoration.layout`, `feed.decoration.sizing`, `feed.decoration.spacing` _(+innerContent, +advanced)_
+- **followButton** — `followButton.decoration.background`, `followButton.decoration.border`, `followButton.decoration.boxShadow`, `followButton.decoration.button`, `followButton.decoration.font`, `followButton.decoration.sizing`, `followButton.decoration.spacing` _(+innerContent, +advanced)_
+- **item** — `item.decoration.background`, `item.decoration.border`, `item.decoration.boxShadow`, `item.decoration.sizing`, `item.decoration.spacing`
+- **media** — `media.decoration.image`
+- **module** — `module.decoration.animation`, `module.decoration.attributes`, `module.decoration.background`, `module.decoration.border`, `module.decoration.boxShadow`, `module.decoration.conditions`, `module.decoration.disabledOn`, `module.decoration.filters`, `module.decoration.interactions`, `module.decoration.layout`, `module.decoration.order`, `module.decoration.overflow`, `module.decoration.position`, `module.decoration.scroll`, `module.decoration.sizing`, `module.decoration.spacing`, `module.decoration.sticky`, `module.decoration.transform`, `module.decoration.transition`, `module.decoration.zIndex` _(+advanced)_
+
+<!-- END GENERATED:module:divi/instagram-feed -->
+
 <!-- BEGIN GENERATED:module:divi/lottie -->
 
 <!-- TIER: free -->
@@ -549,6 +562,25 @@ Per CLAUDE.md "Suite architecture coherence": schema dump is the canonical index
 - **svg** — _(no decoration groups)_ _(+innerContent, +advanced)_
 
 <!-- END GENERATED:module:divi/svg -->
+
+<!-- BEGIN GENERATED:module:divi/table-of-contents -->
+
+<!-- TIER: free -->
+#### `divi/table-of-contents`
+
+- **emptyState** — `emptyState.decoration.font` _(+innerContent)_
+- **list** — `list.decoration.font` _(+innerContent, +advanced)_
+- **list1** — `list1.decoration.font`
+- **list2** — `list2.decoration.font`
+- **list3** — `list3.decoration.font`
+- **list4** — `list4.decoration.font`
+- **list5** — `list5.decoration.font`
+- **list6** — `list6.decoration.font`
+- **marker** — `marker.decoration.font`
+- **module** — `module.decoration.animation`, `module.decoration.attributes`, `module.decoration.background`, `module.decoration.border`, `module.decoration.boxShadow`, `module.decoration.conditions`, `module.decoration.disabledOn`, `module.decoration.filters`, `module.decoration.interactions`, `module.decoration.layout`, `module.decoration.order`, `module.decoration.overflow`, `module.decoration.position`, `module.decoration.scroll`, `module.decoration.sizing`, `module.decoration.spacing`, `module.decoration.sticky`, `module.decoration.transform`, `module.decoration.transition`, `module.decoration.zIndex` _(+advanced)_
+- **title** — `title.decoration.font` _(+innerContent)_
+
+<!-- END GENERATED:module:divi/table-of-contents -->
 
 <!-- BEGIN GENERATED:module:divi/tabs -->
 

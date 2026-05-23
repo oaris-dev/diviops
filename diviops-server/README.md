@@ -91,6 +91,7 @@ run it directly. Current commands:
 |---|---|
 | `diviops-preset button [options]` | `divi/button` group preset |
 | `diviops-preset heading-font [options]` | `divi/font` group preset for `divi/heading` (Pattern A — Google Fonts — or Pattern B — local-hosted) |
+| `diviops-preset text-body-font [options]` | `divi/font-body` group preset for `divi/text` — **Pattern A (Google Fonts) only**; Pattern B for body-text has no registered canonical shape and is refused |
 
 ```bash
 diviops-preset button --name "Primary" --bg-color gcid-primary-color \
@@ -100,6 +101,10 @@ diviops-preset button --name "Primary" --bg-color gcid-primary-color \
 diviops-preset heading-font --name "Heading H1" --pattern google \
   --font-family Inter --font-weight 700 \
   --font-color gcid-heading-color --font-size 48px
+
+diviops-preset text-body-font --name "Body Text" --pattern google \
+  --font-family Inter --font-weight 400 \
+  --font-color gcid-body-color --font-size 16px
 ```
 
 `--dry-run` (the default) composes and prints the canonical JSON with no
