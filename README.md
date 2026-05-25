@@ -198,7 +198,7 @@ Full troubleshooting matrix and environment-specific setup (DDEV, wp-env, WordPr
 - **[SETUP.md](SETUP.md)** — full onboarding walkthrough (containerized envs, HTTPS, environment variables, WP-CLI security, design-system bootstrap)
 - **[diviops-server/README.md](diviops-server/README.md)** — MCP server reference (response contract, error codes, `dry_run` plan shape, per-tool registration)
 - **[skills/divi-5-builder/SKILL.md](skills/divi-5-builder/SKILL.md)** — block format rules, design patterns, workflow guidance
-- **[CHANGELOG.md](CHANGELOG.md)** — release history
+- **[Releases](https://github.com/oaris-dev/diviops/releases)** — release history
 
 ## License
 
