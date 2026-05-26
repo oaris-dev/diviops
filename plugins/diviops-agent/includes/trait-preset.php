@@ -244,8 +244,8 @@ trait DiviOps_Agent_Preset {
 	 * Without walking both shapes, every chain-only group preset (font, border, box-shadow,
 	 * spacing, button, etc.) reports `ref_count: 0` and gets flagged as orphaned by audit +
 	 * cleanup workflows — even though deleting them silently breaks the module presets that
-	 * pull them in. See issues #302 (5.2.1 version of this, pre-singular split) and #368
-	 * (5.3.0+ dual-shape reconfirmation).
+	 * pull them in. The dual-shape walker is the canonical reference-count path; the prior
+	 * single-shape walker missed every group-preset chain ref.
 	 *
 	 * `presetId` in either shape is sometimes a single string and sometimes an array (Divi
 	 * accepts both via the stacking convention) — handle both.
@@ -496,7 +496,7 @@ trait DiviOps_Agent_Preset {
 		// another preset's groupPresets chain. Without the chain union,
 		// remove_orphans / dedup would silently delete load-bearing group presets
 		// (font, border, box-shadow, spacing, button) that module presets wire in.
-		// See issue #302. Use `+` rather than array_merge so all-digit UUID keys
+		// Use `+` rather than array_merge so all-digit UUID keys
 		// don't get silently re-indexed out of the union. Keep as an assoc set
 		// so membership tests inside the preset loops are O(1) via isset()
 		// rather than O(N) via in_array().
@@ -1212,7 +1212,7 @@ trait DiviOps_Agent_Preset {
 
 		$d5  = self::get_d5_presets();
 
-		// Per-bucket uniqueness check (closes #543). The bucket coords
+		// Per-bucket uniqueness check. The bucket coords
 		// — `(bucket, bucket_key)` — are the natural addressing scope: a
 		// "Hero Title" font preset and a "Hero Title" button preset can
 		// coexist (different buckets), but two "Hero Title" font presets

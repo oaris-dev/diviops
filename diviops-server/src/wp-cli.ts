@@ -100,8 +100,7 @@ const DEFAULT_COMMANDS: readonly string[] = [
   'core verify-checksums',
   'core language list',
   // DB (read-only introspection only — `db query` stays out; it's arbitrary SQL with no scoping
-  // and belongs in a higher-risk tier, tracked separately). See dev-repo #361 Chunk B for the
-  // opt-in design discussion.
+  // and belongs in a higher-risk tier, tracked separately).
   'db columns',
   'db size',
   'db tables',
@@ -390,7 +389,7 @@ export function createWpCli(config: WpCliConfig) {
   // argv because it treats the embedded `'` as a quote toggle. Passing
   // pre-built argv eliminates the parsing step entirely so user-provided
   // strings flow through verbatim — execFile (no shell) handles them
-  // correctly. Raised in PR #473 review (Copilot/Gemini both flagged).
+  // correctly. Raised in prior review feedback (Copilot/Gemini both flagged).
   //
   // Result shape:
   //   - `output` is the legacy concatenated stream (stdout + stderr,
@@ -417,7 +416,7 @@ export function createWpCli(config: WpCliConfig) {
   //       - `'exited'`       — execFile launched the child and it exited
   //                            with a numeric code (success path is
   //                            distinguished by `success: true`)
-  //     Codex review pass 1 (PR #561) flagged that `meta_wp_cli` conflated
+  //     A prior Codex review pass flagged that `meta_wp_cli` conflated
   //     `'rejected'` with `'killed'` because both share `exitCode: null`,
   //     causing real timeouts to be misreported as pre-execution
   //     rejections. Pass 2 flagged that ENOENT-style spawn failures were

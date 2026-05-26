@@ -11,7 +11,7 @@
  * This module adds a second-pass validator specifically for DEFAULT-tier
  * FS commands. EXTENDED-tier FS commands (`import`, `eval-file`) are
  * already opt-in via DIVIOPS_WP_CLI_ALLOW; their validation is tracked
- * separately (see dev-repo #271 scope discussion).
+ * separately as a future scope expansion.
  *
  * Guarantees:
  *   - All path arguments must resolve under SAFE_FS_ROOT after canonicalization

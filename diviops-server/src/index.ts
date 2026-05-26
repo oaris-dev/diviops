@@ -133,7 +133,17 @@ const server = new McpServer({
 //                 before connecting transport, so this should not be
 //                 reachable in normal flow).
 type HandshakeState =
-  | { kind: "ok"; capabilities: Record<string, boolean>; pluginVersion: string }
+  | {
+      kind: "ok";
+      capabilities: Record<string, boolean>;
+      pluginVersion: string;
+      // ADR-003 / ADR-007 Pro-extension fields — present on `ok` only.
+      // Free-only sites populate these as `false` / `{}` via wp-client
+      // normalization so gates can read them without per-call checks.
+      proActive: boolean;
+      availableTargets: Record<string, { present: boolean; version?: string | null }>;
+      activeModules: Record<string, boolean>;
+    }
   | { kind: "failed" }
   | { kind: "pending" };
 
@@ -195,6 +205,60 @@ function registerLocalTool<H extends (args: any) => Promise<any>>(
   config: any,
   handler: H,
 ): void {
+  recordIdempotent(name, config?._meta);
+  server.registerTool(name, config, handler);
+}
+
+/**
+ * Register a Pro-coverage-slice tool (ADR-003 / ADR-007).
+ *
+ * Differs from `registerPluginTool` in three ways:
+ *
+ * 1. **Capability-key override.** The MCP tool name follows the
+ *    `diviops_<namespace>_<verb>` convention (e.g. `diviops_fc_product_list`),
+ *    while the plugin-side capability key follows ADR-007's
+ *    `<target>_<noun>_<verb>` shape (e.g. `fluentcart_product_list`).
+ *    The two don't share a stripping rule, so the capability key must
+ *    be passed explicitly.
+ *
+ * 2. **Conditional registration.** The tool is registered with the
+ *    MCP server ONLY when all four gates align at handshake time:
+ *      - handshakeState.kind === "ok"
+ *      - proActive === true
+ *      - availableTargets[target].present === true
+ *      - activeModules[target] === true
+ *      - capabilities[capabilityKey] === true
+ *
+ *    When any gate is false the call is a no-op — the tool simply
+ *    doesn't exist on the MCP surface. Per ADR-007 "no error surface,
+ *    just absence."
+ *
+ * 3. **No runtime requireCapability().** Because registration is
+ *    already gated at startup, the wrapped handler doesn't need to
+ *    recheck capabilities on every call. The wp.request() call is
+ *    still naturally guarded by the plugin's permission_callback +
+ *    route presence at the WP side.
+ *
+ * **Call-site ordering.** This helper MUST be invoked from
+ * `registerProTools()` (run after the handshake settles in `main()`),
+ * not at module load time. Calling it at module load would always
+ * short-circuit on `handshakeState.kind === "pending"`. The Pro tools
+ * are defined inside `registerProTools()` precisely so they can read
+ * the resolved handshakeState.
+ */
+function registerProTool<H extends (args: any) => Promise<any>>(
+  name: string,
+  config: any,
+  handler: H,
+  gates: { target: string; capabilityKey: string },
+): void {
+  if (handshakeState.kind !== "ok") return;
+  if (!handshakeState.proActive) return;
+  const target = handshakeState.availableTargets[gates.target];
+  if (!target || target.present !== true) return;
+  if (handshakeState.activeModules[gates.target] !== true) return;
+  if (!handshakeState.capabilities[gates.capabilityKey]) return;
+
   recordIdempotent(name, config?._meta);
   server.registerTool(name, config, handler);
 }
@@ -3684,16 +3748,417 @@ registerPluginTool(
   },
 );
 
+// ── Pro coverage-slice tools (ADR-003 / ADR-007) ─────────────────────
+//
+// FCP V1 read tools — ADR-007 § 7.1. Registered through `registerProTool`
+// which short-circuits when any of {pro_active, target presence, module
+// activation, capability key} gates are false. On Free-only sites the
+// FCP tools simply don't exist on the MCP surface — no error envelope,
+// no missing-capability hint, just absence.
+//
+// Run inside `registerProTools()` rather than at module load because the
+// gates read handshakeState which is `pending` until `main()` runs.
+
+function registerProTools(): void {
+  // diviops_fc_product_list — bridges /diviops/v1/pro/fluentcart/products
+  registerProTool(
+    "diviops_fc_product_list",
+    {
+      description:
+        "List FluentCart Pro products (Pro tier; requires FluentCart Pro installed + activated). Returns a paginated summary list with product identity (id, title, slug, status), variation_type, variants_count, and min/max price. Filterable by `search` (LIKE post_title), `type` (one of physical/digital/subscription/onetime/simple/variations), and `status` (one of publish/draft/pending/private/trash; default returns publish+draft+pending+private). Read-only. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }; the success payload is { products: ProductSummary[], pagination: { page, per_page, total, total_pages }, filters: { search, type, status } }. Error codes: invalid_input (HTTP 400) when type/status filter is out of range; fluentcart.module_inactive (HTTP 412) when FluentCart is uninstalled or the diviops-agent-pro module toggle is off; fluentcart.query_failed (HTTP 500) when the underlying FluentCart model query raises an exception (message field carries the upstream exception). Use this before authoring a Divi commerce page to identify which product IDs / types to render.",
+      inputSchema: {
+        page: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .default(1)
+          .describe("Page number, 1-indexed. Default 1."),
+        per_page: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .default(20)
+          .describe(
+            "Page size. Default 20, clamped to a max of 100 per call.",
+          ),
+        search: z
+          .string()
+          .optional()
+          .describe(
+            "Search term — matches against product post_title via SQL LIKE %term%. Case-insensitive on most MySQL collations.",
+          ),
+        type: z
+          .enum([
+            "physical",
+            "digital",
+            "subscription",
+            "onetime",
+            "simple",
+            "variations",
+          ])
+          .optional()
+          .describe(
+            "Product type filter. physical/digital filter by fulfillment_type on variations; subscription/onetime filter by payment_type on variations; simple filters detail.variation_type='simple'; variations filters detail.variation_type in {simple_variations, advanced_variations}.",
+          ),
+        status: z
+          .enum(["publish", "draft", "pending", "private", "trash"])
+          .optional()
+          .describe(
+            "Post status filter. Defaults to all visible-to-admin statuses (publish+draft+pending+private). Pass 'trash' explicitly to inspect trashed products.",
+          ),
+      },
+      annotations: { idempotentHint: true },
+      _meta: { idempotent: "true" },
+    },
+    async ({
+      page,
+      per_page,
+      search,
+      type,
+      status,
+    }: {
+      page?: number;
+      per_page?: number;
+      search?: string;
+      type?: string;
+      status?: string;
+    }) => {
+      const body: Record<string, unknown> = {};
+      if (page !== undefined) body.page = page;
+      if (per_page !== undefined) body.per_page = per_page;
+      if (search !== undefined) body.search = search;
+      if (type !== undefined) body.type = type;
+      if (status !== undefined) body.status = status;
+      const result = await wp.requestEnveloped(
+        "/pro/fluentcart/products",
+        { method: "POST", body },
+      );
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: serializeEnvelope(result, "diviops_fc_product_list"),
+          },
+        ],
+      };
+    },
+    { target: "fluentcart", capabilityKey: "fluentcart_product_list" },
+  );
+
+  // diviops_fc_product_get — bridges /diviops/v1/pro/fluentcart/products/{id}
+  registerProTool(
+    "diviops_fc_product_get",
+    {
+      description:
+        "Fetch a single FluentCart Pro product by ID, including the ProductDetail row and a list of variation IDs (Pro tier; requires FluentCart Pro installed + activated). Read-only. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }; the success payload is { product: { id, title, slug, status, created_at, modified_at, variation_type, variants_count, min_price, max_price, stock_availability, excerpt, content, author_id, view_url, edit_url }, detail: { fulfillment_type, variation_type, min_price, max_price, manage_stock, manage_downloadable, stock_availability, default_variation_id, ... } | null, variation_ids: number[], variations_count }. Use the variation_ids list to follow up with a (future) diviops_fc_variation_list call. Error codes: invalid_input (HTTP 400) when id is not a positive integer; not_found (HTTP 404) when no product matches the ID (or it's filtered out by the FluentCart auto-draft global scope); fluentcart.module_inactive (HTTP 412) when FluentCart is uninstalled or the module toggle is off; fluentcart.query_failed (HTTP 500) when the FluentCart model query raises an exception.",
+      inputSchema: {
+        id: z
+          .number()
+          .int()
+          .positive()
+          .describe(
+            "FluentCart product ID (the post ID of the fluent_products CPT entry).",
+          ),
+      },
+      annotations: { idempotentHint: true },
+      _meta: { idempotent: "true" },
+    },
+    async ({ id }: { id: number }) => {
+      const result = await wp.requestEnveloped(
+        `/pro/fluentcart/products/${id}`,
+        { method: "POST" },
+      );
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: serializeEnvelope(result, "diviops_fc_product_get"),
+          },
+        ],
+      };
+    },
+    { target: "fluentcart", capabilityKey: "fluentcart_product_get" },
+  );
+
+  // ── V2 — simple product writes ─────────────────────────────────────
+  //
+  // Three Pro write tools backing the constrained simple-onetime-product
+  // surface from ADR-007 § 7.1. All three accept `dry_run` (default
+  // false), emit the standard envelope, and refuse non-simple shapes
+  // with `fluentcart.unsupported_product_shape` so the V3 variation
+  // surface can own multi-variant complexity cleanly.
+
+  // diviops_fc_product_create — POST /diviops/v1/pro/fluentcart/products/create
+  registerProTool(
+    "diviops_fc_product_create",
+    {
+      description:
+        "Create a simple FluentCart Pro product (Pro tier; requires FluentCart Pro installed + activated). V2 scope: simple onetime products only — one default variant, `detail.variation_type=\"simple\"`, `payment_type=\"onetime\"`, `fulfillment_type=\"digital\"|\"physical\"`. Multi-variation, subscriptions, downloadables, gallery, taxonomies, activation_limit, and license-flow fields ship in later verticals and are refused here. Required: `title` (1-200 chars). Optional: `status` (`draft`|`publish`|`pending`|`private`; default `draft`), `content`, `excerpt`, `fulfillment_type` (default `digital`), `price` (≥0; default 0), `compare_price` (≥0; must be ≥ `price` when provided), `sku` (unique across variations). Returns the standardized envelope { ok, data?, error: { code, message, hint? } }; apply-mode success payload is { product, detail, variation_ids, variations_count, product_id, detail_id, default_variation_id } (HTTP 201). Error codes: invalid_input (400) when any input violates the constraints above; fluentcart.sku_conflict (409) when the provided SKU is already in use; fluentcart.module_inactive (412); fluentcart.command_failed (500) when wp_insert_post/ProductDetail/ProductVariation creation raises. Idempotency: NOT idempotent — repeat calls create distinct products." +
+        DRY_RUN_DESC_SUFFIX,
+      inputSchema: {
+        title: z
+          .string()
+          .min(1)
+          .max(200)
+          .describe(
+            "Product title (post_title). 1-200 chars. Used verbatim as the default variation's variation_title.",
+          ),
+        status: z
+          .enum(["draft", "publish", "pending", "private"])
+          .optional()
+          .describe("Post status. Defaults to 'draft'."),
+        content: z
+          .string()
+          .optional()
+          .describe(
+            "Long product description (post_content). Optional.",
+          ),
+        excerpt: z
+          .string()
+          .optional()
+          .describe(
+            "Short product summary (post_excerpt). Optional.",
+          ),
+        fulfillment_type: z
+          .enum(["digital", "physical"])
+          .optional()
+          .describe(
+            "Fulfillment shape — digital downloads vs physical shipping. Defaults to 'digital'.",
+          ),
+        price: z
+          .number()
+          .min(0)
+          .optional()
+          .describe(
+            "Default variation's item_price (currency units, e.g. dollars — converted to cents server-side). Non-negative. Defaults to 0.",
+          ),
+        compare_price: z
+          .number()
+          .min(0)
+          .optional()
+          .describe(
+            "Default variation's compare-at price (strike-through). Must be ≥ `price` when both provided. Non-negative.",
+          ),
+        sku: z
+          .string()
+          .optional()
+          .describe(
+            "Default variation's SKU. Must be unique across all FluentCart variations. Omit to skip SKU assignment.",
+          ),
+        dry_run: DRY_RUN_FIELD,
+      },
+      annotations: { idempotentHint: false },
+      _meta: { idempotent: "false" },
+    },
+    async ({
+      title,
+      status,
+      content,
+      excerpt,
+      fulfillment_type,
+      price,
+      compare_price,
+      sku,
+      dry_run,
+    }: {
+      title: string;
+      status?: string;
+      content?: string;
+      excerpt?: string;
+      fulfillment_type?: string;
+      price?: number;
+      compare_price?: number;
+      sku?: string;
+      dry_run?: boolean;
+    }) => {
+      const body: Record<string, unknown> = { title };
+      if (status !== undefined) body.status = status;
+      if (content !== undefined) body.content = content;
+      if (excerpt !== undefined) body.excerpt = excerpt;
+      if (fulfillment_type !== undefined) body.fulfillment_type = fulfillment_type;
+      if (price !== undefined) body.price = price;
+      if (compare_price !== undefined) body.compare_price = compare_price;
+      if (sku !== undefined) body.sku = sku;
+      if (dry_run !== undefined) body.dry_run = dry_run;
+      const result = await wp.requestEnveloped(
+        "/pro/fluentcart/products/create",
+        { method: "POST", body },
+      );
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: serializeEnvelope(result, "diviops_fc_product_create"),
+          },
+        ],
+      };
+    },
+    { target: "fluentcart", capabilityKey: "fluentcart_product_create" },
+  );
+
+  // diviops_fc_product_update — POST /diviops/v1/pro/fluentcart/products/{id}/update
+  registerProTool(
+    "diviops_fc_product_update",
+    {
+      description:
+        "Update a simple FluentCart Pro product (Pro tier; requires FluentCart Pro installed + activated). V2 scope: simple onetime products only — accepts partial updates on title, status, content, excerpt, fulfillment_type, price, compare_price, sku. Refuses non-simple products (variation_type other than 'simple', or default variant with payment_type other than 'onetime') with `fluentcart.unsupported_product_shape` (HTTP 422) — multi-variation + subscription writes ship in V3+. Required: `id` (positive integer; the post ID of the fluent_products CPT entry). All other fields optional; only changed fields are applied. When no field actually changes, returns `ok:true` with `data.noop: true` (apply mode) or an empty-plan dry-run summary. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }; apply-mode success payload is { product, detail, variation_ids, variations_count, changed_fields[] } (or { noop: true, product, detail, ... } on a no-op). Error codes: invalid_input (400) when any field violates the constraints; not_found (404) when the product ID does not exist; fluentcart.unsupported_product_shape (422) when the product is not simple/onetime; fluentcart.sku_conflict (409) when a new SKU collides with another variation; fluentcart.module_inactive (412); fluentcart.command_failed (500). Idempotency: conditional — repeating an identical update is a no-op." +
+        DRY_RUN_DESC_SUFFIX,
+      inputSchema: {
+        id: z
+          .number()
+          .int()
+          .positive()
+          .describe(
+            "FluentCart product ID (the post ID of the fluent_products CPT entry).",
+          ),
+        title: z
+          .string()
+          .min(1)
+          .max(200)
+          .optional()
+          .describe("New product title. 1-200 chars."),
+        status: z
+          .enum(["draft", "publish", "pending", "private"])
+          .optional()
+          .describe("New post status."),
+        content: z.string().optional().describe("New long description."),
+        excerpt: z.string().optional().describe("New short summary."),
+        fulfillment_type: z
+          .enum(["digital", "physical"])
+          .optional()
+          .describe("New fulfillment shape."),
+        price: z
+          .number()
+          .min(0)
+          .optional()
+          .describe(
+            "New default-variation item_price (currency units). Non-negative.",
+          ),
+        compare_price: z
+          .number()
+          .min(0)
+          .optional()
+          .describe(
+            "New compare-at price. Must be ≥ `price` when both provided.",
+          ),
+        sku: z
+          .string()
+          .optional()
+          .describe(
+            "New SKU for the default variation. Empty string clears the SKU.",
+          ),
+        dry_run: DRY_RUN_FIELD,
+      },
+      annotations: { idempotentHint: false },
+      _meta: { idempotent: "conditional" },
+    },
+    async ({
+      id,
+      title,
+      status,
+      content,
+      excerpt,
+      fulfillment_type,
+      price,
+      compare_price,
+      sku,
+      dry_run,
+    }: {
+      id: number;
+      title?: string;
+      status?: string;
+      content?: string;
+      excerpt?: string;
+      fulfillment_type?: string;
+      price?: number;
+      compare_price?: number;
+      sku?: string;
+      dry_run?: boolean;
+    }) => {
+      const body: Record<string, unknown> = {};
+      if (title !== undefined) body.title = title;
+      if (status !== undefined) body.status = status;
+      if (content !== undefined) body.content = content;
+      if (excerpt !== undefined) body.excerpt = excerpt;
+      if (fulfillment_type !== undefined) body.fulfillment_type = fulfillment_type;
+      if (price !== undefined) body.price = price;
+      if (compare_price !== undefined) body.compare_price = compare_price;
+      if (sku !== undefined) body.sku = sku;
+      if (dry_run !== undefined) body.dry_run = dry_run;
+      const result = await wp.requestEnveloped(
+        `/pro/fluentcart/products/${id}/update`,
+        { method: "POST", body },
+      );
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: serializeEnvelope(result, "diviops_fc_product_update"),
+          },
+        ],
+      };
+    },
+    { target: "fluentcart", capabilityKey: "fluentcart_product_update" },
+  );
+
+  // diviops_fc_product_delete — POST /diviops/v1/pro/fluentcart/products/{id}/delete
+  registerProTool(
+    "diviops_fc_product_delete",
+    {
+      description:
+        "Trash a FluentCart Pro product (Pro tier; requires FluentCart Pro installed + activated). V2 semantics: trash, NOT hard-delete. Uses `wp_trash_post` (not FluentCart's `ProductResource::delete`, which permanently destroys detail / variation rows) so the trash bin remains recoverable from the FluentCart admin UI. Repeat-safe: trashing an already-trashed product returns `ok:true` with `data.already_trashed: true` (no error). Permanent delete is intentionally NOT in V2 — surfaces in a later vertical with explicit policy. Pending-order protection: a product with at least one on-hold or processing order returns `fluentcart.pending_orders` (HTTP 409) and is not bypassable in V2. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }; apply-mode success payload is { trashed: true, product_id } or { already_trashed: true, product_id }. Error codes: invalid_input (400) when id is not a positive integer; not_found (404) when no product matches; fluentcart.pending_orders (409) when the product has on-hold/processing orders; fluentcart.module_inactive (412); fluentcart.command_failed (500). Idempotency: conditional — repeat trash is a no-op." +
+        DRY_RUN_DESC_SUFFIX,
+      inputSchema: {
+        id: z
+          .number()
+          .int()
+          .positive()
+          .describe(
+            "FluentCart product ID (the post ID of the fluent_products CPT entry).",
+          ),
+        dry_run: DRY_RUN_FIELD,
+      },
+      annotations: { idempotentHint: false },
+      _meta: { idempotent: "conditional" },
+    },
+    async ({ id, dry_run }: { id: number; dry_run?: boolean }) => {
+      const body: Record<string, unknown> = {};
+      if (dry_run !== undefined) body.dry_run = dry_run;
+      const result = await wp.requestEnveloped(
+        `/pro/fluentcart/products/${id}/delete`,
+        { method: "POST", body },
+      );
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: serializeEnvelope(result, "diviops_fc_product_delete"),
+          },
+        ],
+      };
+    },
+    { target: "fluentcart", capabilityKey: "fluentcart_product_delete" },
+  );
+}
+
 // ── Start ────────────────────────────────────────────────────────────
 
 async function main() {
-  // Capability handshake — populate the per-tool gate map (#486).
+  // Capability handshake — populate the per-tool gate map (#486)
+  // and the ADR-003 / ADR-007 Pro-extension surface (target presence,
+  // module activation). On Free-only sites the Pro fields are
+  // normalized to `false` / `{}` by wp-client.
   try {
     const hs = await wp.handshake(SERVER_VERSION);
     handshakeState = {
       kind: "ok",
       capabilities: hs.capabilities,
       pluginVersion: hs.plugin_version,
+      proActive: hs.pro_active === true,
+      availableTargets: hs.available_targets ?? {},
+      activeModules: hs.active_modules ?? {},
     };
     const diviInfo = hs.divi.active
       ? `Divi ${hs.divi.version ?? "unknown"}`
@@ -3701,8 +4166,11 @@ async function main() {
     const capCount = Object.keys(hs.capabilities).filter(
       (k) => hs.capabilities[k],
     ).length;
+    const proInfo = handshakeState.proActive
+      ? `Pro active (${hs.pro_version ?? "version unknown"})`
+      : "Pro inactive";
     console.error(
-      `Handshake OK: plugin ${hs.plugin_version}, ${diviInfo}, ${capCount} capabilities`,
+      `Handshake OK: plugin ${hs.plugin_version}, ${diviInfo}, ${proInfo}, ${capCount} capabilities`,
     );
     if (capCount === 0) {
       console.error(
@@ -3720,11 +4188,18 @@ async function main() {
     // failed so plugin-touching tools fall through to their own
     // wp.request() calls and surface the real error (401, 5xx, etc.)
     // instead of being misreported as missing capabilities.
-    // Codex review on PR #525: pre-#486 behavior surfaced the actual
-    // cause; the gate must preserve that.
+    // Prior review feedback: the pre-handshake-gate behavior surfaced the
+    // actual cause; the gate must preserve that.
     handshakeState = { kind: "failed" };
     console.error(`Handshake warning (gate disabled): ${msg}`);
   }
+
+  // Pro coverage-slice registration must run AFTER the handshake so the
+  // gates (`pro_active`, `available_targets`, `active_modules`,
+  // capability map) reflect the connected site's actual state. On Free
+  // sites — or when the handshake failed — registerProTool's internal
+  // gates short-circuit so no Pro tools register.
+  registerProTools();
 
   const transport = new StdioServerTransport();
   await server.connect(transport);

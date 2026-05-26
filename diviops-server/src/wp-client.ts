@@ -433,6 +433,28 @@ export class WPClient {
       result.capabilities = {};
     }
 
+    // ADR-003 / ADR-007 Pro-extension fields. Free-only sites omit
+    // them entirely; pre-V1 Pro plugins might emit partial shapes.
+    // Normalize defensively so downstream gates can read uniform
+    // types without per-call shape checks.
+    if (typeof result.pro_active !== 'boolean') {
+      result.pro_active = false;
+    }
+    if (
+      result.available_targets === null ||
+      typeof result.available_targets !== 'object' ||
+      Array.isArray(result.available_targets)
+    ) {
+      result.available_targets = {};
+    }
+    if (
+      result.active_modules === null ||
+      typeof result.active_modules !== 'object' ||
+      Array.isArray(result.active_modules)
+    ) {
+      result.active_modules = {};
+    }
+
     return result;
   }
 }

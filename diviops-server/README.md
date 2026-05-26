@@ -64,7 +64,7 @@ The skill enforces the Divi block format, the design system, and the response co
 
 ## Tools at a glance
 
-The server exposes **73 tools** across the categories below. Each category links to representative tools; the full table lives in [server-reference.md](../docs/server-reference.md).
+The server exposes **73 always-on tools** across the categories below. Each category links to representative tools; the full table lives in [server-reference.md](../docs/server-reference.md).
 
 | Category | Use case | Tool prefixes |
 |----------|----------|---------------|
@@ -77,6 +77,15 @@ The server exposes **73 tools** across the categories below. Each category links
 | Render + validate | Preview HTML, validate block markup | `render_preview`, `validate_blocks` |
 | WP-CLI passthrough | Escape hatch for site ops | `meta_wp_cli` |
 | Cache + meta | Connection probe, identity, icons, cache flush | `meta_*` |
+
+Additional **conditionally-registered Pro tools** appear only on sites that have the Pro plugin (`diviops-agent-pro`) active alongside the target coverage plugin:
+
+| Category | Conditional gate | Tool names |
+|----------|------------------|------------|
+| FluentCart reads (V1) | Pro plugin + FluentCart installed + module enabled | `diviops_fc_product_list`, `diviops_fc_product_get` |
+| FluentCart simple product writes (V2) | Pro plugin + FluentCart installed + module enabled | `diviops_fc_product_create`, `diviops_fc_product_update`, `diviops_fc_product_delete` |
+
+When the gates are not satisfied, the tools simply don't appear on the MCP surface — no error envelope, no missing-capability hint. See the `diviops-fluentcart` skill bundle for the operator-side guide.
 
 See [server-reference.md](../docs/server-reference.md) for per-tool descriptions.
 

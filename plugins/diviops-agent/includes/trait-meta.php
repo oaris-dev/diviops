@@ -1186,7 +1186,19 @@ trait DiviOps_Agent_Meta {
 	/**
 	 * Version handshake — verifies MCP server and WP plugin compatibility.
 	 *
-	 * Returns plugin version, API capabilities, and Divi status.
+	 * Returns plugin version, API capabilities, Divi status, and (when
+	 * present) the ADR-003 / ADR-007 Pro-extension surface contributed
+	 * via the `diviops_agent_handshake_extensions` filter:
+	 *   - pro_active: true when a Pro plugin (`diviops-agent-pro`) is
+	 *     active. Pro plugins always pass this as true; absence of the
+	 *     field implies `false` at the consumer side.
+	 *   - available_targets: per-target presence ({ present, version }).
+	 *     Drives the MCP server's conditional FCP / future-coverage-slice
+	 *     tool registration.
+	 *   - active_modules: per-target activation toggle (admin-controlled).
+	 *   - capabilities: extended with Pro module capability keys
+	 *     (e.g. `fluentcart_product_list`).
+	 *
 	 * Returns HTTP 426 (Upgrade Required) if the server version is too old.
 	 */
 	public static function handshake( $request ) {
@@ -1219,7 +1231,7 @@ trait DiviOps_Agent_Meta {
 			$capabilities[ $key ] = true;
 		}
 
-		return rest_ensure_response( [
+		$response = [
 			'compatible'     => true,
 			'plugin_version' => self::VERSION,
 			'min_server'     => self::MIN_SERVER_VERSION,
@@ -1228,6 +1240,62 @@ trait DiviOps_Agent_Meta {
 				'version' => $divi_version,
 			],
 			'capabilities'   => $capabilities,
-		] );
+		];
+
+		// ADR-003 / ADR-007 extensions: when a Pro plugin is installed it
+		// contributes additional handshake fields via this filter. Free-
+		// only sites receive no filter callbacks → no Pro fields → the
+		// MCP server reads `pro_active: undefined` → no Pro tools register.
+		// Filter contract: returns an array merged into $response. Pro
+		// plugin's contribution is responsible for unioning
+		// `available_targets`, `active_modules`, and `capabilities` with
+		// any prior callbacks' contributions (handled in
+		// DiviOps_Agent_Pro_Handshake_Contributor::contribute).
+		$extensions = apply_filters( 'diviops_agent_handshake_extensions', [] );
+
+		if ( is_array( $extensions ) && ! empty( $extensions ) ) {
+			// Whitelist the known Pro-extension keys (review-feedback
+			// hardening). A full `array_merge($response, $extensions)`
+			// would let a buggy or malicious filter callback overwrite
+			// core fields (`compatible`, `plugin_version`, `min_server`,
+			// `divi`) — the handshake's contract must remain stable
+			// regardless of which Pro plugins are loaded.
+			$allowed_extension_keys = [
+				'pro_active',
+				'pro_version',
+				'available_targets',
+				'active_modules',
+			];
+			foreach ( $allowed_extension_keys as $key ) {
+				if ( array_key_exists( $key, $extensions ) ) {
+					$response[ $key ] = $extensions[ $key ];
+				}
+			}
+
+			// Capabilities merge separately so existing Free keys
+			// always win on collision — a Pro module must never shadow
+			// an existing Free capability key with the same name.
+			if ( isset( $extensions['capabilities'] ) && is_array( $extensions['capabilities'] ) ) {
+				$response['capabilities'] = array_merge(
+					$extensions['capabilities'],
+					$response['capabilities']
+				);
+			}
+		}
+
+		// Cast empty maps to (object) so they JSON-serialize as `{}`
+		// instead of `[]`. PHP's json_encode emits `[]` for an empty
+		// associative array; downstream consumers (wp-client.ts) and
+		// any third-party MCP server reading this surface expect map
+		// shapes uniformly, not array-or-map polymorphism.
+		$response['capabilities'] = (object) $response['capabilities'];
+		if ( isset( $response['available_targets'] ) && is_array( $response['available_targets'] ) ) {
+			$response['available_targets'] = (object) $response['available_targets'];
+		}
+		if ( isset( $response['active_modules'] ) && is_array( $response['active_modules'] ) ) {
+			$response['active_modules'] = (object) $response['active_modules'];
+		}
+
+		return rest_ensure_response( $response );
 	}
 }

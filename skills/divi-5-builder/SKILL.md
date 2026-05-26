@@ -12,6 +12,10 @@ metadata:
 
 Build modern, VB-editable Divi 5 pages programmatically via MCP tools.
 
+## DiviOps harness conventions
+
+Cross-cutting contracts the Divi-builder tools inherit — response envelope (`{ ok, data?, error: { code, message, hint?, data? } }`), capability handshake / three-layer gating, `dry_run` plan shape, idempotency conventions, and namespace-prefixed error codes (`<ns>.not_configured` gate vs `<ns>.command_failed` runtime) — live in the [diviops/](../diviops/SKILL.md) primer skill. SCF coverage lives in [diviops-scf/](../diviops-scf/SKILL.md). When this skill references "the standardized envelope" or "the capability handshake," the primer is the source.
+
 ## Reference Files
 
 Read the right file for the task at hand — don't load everything.

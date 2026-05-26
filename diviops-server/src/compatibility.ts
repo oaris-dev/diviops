@@ -75,6 +75,18 @@ export function compareVersions(a: string, b: string): -1 | 0 | 1 {
 }
 
 /**
+ * Per-target presence record (ADR-003 § handshake shape). `present`
+ * reports whether the target plugin is installed + bootable on this
+ * site; `version` is advisory only and may be null when version
+ * detection is unavailable (front-end requests can't always reach
+ * `get_plugin_data()`).
+ */
+export interface HandshakeTarget {
+  present: boolean;
+  version?: string | null;
+}
+
+/**
  * Shape returned by `POST /diviops/v1/handshake`.
  *
  * `capabilities` is a per-tool map keyed by post-rename tool slug
@@ -82,6 +94,12 @@ export function compareVersions(a: string, b: string): -1 | 0 | 1 {
  * a string[] of coarse namespace keys; the server normalizes that
  * legacy shape to an empty map (every gated tool then fails fast
  * with an upgrade hint, which is the intended behavior).
+ *
+ * ADR-003 / ADR-007 Pro-extension fields (`pro_active`,
+ * `pro_version`, `available_targets`, `active_modules`) are
+ * optional — Free-only sites omit them entirely. The server treats
+ * absence as `pro_active: false` + empty target/module maps so
+ * Pro-gated tools cleanly decline registration on Free sites.
  */
 export interface HandshakeResult {
   compatible: boolean;
@@ -92,6 +110,14 @@ export interface HandshakeResult {
     version: string | null;
   };
   capabilities: Record<string, boolean>;
+  /** ADR-007 § 7.1 — Pro plugin presence flag. Undefined on Free sites. */
+  pro_active?: boolean;
+  /** ADR-003 — Pro plugin version (when `pro_active === true`). */
+  pro_version?: string;
+  /** ADR-003 — per-target presence map (FluentCart, future slices). */
+  available_targets?: Record<string, HandshakeTarget>;
+  /** ADR-003 — per-target admin-controlled activation toggle. */
+  active_modules?: Record<string, boolean>;
 }
 
 /**
