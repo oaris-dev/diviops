@@ -4141,6 +4141,350 @@ function registerProTools(): void {
     },
     { target: "fluentcart", capabilityKey: "fluentcart_product_delete" },
   );
+
+  // ── V3 — variation read/write + license-settings read/write ────────
+  //
+  // V3 expands the FCP authoring surface so a draft simple-product catalog
+  // can represent ADR-005 commercial shape: annual rows become subscription
+  // products, lifetime rows stay onetime, and per-tier activation_limit
+  // is writable. Activation limits live in `ProductMeta.license_settings`
+  // per FluentCart Pro source (NOT variation `other_info`), so license
+  // settings have their own dedicated read/write tools.
+  //
+  // V3 stays inside the simple-product default-variation contract:
+  // no multi-variation create/delete, no signup-fee writes,
+  // no license activation flow, no update-ZIP / readme / banner config.
+
+  // diviops_fc_variation_list — POST /diviops/v1/pro/fluentcart/products/{id}/variations
+  registerProTool(
+    "diviops_fc_variation_list",
+    {
+      description:
+        "List FluentCart Pro variations for a product (Pro tier; V3; requires FluentCart Pro installed + activated). Read-only. Returns every variation row attached to the product with its subscription shape (payment_type, other_info.repeat_interval/times/trial_days/manage_setup_fee) and a license-settings projection when ProductMeta.license_settings is configured. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }; success payload is { product_id, variation_type, default_variation_id, variations: VariationRow[], variations_count }. Each VariationRow carries { id, post_id, variation_title, sku, payment_type, item_price, compare_price, fulfillment_type, stock_status, manage_stock, available, other_info: { ...all stored keys... }, license: { activation_limit, validity: { unit, value } } | null }. Unit convention: item_price and compare_price are stored cents (e.g. 1900 = $19.00). compare_price is null when FCP stores the no-compare sentinel 0; sku is null when the column is SQL NULL OR an empty string. license is null when the product has no license_settings; otherwise activation_limit is null/'' (unset), 0 (unlimited per FluentCart Pro License::getActivationLimit), or a positive integer (max activations). validity.unit is one of: lifetime/day/week/month/year. Error codes: invalid_input (400) when id is not a positive integer; not_found (404) when the product does not exist; fluentcart.module_inactive (412); fluentcart.query_failed (500). Idempotency: read-only.",
+      inputSchema: {
+        product_id: z
+          .number()
+          .int()
+          .positive()
+          .describe(
+            "FluentCart product ID (the post ID of the fluent_products CPT entry).",
+          ),
+      },
+      annotations: { idempotentHint: true },
+      _meta: { idempotent: "true" },
+    },
+    async ({ product_id }: { product_id: number }) => {
+      const result = await wp.requestEnveloped(
+        `/pro/fluentcart/products/${product_id}/variations`,
+        { method: "POST" },
+      );
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: serializeEnvelope(result, "diviops_fc_variation_list"),
+          },
+        ],
+      };
+    },
+    { target: "fluentcart", capabilityKey: "fluentcart_variation_list" },
+  );
+
+  // diviops_fc_variation_update — POST /diviops/v1/pro/fluentcart/products/{product_id}/variations/{variation_id}/update
+  registerProTool(
+    "diviops_fc_variation_update",
+    {
+      description:
+        "Update the default variation of a simple FluentCart Pro product (Pro tier; V3; requires FluentCart Pro installed + activated). V3 scope: writes the product's default variation only; refuses non-simple products and non-default variations with `fluentcart.unsupported_product_shape` (HTTP 422). Multi-variation create/delete remains out of scope. Accepts partial updates on price, compare_price, sku, payment_type, and the subscription shape (repeat_interval, times, trial_days, manage_setup_fee). Switching `payment_type: \"subscription\"` requires `repeat_interval` (yearly/half_yearly/quarterly/monthly/weekly/daily) — either supplied in the same call or already stored. Switching to `onetime` strips the subscription-only keys from other_info, matching ProductVariationRequest::beforeValidation. `manage_setup_fee: \"yes\"` requires signup_fee + signup_fee_name which are out of scope for V3 (use FluentCart admin UI for setup fees); only `manage_setup_fee: \"no\"` is accepted. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }; apply-mode success payload is { product_id, variation_id, changed_fields[], variation: VariationRow, product_price_range: { min_price, max_price } | null } (or { noop: true, product_id, variation_id, variation } when nothing changes). VariationRow mirrors the diviops_fc_variation_list shape — sku, item_price, compare_price, payment_type, other_info, license round-trip without a follow-up read. Unit asymmetry: write inputs (price, compare_price) are currency units (e.g. 19.00); VariationRow returns item_price + compare_price in stored cents. Error codes: invalid_input (400); not_found (404); fluentcart.unsupported_product_shape (422); fluentcart.sku_conflict (409); fluentcart.module_inactive (412); fluentcart.command_failed (500). Idempotency: conditional — identical repeat is a no-op." +
+        DRY_RUN_DESC_SUFFIX,
+      inputSchema: {
+        product_id: z
+          .number()
+          .int()
+          .positive()
+          .describe(
+            "FluentCart product ID (the post ID of the fluent_products CPT entry).",
+          ),
+        variation_id: z
+          .number()
+          .int()
+          .positive()
+          .describe(
+            "FluentCart variation ID. Must be the product's default variation (V3 constraint).",
+          ),
+        price: z
+          .number()
+          .min(0)
+          .optional()
+          .describe(
+            "Variation item_price in currency units (e.g. 19.00). Non-negative.",
+          ),
+        compare_price: z
+          .number()
+          .min(0)
+          .optional()
+          .describe(
+            "Variation compare-at price in currency units. Must be ≥ price when both provided.",
+          ),
+        sku: z
+          .string()
+          .optional()
+          .describe(
+            "Variation SKU. Must be unique across all FluentCart variations and at most 30 characters. Empty string clears the SKU (reads back as null).",
+          ),
+        payment_type: z
+          .enum(["onetime", "subscription"])
+          .optional()
+          .describe(
+            "Variation payment_type. Switching to 'subscription' requires repeat_interval. Switching to 'onetime' strips subscription-only fields from other_info.",
+          ),
+        repeat_interval: z
+          .enum([
+            "yearly",
+            "half_yearly",
+            "quarterly",
+            "monthly",
+            "weekly",
+            "daily",
+          ])
+          .optional()
+          .describe(
+            "Subscription billing interval. Required when switching to payment_type='subscription' unless already stored. For ADR-005 annual rows use 'yearly'.",
+          ),
+        times: z
+          .number()
+          .int()
+          .min(0)
+          .optional()
+          .describe(
+            "Number of subscription billing cycles. 0 = indefinite (default for V3 subscription rows).",
+          ),
+        trial_days: z
+          .number()
+          .int()
+          .min(0)
+          .max(365)
+          .optional()
+          .describe("Trial-period length in days (0-365)."),
+        manage_setup_fee: z
+          .enum(["no"])
+          .optional()
+          .describe(
+            "Setup-fee mode. V3 only accepts 'no' — manage_setup_fee='yes' requires signup_fee + signup_fee_name which are out of scope for V3.",
+          ),
+        dry_run: DRY_RUN_FIELD,
+      },
+      annotations: { idempotentHint: false },
+      _meta: { idempotent: "conditional" },
+    },
+    async ({
+      product_id,
+      variation_id,
+      price,
+      compare_price,
+      sku,
+      payment_type,
+      repeat_interval,
+      times,
+      trial_days,
+      manage_setup_fee,
+      dry_run,
+    }: {
+      product_id: number;
+      variation_id: number;
+      price?: number;
+      compare_price?: number;
+      sku?: string;
+      payment_type?: string;
+      repeat_interval?: string;
+      times?: number;
+      trial_days?: number;
+      manage_setup_fee?: string;
+      dry_run?: boolean;
+    }) => {
+      const body: Record<string, unknown> = {};
+      if (price !== undefined) body.price = price;
+      if (compare_price !== undefined) body.compare_price = compare_price;
+      if (sku !== undefined) body.sku = sku;
+      if (payment_type !== undefined) body.payment_type = payment_type;
+      if (repeat_interval !== undefined) body.repeat_interval = repeat_interval;
+      if (times !== undefined) body.times = times;
+      if (trial_days !== undefined) body.trial_days = trial_days;
+      if (manage_setup_fee !== undefined) body.manage_setup_fee = manage_setup_fee;
+      if (dry_run !== undefined) body.dry_run = dry_run;
+      const result = await wp.requestEnveloped(
+        `/pro/fluentcart/products/${product_id}/variations/${variation_id}/update`,
+        { method: "POST", body },
+      );
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: serializeEnvelope(result, "diviops_fc_variation_update"),
+          },
+        ],
+      };
+    },
+    { target: "fluentcart", capabilityKey: "fluentcart_variation_update" },
+  );
+
+  // diviops_fc_license_settings_get — POST /diviops/v1/pro/fluentcart/products/{id}/license-settings
+  registerProTool(
+    "diviops_fc_license_settings_get",
+    {
+      description:
+        "Read the per-product FluentCart Pro license-settings projection (Pro tier; V3; requires FluentCart Pro installed + activated). FluentCart Pro stores license settings in `ProductMeta` under meta_key='license_settings'; this tool reads that meta row and joins it against the product's variations so each variation surfaces with its current activation_limit + validity. Read-only. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }; success payload is { product_id, enabled: boolean, version, prefix, variations: [ { variation_id, title, activation_limit, validity: { unit, value } | null } ] }. Storage semantics: `enabled` is stored as 'yes'/'no' in FCP and projected to boolean here. `activation_limit` is null/'' (unconfigured), 0 (unlimited per FluentCart Pro License::getActivationLimit), or a positive integer. `validity.unit` is one of lifetime/day/week/month/year. Variations the product has but license_settings doesn't mention surface with `activation_limit: null` and `validity: null`. Variations license_settings mentions that no longer exist on the product are filtered out — only the live variation set is returned. Error codes: invalid_input (400) when id is not a positive integer; not_found (404) when the product does not exist; fluentcart.module_inactive (412); fluentcart.query_failed (500). Idempotency: read-only.",
+      inputSchema: {
+        product_id: z
+          .number()
+          .int()
+          .positive()
+          .describe(
+            "FluentCart product ID (the post ID of the fluent_products CPT entry).",
+          ),
+      },
+      annotations: { idempotentHint: true },
+      _meta: { idempotent: "true" },
+    },
+    async ({ product_id }: { product_id: number }) => {
+      const result = await wp.requestEnveloped(
+        `/pro/fluentcart/products/${product_id}/license-settings`,
+        { method: "POST" },
+      );
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: serializeEnvelope(
+              result,
+              "diviops_fc_license_settings_get",
+            ),
+          },
+        ],
+      };
+    },
+    { target: "fluentcart", capabilityKey: "fluentcart_license_settings_get" },
+  );
+
+  // diviops_fc_license_settings_update — POST /diviops/v1/pro/fluentcart/products/{id}/license-settings/update
+  registerProTool(
+    "diviops_fc_license_settings_update",
+    {
+      description:
+        "Write the per-product FluentCart Pro license-settings ProductMeta row (Pro tier; V3; requires FluentCart Pro installed + activated). Authors `enabled`, `version`, `prefix`, and per-variation `activation_limit` + `validity` — the storage shape FluentCart Pro reads via LicenseGenerationHandler when an order is placed. V3 explicitly skips configuring update-ZIP `global_update_file`, `wp` readme/banner/icon, downloadables, and the license-activation API; those fields are preserved when present but not authored. Refuses bundle products with `fluentcart.unsupported_product_shape` (HTTP 422). Inputs (all optional except product_id; partial updates supported): `enabled` (boolean — projected to FCP's 'yes'/'no' on write), `version` (required when enabling; max 50 chars), `prefix` (max 20 chars), `variations` (array of { variation_id (required), activation_limit (integer ≥ 0 or null; 0 = unlimited per FluentCart Pro License::getActivationLimit), validity (optional { unit: lifetime/day/week/month/year, value: positive integer } or null to auto-derive) }). When `validity` is omitted on a variation, the validity is derived from the variation's payment_type: subscription+yearly → { unit: 'year', value: 1 }; onetime → { unit: 'lifetime', value: 1 }. When `enabled: true` and the product carries variations, every variation must end up with a non-empty validity.unit. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }; apply-mode success payload is { product_id, changed_fields[], license_settings: <same shape as diviops_fc_license_settings_get> } (or { noop: true, product_id, license_settings } on no-op). Error codes: invalid_input (400) when any field violates the constraints (unknown variation_id, negative activation_limit, missing version when enabling, missing validity.unit when enabling, bad enum value); not_found (404) when the product does not exist; fluentcart.unsupported_product_shape (422) on bundle products; fluentcart.module_inactive (412); fluentcart.command_failed (500). Idempotency: conditional — identical repeat is a no-op." +
+        DRY_RUN_DESC_SUFFIX,
+      inputSchema: {
+        product_id: z
+          .number()
+          .int()
+          .positive()
+          .describe(
+            "FluentCart product ID (the post ID of the fluent_products CPT entry).",
+          ),
+        enabled: z
+          .boolean()
+          .optional()
+          .describe(
+            "Toggle FCP license-settings enablement. Stored as 'yes'/'no' in FCP. When true, version is required (use '1.0.0-beta' for the dogfood catalog).",
+          ),
+        version: z
+          .string()
+          .max(50)
+          .optional()
+          .describe(
+            "License-settings version string (max 50 chars). Required when enabling. Recommended: '1.0.0-beta' for a beta-cohort catalog.",
+          ),
+        prefix: z
+          .string()
+          .max(20)
+          .optional()
+          .describe(
+            "License-key prefix (max 20 chars). Recommended: 'DOP' for DiviOps products.",
+          ),
+        variations: z
+          .array(
+            z.object({
+              variation_id: z
+                .number()
+                .int()
+                .positive()
+                .describe("Target variation ID; must belong to this product."),
+              activation_limit: z
+                .number()
+                .int()
+                .min(0)
+                .nullable()
+                .optional()
+                .describe(
+                  "Activation limit. 0 = unlimited (per FluentCart Pro License::getActivationLimit). null clears the configured limit.",
+                ),
+              validity: z
+                .object({
+                  unit: z.enum(["lifetime", "day", "week", "month", "year"]),
+                  value: z.number().int().positive(),
+                })
+                .nullable()
+                .optional()
+                .describe(
+                  "Validity period. When omitted, derived from the variation's payment_type (subscription+yearly → year/1; onetime → lifetime/1). When null, force-rederived from current variation state.",
+                ),
+            }),
+          )
+          .optional()
+          .describe(
+            "Per-variation license configuration. Each entry's variation_id must belong to the product. Omitted variations preserve their existing license_settings.",
+          ),
+        dry_run: DRY_RUN_FIELD,
+      },
+      annotations: { idempotentHint: false },
+      _meta: { idempotent: "conditional" },
+    },
+    async ({
+      product_id,
+      enabled,
+      version,
+      prefix,
+      variations,
+      dry_run,
+    }: {
+      product_id: number;
+      enabled?: boolean;
+      version?: string;
+      prefix?: string;
+      variations?: Array<{
+        variation_id: number;
+        activation_limit?: number | null;
+        validity?: { unit: string; value: number } | null;
+      }>;
+      dry_run?: boolean;
+    }) => {
+      const body: Record<string, unknown> = {};
+      if (enabled !== undefined) body.enabled = enabled;
+      if (version !== undefined) body.version = version;
+      if (prefix !== undefined) body.prefix = prefix;
+      if (variations !== undefined) body.variations = variations;
+      if (dry_run !== undefined) body.dry_run = dry_run;
+      const result = await wp.requestEnveloped(
+        `/pro/fluentcart/products/${product_id}/license-settings/update`,
+        { method: "POST", body },
+      );
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: serializeEnvelope(
+              result,
+              "diviops_fc_license_settings_update",
+            ),
+          },
+        ],
+      };
+    },
+    {
+      target: "fluentcart",
+      capabilityKey: "fluentcart_license_settings_update",
+    },
+  );
 }
 
 // ── Start ────────────────────────────────────────────────────────────
