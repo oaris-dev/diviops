@@ -88,6 +88,7 @@ Additional **conditionally-registered Pro tools** appear only on sites that have
 | FluentCart license-settings read/write (V3) | Pro plugin + FluentCart Pro installed + module enabled | `diviops_fc_license_settings_get`, `diviops_fc_license_settings_update` |
 | FluentCart order readback + guarded mark-paid (V3.1) | Pro plugin + FluentCart installed + module enabled | `diviops_fc_order_list`, `diviops_fc_order_get`, `diviops_fc_order_mark_paid` |
 | FluentCart license readback (V3.1) | Pro plugin + FluentCart Pro installed + module enabled | `diviops_fc_license_list`, `diviops_fc_license_get`, `diviops_fc_license_activations_list` |
+| FluentCart checkout readiness / gateway inspection (V3.2) | Pro plugin + FluentCart installed + module enabled | `diviops_fc_status`, `diviops_fc_gateway_list`, `diviops_fc_gateway_get` |
 
 When the gates are not satisfied, the tools simply don't appear on the MCP surface — no error envelope, no missing-capability hint. See the `diviops-fluentcart` skill bundle for the operator-side guide.
 

@@ -4953,6 +4953,116 @@ function registerProTools(): void {
       capabilityKey: "fluentcart_license_activations_list",
     },
   );
+
+  // ── V3.2 — checkout readiness / status ────────────────────────────
+  //
+  // Pre-check surface so smoke runners can answer "is this site ready
+  // to checkout?" without admin UI, raw SQL, or eval-file probes. All
+  // three tools are read-only.
+
+  // diviops_fc_status — POST /diviops/v1/pro/fluentcart/status
+  registerProTool(
+    "diviops_fc_status",
+    {
+      description:
+        "Inspect FluentCart checkout/license readiness (Pro tier; V3.2). Read-only. Returns a structured snapshot covering: site (wp_url, host, is_local_hint, wp_version), plugins (fluent_cart, fluent_cart_pro, diviops_agent_pro — { active, version } each), store (order_mode, currency, currency_symbol, currency_position, store_country, store_state, checkout/cart/receipt/shop page IDs), modules (license.active, stock_management.active+advanced_inventory), tables (core / licensing / advanced_inventory groups with count/expected/ok and gated_by hints — `ok: null` means the group is optional and module is off), gateways (registered_count, enabled_count, enabled_methods, registered_methods, local_safe_methods — slug-only summary; use diviops_fc_gateway_list/get for details), counts (orders, licenses, license_activations), and readiness (verdict: green|yellow|red, checkout_writable, license_writable, local_no_money_smoke_ready, public_launch_ready, warnings[], blockers[]). Distinguishes \"fluentcart inactive\" from \"core schema missing\" from \"license module on but tables missing\" — the same gaps that drove earlier local checkout/license smokes into WP-CLI and eval-file probes. No secrets are returned at any layer; gateway settings are summarized through diviops_fc_gateway_* tools. Pass include_table_lists=true to receive the full present[]/missing[] table arrays (default: count/expected/ok only, to keep the response compact). Returns the standardized envelope { ok, data?, error: { code, message, hint? } }. Error codes: fluentcart.module_inactive (412); fluentcart.command_failed (500).",
+      inputSchema: {
+        include_table_lists: z
+          .boolean()
+          .optional()
+          .default(false)
+          .describe(
+            "When true, include the full present[] and missing[] arrays in each `tables.*` group. Default false to keep the response compact.",
+          ),
+      },
+      annotations: { idempotentHint: true },
+      _meta: { idempotent: "true" },
+    },
+    async ({
+      include_table_lists,
+    }: {
+      include_table_lists?: boolean;
+    }) => {
+      const body: Record<string, unknown> = {};
+      if (include_table_lists !== undefined)
+        body.include_table_lists = include_table_lists;
+      const result = await wp.requestEnveloped(
+        "/pro/fluentcart/status",
+        { method: "POST", body },
+      );
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: serializeEnvelope(result, "diviops_fc_status"),
+          },
+        ],
+      };
+    },
+    { target: "fluentcart", capabilityKey: "fluentcart_status_get" },
+  );
+
+  // diviops_fc_gateway_list — POST /diviops/v1/pro/fluentcart/gateways
+  registerProTool(
+    "diviops_fc_gateway_list",
+    {
+      description:
+        "List FluentCart registered payment gateways with secrets redacted (Pro tier; V3.2). Read-only. Returns one row per gateway registered with FluentCart's GatewayManager — each row carries `method`, `title`, `admin_title`, `label`, `route`, `enabled`, `upcoming`, `requires_pro`, `no_real_money` (true for offline/COD), `local_safe`, `webhook_required` (capability hint — reachability is NOT probed), `credentials_configured` (best-effort boolean inferred without reading credential values), `supports.subscriptions`, `supports.refund`, `settings_summary` (allowlisted non-secret fields only — `is_active`, `payment_mode`, `checkout_mode`, `checkout_label`, `checkout_logo`, `checkout_instructions`, `provider`, `define_*_keys` boolean flags, `*_is_encrypted` flags), `settings_source` (e.g. `fct_meta:fluent_cart_payment_settings_stripe`), `description`, `brand_color`, and a sanitized `meta` bag. NEVER returns: API keys, secret keys, publishable keys, webhook signing secrets, client IDs, customer IDs, vendor/seller IDs, tokens, or any value matching the credential-substring heuristic. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }; success payload: { gateways: GatewayRow[], count }. Error codes: fluentcart.module_inactive (412); fluentcart.command_failed (500). Use as the discovery call before diviops_fc_gateway_get to inspect a specific method.",
+      inputSchema: {},
+      annotations: { idempotentHint: true },
+      _meta: { idempotent: "true" },
+    },
+    async () => {
+      const result = await wp.requestEnveloped(
+        "/pro/fluentcart/gateways",
+        { method: "POST" },
+      );
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: serializeEnvelope(result, "diviops_fc_gateway_list"),
+          },
+        ],
+      };
+    },
+    { target: "fluentcart", capabilityKey: "fluentcart_gateway_list" },
+  );
+
+  // diviops_fc_gateway_get — POST /diviops/v1/pro/fluentcart/gateways/{method}
+  registerProTool(
+    "diviops_fc_gateway_get",
+    {
+      description:
+        "Fetch a single FluentCart payment gateway by method slug with secrets redacted (Pro tier; V3.2). Read-only. Same row shape as diviops_fc_gateway_list plus a `field_metadata` array describing what settings the gateway accepts (key + label + type + description from the gateway's `fields()` map) WITHOUT any stored values. `method` is one of the registered slugs from diviops_fc_gateway_list — common values: `offline_payment` (COD, local-safe, no webhook, no real money — the slug to use for local smoke runs), `stripe`, `paypal`, `paystack`, `airwallex`, `paddle` (Pro), `mollie` (Pro), `authorize_net` (Pro). NEVER returns credential values; field_metadata is metadata-only. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }; success payload: { gateway: GatewayRow }. Error codes: invalid_input (HTTP 400) when method is empty; not_found (HTTP 404) when the slug is not registered (hint: \"Call diviops_fc_gateway_list to see the registered method slugs.\"); fluentcart.module_inactive (412); fluentcart.command_failed (500). Useful for confirming the local-safe gateway is enabled before a smoke run, and for surfacing whether Paddle / Stripe / etc. is registered without exposing keys.",
+      inputSchema: {
+        method: z
+          .string()
+          .min(1)
+          .describe(
+            "Gateway method slug — e.g. `offline_payment`, `stripe`, `paypal`, `paddle`, `mollie`. Run diviops_fc_gateway_list first to enumerate registered slugs.",
+          ),
+      },
+      annotations: { idempotentHint: true },
+      _meta: { idempotent: "true" },
+    },
+    async ({ method }: { method: string }) => {
+      const safe = encodeURIComponent(method);
+      const result = await wp.requestEnveloped(
+        `/pro/fluentcart/gateways/${safe}`,
+        { method: "POST" },
+      );
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: serializeEnvelope(result, "diviops_fc_gateway_get"),
+          },
+        ],
+      };
+    },
+    { target: "fluentcart", capabilityKey: "fluentcart_gateway_get" },
+  );
 }
 
 // ── Start ────────────────────────────────────────────────────────────
