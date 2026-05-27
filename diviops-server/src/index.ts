@@ -4485,6 +4485,474 @@ function registerProTools(): void {
       capabilityKey: "fluentcart_license_settings_update",
     },
   );
+
+  // ── V3.1 — order/license/activation read + guarded mark-paid ───────
+  //
+  // FluentCart commerce-artifact readback surface plus a single
+  // mutating tool: a guarded offline mark-paid that mirrors FCP's
+  // OrderController::markAsPaid. Lifts the local checkout/license
+  // smoke off of eval-file PHP probes.
+
+  // diviops_fc_order_list — POST /diviops/v1/pro/fluentcart/orders
+  registerProTool(
+    "diviops_fc_order_list",
+    {
+      description:
+        "List FluentCart orders for commerce dogfooding / smoke baselines (Pro tier; V3.1; requires FluentCart installed + activated). Returns a paginated summary with order identity (id, status, payment_status), gateway info (payment_method + payment_method_title, mode), totals (currency, total_amount, total_paid), fulfillment_type, type (payment/subscription), customer (customer_id + customer_email), item_count, license_count, and timestamps (created_at, updated_at, completed_at). Filterable by status, payment_status, payment_method, product_id, customer_email, and mode (test/live). Read-only. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }; the success payload is { orders: OrderSummary[], pagination: { page, per_page, total, total_pages }, filters: { ... } }. Error codes: invalid_input (HTTP 400) when status/payment_status/mode is out of range; fluentcart.module_inactive (HTTP 412); fluentcart.query_failed (HTTP 500). Use this alongside diviops_fc_order_get / diviops_fc_license_list to verify a smoke run without raw SQL probes.",
+      inputSchema: {
+        page: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .default(1)
+          .describe("Page number, 1-indexed. Default 1."),
+        per_page: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .default(20)
+          .describe("Page size. Default 20, clamped to a max of 100."),
+        status: z
+          .enum([
+            "on-hold",
+            "pending",
+            "processing",
+            "completed",
+            "canceled",
+            "refunded",
+            "failed",
+            "draft",
+          ])
+          .optional()
+          .describe(
+            "Order status filter (fct_orders.status). Match exact values such as 'completed' or 'on-hold'.",
+          ),
+        payment_status: z
+          .enum([
+            "pending",
+            "paid",
+            "partially_paid",
+            "partially_refunded",
+            "refunded",
+            "failed",
+          ])
+          .optional()
+          .describe("Payment status filter (fct_orders.payment_status)."),
+        payment_method: z
+          .string()
+          .optional()
+          .describe(
+            "Exact-match payment_method (e.g. 'offline_payment', 'stripe'). Case-sensitive — FluentCart stores gateway slugs verbatim.",
+          ),
+        product_id: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .describe(
+            "FluentCart product ID (post_id of the fluent_products CPT entry). Filters to orders with at least one matching order item.",
+          ),
+        customer_email: z
+          .string()
+          .optional()
+          .describe(
+            "Filter to orders whose customer record has this email (exact match).",
+          ),
+        mode: z
+          .enum(["test", "live"])
+          .optional()
+          .describe(
+            "Filter to test-mode or live-mode orders. Useful for smoke runs to isolate the test gateway corpus.",
+          ),
+      },
+      annotations: { idempotentHint: true },
+      _meta: { idempotent: "true" },
+    },
+    async ({
+      page,
+      per_page,
+      status,
+      payment_status,
+      payment_method,
+      product_id,
+      customer_email,
+      mode,
+    }: {
+      page?: number;
+      per_page?: number;
+      status?: string;
+      payment_status?: string;
+      payment_method?: string;
+      product_id?: number;
+      customer_email?: string;
+      mode?: string;
+    }) => {
+      const body: Record<string, unknown> = {};
+      if (page !== undefined) body.page = page;
+      if (per_page !== undefined) body.per_page = per_page;
+      if (status !== undefined) body.status = status;
+      if (payment_status !== undefined) body.payment_status = payment_status;
+      if (payment_method !== undefined) body.payment_method = payment_method;
+      if (product_id !== undefined) body.product_id = product_id;
+      if (customer_email !== undefined) body.customer_email = customer_email;
+      if (mode !== undefined) body.mode = mode;
+      const result = await wp.requestEnveloped("/pro/fluentcart/orders", {
+        method: "POST",
+        body,
+      });
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: serializeEnvelope(result, "diviops_fc_order_list"),
+          },
+        ],
+      };
+    },
+    { target: "fluentcart", capabilityKey: "fluentcart_order_list" },
+  );
+
+  // diviops_fc_order_get — POST /diviops/v1/pro/fluentcart/orders/{id}
+  registerProTool(
+    "diviops_fc_order_get",
+    {
+      description:
+        "Fetch a single FluentCart order with line items, transactions, and related license IDs (Pro tier; V3.1; requires FluentCart installed + activated). Read-only. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }; the success payload is { order: OrderSummary, items: OrderItem[], transactions: Transaction[], license_ids: number[] }. OrderItem includes id, post_id (product CPT post_id), object_id (variation_id), title, quantity, unit_price, line_total, payment_type, fulfillment_type. Transaction includes id, status, payment_method, payment_mode, transaction_type, total, currency, created_at. license_ids carries the IDs of any fct_licenses rows tied to this order (use diviops_fc_license_get to fetch each row's redacted shape). Does NOT expose payment credentials, gateway secrets, or full license keys. Error codes: invalid_input (HTTP 400) when id is not a positive integer; not_found (HTTP 404) when no order matches; fluentcart.module_inactive (HTTP 412); fluentcart.query_failed (HTTP 500).",
+      inputSchema: {
+        id: z
+          .number()
+          .int()
+          .positive()
+          .describe(
+            "FluentCart order ID (fct_orders.id; for the local smoke runbook this is the order receipt anchor).",
+          ),
+      },
+      annotations: { idempotentHint: true },
+      _meta: { idempotent: "true" },
+    },
+    async ({ id }: { id: number }) => {
+      const result = await wp.requestEnveloped(
+        `/pro/fluentcart/orders/${id}`,
+        { method: "POST" },
+      );
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: serializeEnvelope(result, "diviops_fc_order_get"),
+          },
+        ],
+      };
+    },
+    { target: "fluentcart", capabilityKey: "fluentcart_order_get" },
+  );
+
+  // diviops_fc_order_mark_paid — POST /diviops/v1/pro/fluentcart/orders/{id}/mark-paid
+  registerProTool(
+    "diviops_fc_order_mark_paid",
+    {
+      description:
+        "Guarded local/offline mark-paid for a FluentCart order (Pro tier; V3.1; requires FluentCart installed + activated). Mirrors the canonical `FluentCart\\App\\Http\\Controllers\\OrderController::markAsPaid` sequence — updates the pending offline transaction, flips payment_status to 'paid' (unless partially_refunded), flips order status to 'processing' (and 'completed' for digital fulfillment), then dispatches `OrderPaid` (which fires the `fluent_cart/order_paid` WordPress action, the listener `LicenseGenerationHandler::maybeGenerateLicensesOnPurchaseSuccess` hangs off of) plus `OrderStatusUpdated`. Does NOT directly insert license rows — license generation is a side effect of the dispatched event, exactly like the FCP admin path. Refuses non-offline gateways (anything other than `payment_method='offline_payment'`) with `fluentcart.unsupported_payment_method` (HTTP 422) — this slice is for local/test/COD smokes only. Refuses canceled orders with `fluentcart.order_canceled` (HTTP 422). Already-paid orders are repeat-safe: returns `ok:true` with `data.already_paid: true` (no second event fires). **dry_run defaults to TRUE** for safety; apply requires `dry_run:false` PLUS `confirm_order_id` + `confirm_payment_method` + `confirm_due_amount` matching current state. Dry-run payload: { dry_run:true, plan: { summary, changes[] (payment_status, status, total_paid, transaction), warnings[] }, events: ['fluent_cart/order_paid', 'fluent_cart/order_status_updated'], order_id, licenses_before }. Apply payload: { order: OrderSummary (post-mutation), transaction: TransactionSummary, events_fired: string[], licenses_before, licenses_after, licenses_created, license_ids: number[], licenses: LicenseRedactedSummary[] (no full keys). Error codes: invalid_input (400) when id/confirmation fields are wrong; not_found (404); fluentcart.order_canceled (422); fluentcart.unsupported_payment_method (422); fluentcart.module_inactive (412); fluentcart.command_failed (500). Idempotency: repeat-safe via already_paid sentinel." +
+        " Pass dry_run: false plus the confirm_* fields to apply.",
+      inputSchema: {
+        id: z
+          .number()
+          .int()
+          .positive()
+          .describe(
+            "FluentCart order ID (fct_orders.id) to mark paid.",
+          ),
+        dry_run: z
+          .boolean()
+          .optional()
+          .default(true)
+          .describe(
+            "When true (default), return the change plan without mutating state. Apply requires explicit dry_run: false + the confirm_* fields.",
+          ),
+        confirm_order_id: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .describe(
+            "Apply-mode confirmation: must equal `id`. Prevents accidentally marking the wrong order paid.",
+          ),
+        confirm_payment_method: z
+          .string()
+          .optional()
+          .describe(
+            "Apply-mode confirmation: must equal the order's current payment_method (e.g. 'offline_payment').",
+          ),
+        confirm_due_amount: z
+          .number()
+          .int()
+          .min(0)
+          .optional()
+          .describe(
+            "Apply-mode confirmation: must equal (total_amount - total_paid) in stored units (cents). Inspect via diviops_fc_order_get.",
+          ),
+        mark_paid_note: z
+          .string()
+          .optional()
+          .describe(
+            "Optional sanitize_text_field note to attach to the order's `note` column. Mirrors the admin mark-paid form field.",
+          ),
+      },
+      annotations: { idempotentHint: false },
+      _meta: { idempotent: "conditional" },
+    },
+    async ({
+      id,
+      dry_run,
+      confirm_order_id,
+      confirm_payment_method,
+      confirm_due_amount,
+      mark_paid_note,
+    }: {
+      id: number;
+      dry_run?: boolean;
+      confirm_order_id?: number;
+      confirm_payment_method?: string;
+      confirm_due_amount?: number;
+      mark_paid_note?: string;
+    }) => {
+      const body: Record<string, unknown> = {};
+      // dry_run defaults to true at the MCP level — pass through whatever
+      // the caller sent so the plugin can apply the same default.
+      if (dry_run !== undefined) body.dry_run = dry_run;
+      else body.dry_run = true;
+      if (confirm_order_id !== undefined) body.confirm_order_id = confirm_order_id;
+      if (confirm_payment_method !== undefined)
+        body.confirm_payment_method = confirm_payment_method;
+      if (confirm_due_amount !== undefined)
+        body.confirm_due_amount = confirm_due_amount;
+      if (mark_paid_note !== undefined) body.mark_paid_note = mark_paid_note;
+      const result = await wp.requestEnveloped(
+        `/pro/fluentcart/orders/${id}/mark-paid`,
+        { method: "POST", body },
+      );
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: serializeEnvelope(result, "diviops_fc_order_mark_paid"),
+          },
+        ],
+      };
+    },
+    { target: "fluentcart", capabilityKey: "fluentcart_order_mark_paid" },
+  );
+
+  // diviops_fc_license_list — POST /diviops/v1/pro/fluentcart/licenses
+  registerProTool(
+    "diviops_fc_license_list",
+    {
+      description:
+        "List FluentCart Pro licenses (Pro tier; V3.1; requires FluentCart Pro + Licensing module). Read-only. Filterable by product_id, variation_id, order_id, customer_id, status (active/inactive/disabled/expired/in_trial). License keys are NEVER returned in full — every row carries `redacted_key` only (first 4 + last 4 with ellipsis); use diviops_fc_license_get with explicit secret-handling opt-in if a full key is required for an authorized integration test. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }; the success payload is { licenses: LicenseSummary[], pagination: { page, per_page, total, total_pages }, filters: { ... } }. LicenseSummary includes id, status, product_id, variation_id, order_id, customer_id, subscription_id, limit (0 = unlimited per License::getActivationLimit), activation_count, expiration_date, created_at, updated_at, redacted_key. Error codes: invalid_input (HTTP 400) when status is out of range; fluentcart.module_inactive (HTTP 412); fluentcart.licensing_unavailable (HTTP 412) when FluentCart Pro's Licensing module is absent; fluentcart.query_failed (HTTP 500).",
+      inputSchema: {
+        page: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .default(1)
+          .describe("Page number, 1-indexed. Default 1."),
+        per_page: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .default(20)
+          .describe("Page size. Default 20, clamped to a max of 100."),
+        product_id: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .describe("Filter to licenses for this FluentCart product ID."),
+        variation_id: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .describe("Filter to licenses for this FluentCart variation ID."),
+        order_id: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .describe("Filter to licenses issued by this order ID."),
+        customer_id: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .describe("Filter to licenses owned by this customer ID."),
+        status: z
+          .enum(["active", "inactive", "disabled", "expired", "in_trial"])
+          .optional()
+          .describe(
+            "License status (fct_licenses.status). 'active' is the healthy default.",
+          ),
+      },
+      annotations: { idempotentHint: true },
+      _meta: { idempotent: "true" },
+    },
+    async ({
+      page,
+      per_page,
+      product_id,
+      variation_id,
+      order_id,
+      customer_id,
+      status,
+    }: {
+      page?: number;
+      per_page?: number;
+      product_id?: number;
+      variation_id?: number;
+      order_id?: number;
+      customer_id?: number;
+      status?: string;
+    }) => {
+      const body: Record<string, unknown> = {};
+      if (page !== undefined) body.page = page;
+      if (per_page !== undefined) body.per_page = per_page;
+      if (product_id !== undefined) body.product_id = product_id;
+      if (variation_id !== undefined) body.variation_id = variation_id;
+      if (order_id !== undefined) body.order_id = order_id;
+      if (customer_id !== undefined) body.customer_id = customer_id;
+      if (status !== undefined) body.status = status;
+      const result = await wp.requestEnveloped("/pro/fluentcart/licenses", {
+        method: "POST",
+        body,
+      });
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: serializeEnvelope(result, "diviops_fc_license_list"),
+          },
+        ],
+      };
+    },
+    { target: "fluentcart", capabilityKey: "fluentcart_license_list" },
+  );
+
+  // diviops_fc_license_get — POST /diviops/v1/pro/fluentcart/licenses/{id}
+  registerProTool(
+    "diviops_fc_license_get",
+    {
+      description:
+        "Fetch a single FluentCart Pro license by ID (Pro tier; V3.1; requires FluentCart Pro + Licensing module). Read-only by default. The default response redacts the license key to `redacted_key` only (first 4 + last 4 with ellipsis). To surface the full key, pass BOTH `include_license_key: true` AND `confirm_secret_handling: true` — the response then carries `license.license_key` plus `_meta.contains_secret: true` naming the secret field. **Full license keys must never be pasted into PRs, issues, Slack, or any external surface.** Returns the standardized envelope { ok, data?, error: { code, message, hint? } }. Success payload: { license: { id, status, product_id, variation_id, order_id, customer_id, subscription_id, limit, activation_count, expiration_date, created_at, updated_at, redacted_key, license_key? } }. limit semantics: 0 = unlimited per License::getActivationLimit; positive integers are the actual activation cap. Error codes: invalid_input (HTTP 400) when id is non-positive or include_license_key was passed without confirm_secret_handling; not_found (HTTP 404); fluentcart.module_inactive (HTTP 412); fluentcart.licensing_unavailable (HTTP 412); fluentcart.query_failed (HTTP 500).",
+      inputSchema: {
+        id: z
+          .number()
+          .int()
+          .positive()
+          .describe("FluentCart license ID (fct_licenses.id)."),
+        include_license_key: z
+          .boolean()
+          .optional()
+          .describe(
+            "Opt-in: include the full unredacted license key in the response. Requires confirm_secret_handling: true. Default: redacted-only.",
+          ),
+        confirm_secret_handling: z
+          .boolean()
+          .optional()
+          .describe(
+            "Required alongside include_license_key: true. Acknowledges that full license keys must not be pasted into reports, PRs, issues, or external chat surfaces.",
+          ),
+      },
+      annotations: { idempotentHint: true },
+      _meta: { idempotent: "true" },
+    },
+    async ({
+      id,
+      include_license_key,
+      confirm_secret_handling,
+    }: {
+      id: number;
+      include_license_key?: boolean;
+      confirm_secret_handling?: boolean;
+    }) => {
+      const body: Record<string, unknown> = {};
+      if (include_license_key !== undefined)
+        body.include_license_key = include_license_key;
+      if (confirm_secret_handling !== undefined)
+        body.confirm_secret_handling = confirm_secret_handling;
+      const result = await wp.requestEnveloped(
+        `/pro/fluentcart/licenses/${id}`,
+        { method: "POST", body },
+      );
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: serializeEnvelope(result, "diviops_fc_license_get"),
+          },
+        ],
+      };
+    },
+    { target: "fluentcart", capabilityKey: "fluentcart_license_get" },
+  );
+
+  // diviops_fc_license_activations_list — POST /diviops/v1/pro/fluentcart/licenses/{id}/activations
+  registerProTool(
+    "diviops_fc_license_activations_list",
+    {
+      description:
+        "List a FluentCart license's activation rows (Pro tier; V3.1; requires FluentCart Pro + Licensing module). Read-only. Returns one row per `fct_license_activations` entry for the license, including the joined `fct_license_sites.site_url` (the NORMALIZED form — scheme + trailing slash + `www.` prefix stripped per LicenseHelper::sanitizeSiteUrl — not the raw URL the consumer submitted). Filterable by status (active/inactive/deactivated). License keys are NEVER returned by this endpoint. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }; success payload: { license_id, activations: Activation[], count, filters: { status } }. Activation row: id, license_id, site_id, site_url, status, is_local, product_id, variation_id, activation_method, last_update_date, last_update_version, created_at, updated_at. Error codes: invalid_input (HTTP 400); not_found (HTTP 404) when the license doesn't exist; fluentcart.module_inactive (HTTP 412); fluentcart.licensing_unavailable (HTTP 412); fluentcart.query_failed (HTTP 500). Useful for smoke verification (count + site_url presence) and for the activation-cap test described in the diviops-fluentcart skill.",
+      inputSchema: {
+        license_id: z
+          .number()
+          .int()
+          .positive()
+          .describe(
+            "FluentCart license ID whose activation rows to list (fct_licenses.id).",
+          ),
+        status: z
+          .enum(["active", "inactive", "deactivated"])
+          .optional()
+          .describe(
+            "Activation row status filter (fct_license_activations.status).",
+          ),
+      },
+      annotations: { idempotentHint: true },
+      _meta: { idempotent: "true" },
+    },
+    async ({
+      license_id,
+      status,
+    }: {
+      license_id: number;
+      status?: string;
+    }) => {
+      const body: Record<string, unknown> = {};
+      if (status !== undefined) body.status = status;
+      const result = await wp.requestEnveloped(
+        `/pro/fluentcart/licenses/${license_id}/activations`,
+        { method: "POST", body },
+      );
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: serializeEnvelope(
+              result,
+              "diviops_fc_license_activations_list",
+            ),
+          },
+        ],
+      };
+    },
+    {
+      target: "fluentcart",
+      capabilityKey: "fluentcart_license_activations_list",
+    },
+  );
 }
 
 // ── Start ────────────────────────────────────────────────────────────
