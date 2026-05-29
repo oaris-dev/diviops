@@ -128,6 +128,18 @@ Every Divi-builder write tool accepts `dry_run: boolean` per the [diviops/](../.
 
 `diviops_meta_wp_cli` does not accept `dry_run` (raw passthrough); see the primer for the general exception list.
 
+## Unknown Native Setting VB Calibration (advisory workflow)
+
+When the native VB setting path is unknown, run this VB calibration loop before shipping a DiviOps attr write or falling back to CSS:
+
+1. Capture the baseline: `diviops_page_get_layout` or `diviops_tb_layout_get` with full attrs, plus desktop and phone screenshots for the relevant frontend state.
+2. Ask the project lead to make exactly one Visual Builder setting change and save. Keep every other setting untouched.
+3. Capture the same attrs again and diff the before/after block JSON.
+4. Map the VB path to the DiviOps attr path, including breakpoint and state keys. Record the evidence tier from `SKILL.md`.
+5. Apply the mapped attr through the relevant DiviOps write tool, verify the frontend, then document the pattern in the skill docs if it is reusable.
+
+Use this loop for native Theme Builder settings such as `Disable On` visibility, footer spacing, or any Composable Settings path that is not already VB-verified. Stamp the discovered mapping `VB-verified` only after the saved Visual Builder diff preserves the attr path.
+
 ## Targeting Reference
 
 ### Module targeting (`diviops_module_update`)

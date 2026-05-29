@@ -40,7 +40,7 @@ Read the right file for the task at hand — don't load everything.
 3. **Label key modules**: Add admin labels to modules you might edit later
 4. **Validate before saving**: Use `diviops_validate_blocks` before `diviops_page_update_content`, `diviops_tb_layout_update`, or `diviops_library_save`
 5. **Use `diviops_meta_find_icon`**: Don't guess icon codes — search by keyword
-6. **Prefer VB-native**: Use Divi attributes over CSS whenever possible
+6. **Prefer VB-native**: Use Divi attributes over CSS whenever possible; for Divi-owned spacing, sizing, and visibility issues, find the native setting before reaching for CSS
 7. **Font inheritance**: Set global fonts via theme options, skip explicit `family` on modules
 8. **Use semantic HTML**: Set `elementType` for SEO/accessibility (`header`, `nav`, `main`, `article`, `footer`)
 9. **Always use section/row/column structure**: Wrapperless top-level modules lose styling
@@ -67,6 +67,7 @@ When generating pages, ALWAYS apply:
 - **Entrance animations** on visible modules (`fade`/`slide` with staggered `delay`: 0ms, 150ms, 300ms, 450ms)
 - **Hover states** on cards, buttons, icons (use `desktop.hover` format)
 - **Responsive overrides** (tablet/phone: padding, font sizes, `flexDirection: column`)
+- **Visual mobile check** for Group/card grids *(verified 2026-05-28)* — validation passing only proves block shape, not phone-safe stacking
 - **Use `divi/number-counter`** for stats — animates counting on scroll (not plain text)
 - **Use Group flex** for multi-column layouts with `flexType` sizing (not Row with multiple columns)
 - **Minimum**: 8+ animations per page, hover on every interactive element
@@ -218,6 +219,7 @@ Rules for generating content that remains editable in the Visual Builder:
 | **Prefer VB-native attrs over CSS** | CSS-only styling can't be edited in VB |
 | **`inline-flex` requires CSS** | VB only offers flex/grid/block |
 | **`white-space: nowrap` requires CSS** | No VB equivalent |
+| **Native-first CSS rule (advisory)** | For Divi-owned layout issues, try native Divi settings first. Use CSS only when native attrs cannot express the behavior, and document why; broad selectors or `!important` need explicit rationale |
 | **Position mode**: `position.desktop.value.mode` | Use `"absolute"`, `"relative"`, `"fixed"` — NOT `position.position` |
 | **Icon: border/background on `module.decoration` only** | Don't use `icon.decoration.border/background` — creates a non-VB-editable inner border ring. Use `module.decoration` for all visual styling |
 | **Hover format**: `desktop.hover` not top-level | `"background":{"desktop":{"value":{...},"hover":{"color":"#f59e0b"}}}` — hover is a sibling of `value` inside `desktop`, NOT a sibling of `desktop`. Top-level `hover` is silently ignored |
@@ -257,6 +259,8 @@ Key points:
 - `diviops_tb_template_create` handles the full recipe: layout posts + template + link to master
 - Layout content is standard Divi block markup — same format as pages
 - **Critical**: `_et_pb_use_divi_5: on` required on all layout posts (handled by `initialize_divi_page_meta`)
+- **Footer bottom crop/tightness** *(verified 2026-05-28)*: first adjust the root footer Section's native bottom padding (`module.decoration.spacing.{desktop,tablet,phone}.value.padding.bottom`) via VB path `Theme Builder > Global Footer > Section: Global Footer > Design > Spacing > Padding > Bottom` (operator mapping, not stamped VB-verified here). Do not use broad `.et-l--footer` CSS for native spacing issues.
+- **Header mobile nav hiding** *(VB-verified 2026-05-28)*: use native visibility (`module.decoration.disabledOn.phone.value = "on"`) via VB path `Theme Builder > Global Header + Footer > Global Header > Nav Links group > Advanced > Visibility > Disable On > Phone`. `module.decoration.layout.phone.value.display = "none"` can be present without hiding the group.
 
 ## Design Patterns
 

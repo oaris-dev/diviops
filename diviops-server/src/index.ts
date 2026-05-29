@@ -25,6 +25,7 @@ import {
   wrapResponse,
 } from "./envelope.js";
 import { optimizeSchema } from "./schema-optimizer.js";
+import { schemaModuleRoute } from "./schema-route.js";
 import { createWpCli } from "./wp-cli.js";
 import {
   findForeignVarRefs,
@@ -467,7 +468,7 @@ registerPluginTool(
     }
 
     const result = await wp.requestEnveloped<Record<string, unknown>>(
-      `/schema/module/${encodeURIComponent(module_name)}`,
+      schemaModuleRoute(module_name),
     );
     const projected = envelopeMap(result, (data) =>
       raw ? data : optimizeSchema(data as Record<string, any>),

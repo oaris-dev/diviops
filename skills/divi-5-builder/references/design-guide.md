@@ -83,7 +83,7 @@ Parent Group — flex row container:
   "decoration": {
     "layout": {
       "desktop": {"value": {"display": "flex", "flexDirection": "row", "alignItems": "stretch", "columnGap": "3.5%", "rowGap": "24px", "flexWrap": "wrap"}},
-      "phone": {"value": {"flexDirection": "column"}}
+      "phone": {"value": {"display": "flex", "flexDirection": "column", "alignItems": "stretch", "rowGap": "20px"}}
     }
   }
 }
@@ -95,7 +95,7 @@ Each child Group — sized via `flexType`:
 "module": {
   "decoration": {
     "layout": {"desktop": {"value": {"display": "flex", "flexDirection": "column", "rowGap": "16px"}}},
-    "sizing": {"desktop": {"value": {"flexType": "8_24"}}},
+    "sizing": {"desktop": {"value": {"flexType": "8_24"}}, "phone": {"value": {"flexType": "24_24", "width": "100%", "maxWidth": "100%"}}},
     "background": {"desktop": {"value": {"color": "rgba(255,255,255,0.05)"}, "hover": {"color": "rgba(255,255,255,0.08)"}}},
     "border": {"desktop": {"value": {"radius": {"topLeft": "16px", "topRight": "16px", "bottomLeft": "16px", "bottomRight": "16px", "sync": "on"}, "styles": {"all": {"width": "1px", "color": "rgba(255,255,255,0.1)"}}}}},
     "spacing": {"desktop": {"value": {"padding": {"top": "32px", "bottom": "32px", "left": "32px", "right": "32px", "syncVertical": "on", "syncHorizontal": "on"}}}},
@@ -103,6 +103,14 @@ Each child Group — sized via `flexType`:
   }
 }
 ```
+
+### Responsive card-grid rule *(verified 2026-05-28)*
+
+Desktop multi-column Groups must include explicit phone stacking. Block validation catches malformed markup and known path traps, but it cannot prove that cards are visually full-width on a phone viewport.
+
+- Parent Group phone layout: `display: "flex"`, `flexDirection: "column"`, `alignItems: "stretch"`, and a sensible `rowGap`.
+- Child card Groups phone sizing: `module.decoration.sizing.phone.value.flexType = "24_24"`; add `width: "100%"` and `maxWidth: "100%"` when the card also carries width or max-width constraints.
+- Verify the saved page in a mobile viewport after `diviops_validate_blocks` passes. Do not treat validator success as responsive acceptance.
 
 ### Column sizing reference <!-- VB-verified: 2026-03-21 -->
 
@@ -128,7 +136,7 @@ Common layouts:
 | Sidebar + content | `"8_24"` + `"16_24"` |
 | Content + sidebar | `"16_24"` + `"8_24"` |
 
-> **Note**: `flexType` handles gap-aware sizing internally — do NOT also set `width` or `flexBasis`. Use `flexType` alone on each child Group.
+> **Note**: `flexType` handles gap-aware sizing internally on desktop grids — do NOT also set desktop `width` or `flexBasis`. Use `flexType` alone for column sizing; add phone `width` / `maxWidth` only when clearing prior width constraints for mobile stacking.
 
 ### Section/Row/Column as simple containers
 
@@ -144,6 +152,26 @@ Any module with `maxWidth` in a block parent aligns left by default. Add auto ma
 ```jsonc
 "spacing": {"desktop": {"value": {"margin": {"left": "auto", "right": "auto", "syncHorizontal": "off"}}}}
 ```
+
+## Native-First Layout Fixes (advisory)
+
+For Divi-owned layout issues, map the behavior to native Divi settings before adding CSS. CSS is the last resort when the native setting cannot express the behavior; broad selectors and `!important` require an explicit rationale in the work notes.
+
+### Theme Builder footer bottom crop/tightness *(verified 2026-05-28)*
+
+If a Global Footer looks cropped or too tight at the bottom, first change the root footer Section's native bottom padding:
+
+- VB path (operator mapping; not stamped VB-verified here): `Theme Builder > Global Footer > Section: Global Footer > Design > Spacing > Padding > Bottom`
+- Attrs: `module.decoration.spacing.desktop.value.padding.bottom`, `module.decoration.spacing.tablet.value.padding.bottom`, `module.decoration.spacing.phone.value.padding.bottom`
+- Avoid broad `.et-l--footer` CSS for native spacing problems; it hides the real editable setting from future VB users.
+
+### Theme Builder mobile header nav hiding *(VB-verified 2026-05-28)*
+
+Hide a mobile nav/link Group with Divi's native visibility control:
+
+- VB path: `Theme Builder > Global Header + Footer > Global Header > Nav Links group > Advanced > Visibility > Disable On > Phone`
+- Attr: `module.decoration.disabledOn.phone.value = "on"`
+- Do not rely on `module.decoration.layout.phone.value.display = "none"` for this case. That value can exist in block attrs without hiding the Group on the frontend.
 
 ## Animation Staggering
 
