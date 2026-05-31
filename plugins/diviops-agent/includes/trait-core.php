@@ -35,6 +35,161 @@ trait DiviOps_Agent_Core {
 		return null;
 	}
 
+	/**
+	 * Normalize Divi block comment attributes before full-content writes.
+	 *
+	 * WordPress block attributes may contain HTML strings, but the serialized
+	 * comment JSON must use serialize_block_attributes() escaping for unsafe
+	 * bytes such as `<`, `>`, `&`, `--`, backslashes, and escaped quotes. This
+	 * guard accepts raw HTML and canonical JSON escapes, rejects pseudo-escapes
+	 * like `u003c`, then rewrites Divi block opener attrs canonically.
+	 *
+	 * @param string $content Full block markup.
+	 * @return array{ok:bool,content?:string,changed?:int,error?:array}
+	 */
+	private static function normalize_divi_full_content_for_write( string $content ): array {
+		$pattern = '/<!--\s+(\/)?wp:([A-Za-z0-9_-]+\/[A-Za-z0-9_-]+)(.*?)(\/)?-->/s';
+		$changed = 0;
+		$error   = null;
+
+		$normalized = preg_replace_callback(
+			$pattern,
+			static function ( array $matches ) use ( &$changed, &$error ) {
+				if ( null !== $error ) {
+					return $matches[0];
+				}
+
+				$is_closer = ! empty( $matches[1] );
+				$block     = $matches[2];
+				$tail      = $matches[3];
+
+				if ( $is_closer || 0 !== strpos( $block, 'divi/' ) ) {
+					return $matches[0];
+				}
+
+				$trimmed_tail    = trim( $tail );
+				$is_self_closing = false;
+				if ( '' !== $trimmed_tail && '/' === substr( $trimmed_tail, -1 ) ) {
+					$is_self_closing = true;
+					$trimmed_tail    = rtrim( substr( $trimmed_tail, 0, -1 ) );
+				}
+
+				if ( '' === $trimmed_tail ) {
+					return '<!-- wp:' . $block . ( $is_self_closing ? ' /-->' : ' -->' );
+				}
+
+				if ( '{' !== substr( $trimmed_tail, 0, 1 ) || '}' !== substr( $trimmed_tail, -1 ) ) {
+					$error = [
+						'message' => 'Divi block attributes must be a JSON object.',
+						'block'   => $block,
+						'preview' => substr( $trimmed_tail, 0, 120 ),
+					];
+					return $matches[0];
+				}
+
+				$pseudo_escape = self::find_malformed_block_attr_escape( $trimmed_tail );
+				if ( null !== $pseudo_escape ) {
+					$error = [
+						'message' => 'Divi block attributes contain a malformed JSON unicode escape.',
+						'block'   => $block,
+						'escape'  => $pseudo_escape,
+						'hint'    => 'Use canonical JSON escapes like \\u003c or raw HTML that can be normalized, not u003c without the backslash.',
+					];
+					return $matches[0];
+				}
+
+				$attrs = json_decode( $trimmed_tail, true );
+				if ( ! is_array( $attrs ) || JSON_ERROR_NONE !== json_last_error() ) {
+					$error = [
+						'message'    => 'Divi block attributes are not valid JSON.',
+						'block'      => $block,
+						'json_error' => json_last_error_msg(),
+						'preview'    => substr( $trimmed_tail, 0, 120 ),
+					];
+					return $matches[0];
+				}
+
+				$encoded = self::serialize_block_attrs_canonical( $attrs );
+				if ( null === $encoded ) {
+					$error = [
+						'message' => 'Divi block attributes could not be JSON-encoded safely.',
+						'block'   => $block,
+					];
+					return $matches[0];
+				}
+
+				$new_comment = '<!-- wp:' . $block . ' ' . $encoded . ( $is_self_closing ? ' /-->' : ' -->' );
+				if ( $new_comment !== $matches[0] ) {
+					$changed++;
+				}
+				return $new_comment;
+			},
+			$content
+		);
+
+		if ( null !== $error ) {
+			return [ 'ok' => false, 'error' => $error ];
+		}
+		if ( null === $normalized ) {
+			return [
+				'ok'    => false,
+				'error' => [
+					'message' => 'Unable to scan Divi block attributes for safe serialization.',
+				],
+			];
+		}
+
+		return [ 'ok' => true, 'content' => $normalized, 'changed' => $changed ];
+	}
+
+	/**
+	 * Mirror core serialize_block_attributes() while keeping tests runnable
+	 * against minimal WordPress stubs.
+	 *
+	 * @param array $attrs Block attributes.
+	 * @return string|null
+	 */
+	private static function serialize_block_attrs_canonical( array $attrs ): ?string {
+		if ( function_exists( 'serialize_block_attributes' ) ) {
+			return serialize_block_attributes( $attrs );
+		}
+
+		$flags = JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE;
+		if ( function_exists( 'wp_json_encode' ) ) {
+			$encoded = wp_json_encode( $attrs, $flags );
+		} else {
+			$encoded = json_encode( $attrs, $flags );
+		}
+		if ( false === $encoded ) {
+			return null;
+		}
+
+		return strtr(
+			$encoded,
+			[
+				'\\\\' => '\\u005c',
+				'--'   => '\\u002d\\u002d',
+				'<'    => '\\u003c',
+				'>'    => '\\u003e',
+				'&'    => '\\u0026',
+				'\\"'  => '\\u0022',
+			]
+		);
+	}
+
+	/**
+	 * Detect HTML-ish unicode pseudo-escapes missing their required backslash.
+	 *
+	 * @param string $json Raw block attribute JSON.
+	 * @return string|null
+	 */
+	private static function find_malformed_block_attr_escape( string $json ): ?string {
+		if ( preg_match( '/(?<!\\\\)u00(?:3c|3e|26|22|5c|2d)/i', $json, $match ) ) {
+			return $match[0];
+		}
+		return null;
+	}
+
 	// ── Storage-path contract (#719) ────────────────────────────────
 	//
 	// The Divi 5.5.x storage-path landscape is materially more complex than a

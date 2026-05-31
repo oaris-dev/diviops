@@ -24,7 +24,7 @@ When opening an issue, the bug-report template prompts for:
 
 - WordPress version
 - Divi theme version
-- MCP server version (`npx @diviops/mcp-server --version`, or check `package.json`)
+- MCP server version (`npm list -g @diviops/mcp-server` if installed globally, or the version pinned in your MCP config)
 - Plugin version (WP Admin → Plugins → DiviOps Agent)
 - Hosting environment (Local by Flywheel, DDEV, wp-env, WordPress Studio, DevKinsta, etc.)
 - Reproduction steps

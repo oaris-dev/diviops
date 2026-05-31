@@ -229,6 +229,18 @@ trait DiviOps_Agent_ThemeBuilder {
 				400
 			);
 		}
+		$normalized = self::normalize_divi_full_content_for_write( $content );
+		if ( empty( $normalized['ok'] ) ) {
+			$error = $normalized['error'] ?? [];
+			return self::envelope_error(
+				'invalid_input',
+				$error['message'] ?? 'content contains unsafe Divi block attribute JSON.',
+				$error['hint'] ?? 'Pass valid WordPress block markup. Raw HTML inside Divi block attributes is allowed, but malformed escapes must be corrected before writing.',
+				400,
+				array_merge( [ 'field' => 'content' ], $error )
+			);
+		}
+		$content = $normalized['content'];
 
 		if ( (bool) $request->get_param( 'dry_run' ) ) {
 			return self::dry_run_response(
@@ -259,6 +271,583 @@ trait DiviOps_Agent_ThemeBuilder {
 			'type'    => $post->post_type,
 			'message' => "Layout '{$post->post_title}' updated.",
 		] );
+	}
+
+	/**
+	 * Insert one or more serialized Divi blocks into a Theme Builder layout.
+	 */
+	public static function tb_layout_block_insert( $request ) {
+		$post_id         = absint( $request['id'] );
+		$content         = $request->get_param( 'content' );
+		$position        = sanitize_key( (string) ( $request->get_param( 'position' ) ?? 'append' ) );
+		$parent_selector = trim( (string) $request->get_param( 'parent_selector' ) );
+		$parent_path     = trim( (string) $request->get_param( 'parent_path' ) );
+		$dry_run         = (bool) $request->get_param( 'dry_run' );
+		$post            = get_post( $post_id );
+
+		$valid_types = [ 'et_header_layout', 'et_body_layout', 'et_footer_layout' ];
+		if ( ! $post || ! in_array( $post->post_type, $valid_types, true ) ) {
+			return self::envelope_error(
+				'not_found',
+				"Theme Builder layout #{$post_id} not found.",
+				'Run diviops_tb_template_list to discover valid header_layout_id / body_layout_id / footer_layout_id values.',
+				404,
+				[ 'layout_id' => $post_id ]
+			);
+		}
+		if ( ! current_user_can( 'edit_post', $post_id ) ) {
+			return self::envelope_error(
+				'forbidden',
+				"Cannot edit Theme Builder layout #{$post_id}.",
+				'Authenticate as a user with edit rights to this layout.',
+				403,
+				[ 'layout_id' => $post_id ]
+			);
+		}
+		if ( ! is_string( $content ) || '' === trim( $content ) ) {
+			return self::envelope_error(
+				'invalid_input',
+				'content must be a non-empty string of serialized Divi block markup.',
+				null,
+				400,
+				[ 'field' => 'content', 'received_type' => gettype( $content ) ]
+			);
+		}
+		if ( ! in_array( $position, [ 'append', 'prepend', 'before', 'after' ], true ) ) {
+			return self::envelope_error(
+				'invalid_input',
+				'position must be one of append, prepend, before, or after.',
+				null,
+				400,
+				[ 'field' => 'position', 'received' => $position ]
+			);
+		}
+		if ( ( '' === $parent_selector && '' === $parent_path ) || ( '' !== $parent_selector && '' !== $parent_path ) ) {
+			return self::envelope_error(
+				'invalid_input',
+				'Provide exactly one of parent_selector or parent_path.',
+				'Use parent_selector for a unique block-type/adminLabel match, or parent_path for a zero-based parsed-tree path such as "0.1.2".',
+				400,
+				[ 'fields' => [ 'parent_selector', 'parent_path' ] ]
+			);
+		}
+
+		$inserted = self::parse_divi_blocks_for_insert( $content, 'content' );
+		if ( is_wp_error( $inserted ) ) {
+			return self::envelope_from_wp_error( $inserted );
+		}
+
+		$blocks = parse_blocks( (string) $post->post_content );
+		if ( '' !== $parent_path ) {
+			$target = self::find_tb_block_by_path( $blocks, $parent_path );
+		} else {
+			$target = self::find_tb_block_by_selector( $blocks, $parent_selector );
+		}
+		if ( is_wp_error( $target ) ) {
+			return self::envelope_from_wp_error( $target );
+		}
+
+		$inserted_count = count( $inserted );
+		$insert_at      = 'append' === $position
+			? count( $target['children'] )
+			: ( 'prepend' === $position ? 0 : ( 'before' === $position ? $target['index'] : $target['index'] + 1 ) );
+		$scope          = in_array( $position, [ 'append', 'prepend' ], true ) ? 'children' : 'siblings';
+		$idempotency_at = 'append' === $position ? max( 0, $insert_at - $inserted_count ) : $insert_at;
+		$already_there  = self::tb_insert_sequence_matches( 'children' === $scope ? $target['children'] : $target['siblings'], $inserted, $idempotency_at );
+		if ( ! $already_there && in_array( $position, [ 'append', 'prepend' ], true ) ) {
+			$already_there = self::tb_stable_labeled_sequence_exists( $target['children'], $inserted )
+				|| self::tb_stable_labeled_sequence_exists_deep( $blocks, $inserted );
+		}
+		$target_summary = [
+			'layout_id'       => $post_id,
+			'layout_type'     => $post->post_type,
+			'layout_title'    => (string) $post->post_title,
+			'parent_path'     => $target['path'],
+			'parent_selector' => $parent_selector,
+			'block_name'      => $target['block_name'],
+			'admin_label'     => $target['admin_label'],
+		];
+
+		$plan = [
+			'kind'   => 'tb_layout.block_insert',
+			'target' => "{$post->post_type}#{$post_id}/{$target['path']}",
+			'before' => [
+				'layout_bytes' => strlen( (string) $post->post_content ),
+				'child_count'  => count( $target['children'] ),
+			],
+			'after'  => [
+				'position'             => $position,
+				'insertion_scope'      => $scope,
+				'inserted_block_count' => $inserted_count,
+				'insert_at'            => $insert_at,
+				'noop'                 => $already_there,
+			],
+		];
+
+		if ( $dry_run ) {
+			return self::dry_run_response(
+				$already_there
+					? "Theme Builder layout #{$post_id} already contains the requested block sequence at {$target['path']} ({$position}) — no-op."
+					: "Would insert {$inserted_count} block(s) into Theme Builder layout #{$post_id} at {$target['path']} ({$position}).",
+				[ $plan ],
+				[],
+				[ 'target' => $target_summary ]
+			);
+		}
+
+		if ( $already_there ) {
+			return self::envelope_success( [
+				'success'              => true,
+				'noop'                 => true,
+				'id'                   => $post_id,
+				'type'                 => $post->post_type,
+				'target'               => $target_summary,
+				'position'             => $position,
+				'inserted_block_count' => $inserted_count,
+				'message'              => 'Requested block sequence already exists at target.',
+			] );
+		}
+
+		try {
+			self::apply_tb_block_insert( $blocks, $target['path'], $position, $inserted );
+		} catch ( \RuntimeException $e ) {
+			return self::envelope_error(
+				'divi_error',
+				$e->getMessage(),
+				'Re-save the layout through the Visual Builder to regenerate canonical block placeholders, then retry.',
+				500,
+				[ 'layout_id' => $post_id ]
+			);
+		}
+
+		$new_content = serialize_blocks( $blocks );
+		$normalized  = self::normalize_and_validate_divi_markup_before_write( $new_content, 'final_layout' );
+		if ( is_wp_error( $normalized ) ) {
+			return self::envelope_from_wp_error( $normalized );
+		}
+		$new_content = $normalized['content'];
+		$current_normalized = self::normalize_divi_full_content_for_write( (string) $post->post_content );
+		if ( ! empty( $current_normalized['ok'] ) && $new_content === $current_normalized['content'] ) {
+			return self::envelope_success( [
+				'success'              => true,
+				'noop'                 => true,
+				'id'                   => $post_id,
+				'type'                 => $post->post_type,
+				'target'               => $target_summary,
+				'position'             => $position,
+				'inserted_block_count' => $inserted_count,
+				'message'              => 'Requested block sequence already exists at target.',
+			] );
+		}
+
+		$result = wp_update_post( [
+			'ID'           => $post_id,
+			'post_content' => wp_slash( $new_content ),
+		], true );
+		if ( is_wp_error( $result ) ) {
+			return self::envelope_from_wp_error( $result );
+		}
+
+		self::invalidate_divi_cache( $post_id );
+
+		return self::envelope_success( [
+			'success'              => true,
+			'noop'                 => false,
+			'id'                   => $post_id,
+			'type'                 => $post->post_type,
+			'target'               => $target_summary,
+			'position'             => $position,
+			'inserted_block_count' => $inserted_count,
+			'before'               => [ 'bytes' => strlen( (string) $post->post_content ) ],
+			'after'                => [ 'bytes' => strlen( $new_content ) ],
+			'message'              => "Inserted {$inserted_count} block(s) into layout '{$post->post_title}'.",
+		] );
+	}
+
+	/**
+	 * Parse insertion markup and reject shapes that serialize unreliably.
+	 */
+	private static function parse_divi_blocks_for_insert( string $content, string $field ) {
+		$normalized = self::normalize_and_validate_divi_markup_before_write( $content, $field );
+		if ( is_wp_error( $normalized ) ) {
+			return $normalized;
+		}
+		$content = $normalized['content'];
+		$blocks = parse_blocks( $content );
+		$out    = [];
+		foreach ( $blocks as $block ) {
+			if ( empty( $block['blockName'] ) ) {
+				$inner = implode( '', $block['innerContent'] ?? [] );
+				if ( '' !== trim( $inner ) ) {
+					return new WP_Error(
+						'invalid_input',
+						'content must contain serialized Divi blocks only; raw freeform HTML is not accepted at the top level.',
+						[ 'status' => 400, 'hint' => 'Wrap HTML inside a Divi module such as divi/text before inserting.' ]
+					);
+				}
+				continue;
+			}
+			if ( 0 !== strpos( (string) $block['blockName'], 'divi/' ) ) {
+				return new WP_Error(
+					'invalid_input',
+					sprintf( "content contains non-Divi block '%s'.", (string) $block['blockName'] ),
+					[ 'status' => 400 ]
+				);
+			}
+			$out[] = $block;
+		}
+		if ( empty( $out ) ) {
+			return new WP_Error(
+				'invalid_input',
+				'content did not parse into any Divi blocks.',
+				[ 'status' => 400 ]
+			);
+		}
+		return $out;
+	}
+
+	/**
+	 * Run the shared full-content serialization guard and validate the
+	 * resulting block tree before a Theme Builder write.
+	 */
+	private static function normalize_and_validate_divi_markup_before_write( string $content, string $field ) {
+		$normalized = self::normalize_divi_full_content_for_write( $content );
+		if ( empty( $normalized['ok'] ) ) {
+			$error = $normalized['error'] ?? [];
+			return new WP_Error(
+				'invalid_input',
+				$error['message'] ?? "{$field} contains unsafe Divi block attribute JSON.",
+				[
+					'status' => 400,
+					'hint'   => $error['hint'] ?? 'Pass valid WordPress block markup. Raw HTML inside Divi block attributes is allowed, but malformed escapes must be corrected before writing.',
+					'field'  => $field,
+					'error'  => $error,
+				]
+			);
+		}
+		$content = $normalized['content'];
+
+		$blocks = parse_blocks( $content );
+		foreach ( $blocks as $block ) {
+			if ( empty( $block['blockName'] ) ) {
+				$inner = implode( '', $block['innerContent'] ?? [] );
+				if ( false !== strpos( $inner, '<!-- wp:divi/' ) ) {
+					return new WP_Error(
+						'invalid_input',
+						$field . ' contains malformed Divi block comments that failed to parse.',
+						[ 'status' => 400 ]
+					);
+				}
+			}
+		}
+
+		$registry        = WP_Block_Type_Registry::get_instance();
+		$container_types = [ 'divi/section', 'divi/row', 'divi/column', 'divi/group', 'divi/group-carousel', 'divi/dropdown' ];
+		$errors          = [];
+		$warnings        = [];
+		$index           = 0;
+		self::validate_block_tree( $blocks, $registry, $container_types, $errors, $warnings, $index );
+		if ( ! empty( $errors ) ) {
+			return new WP_Error(
+				'invalid_input',
+				$field . ' failed Divi block validation.',
+				[
+					'status' => 400,
+					'hint'   => 'Fix the reported block validation errors before writing.',
+					'errors' => $errors,
+				]
+			);
+		}
+		return [
+			'content' => $content,
+			'changed' => (int) ( $normalized['changed'] ?? 0 ),
+		];
+	}
+
+	private static function find_tb_block_by_path( array &$blocks, string $path ) {
+		if ( ! preg_match( '/^\d+(?:\.\d+)*$/', $path ) ) {
+			return new WP_Error(
+				'invalid_input',
+				'parent_path must be a zero-based dot path such as "0" or "0.1.2".',
+				[ 'status' => 400 ]
+			);
+		}
+		$parts    = array_map( 'intval', explode( '.', $path ) );
+		$siblings = &$blocks;
+		$block    = null;
+		foreach ( $parts as $depth => $idx ) {
+			if ( ! isset( $siblings[ $idx ] ) || ! is_array( $siblings[ $idx ] ) ) {
+				return new WP_Error(
+					'not_found',
+					"parent_path '{$path}' does not identify a block in this layout.",
+					[ 'status' => 404 ]
+				);
+			}
+			$block = &$siblings[ $idx ];
+			if ( $depth < count( $parts ) - 1 ) {
+				if ( ! isset( $block['innerBlocks'] ) || ! is_array( $block['innerBlocks'] ) ) {
+					return new WP_Error(
+						'not_found',
+						"parent_path '{$path}' descends through a block with no children.",
+						[ 'status' => 404 ]
+					);
+				}
+				$siblings = &$block['innerBlocks'];
+			}
+		}
+		return self::tb_target_payload( $siblings, $parts[ count( $parts ) - 1 ], $block, $path );
+	}
+
+	private static function find_tb_block_by_selector( array &$blocks, string $selector ) {
+		$parsed = self::parse_tb_parent_selector( $selector );
+		if ( is_wp_error( $parsed ) ) {
+			return $parsed;
+		}
+		$matches = [];
+		self::collect_tb_selector_matches( $blocks, $parsed, $matches );
+		if ( empty( $matches ) ) {
+			return new WP_Error(
+				'not_found',
+				"parent_selector '{$selector}' did not match any block in this layout.",
+				[ 'status' => 404 ]
+			);
+		}
+		if ( count( $matches ) > 1 ) {
+			return new WP_Error(
+				'invalid_input',
+				"parent_selector '{$selector}' matched " . count( $matches ) . ' blocks; use parent_path to choose one explicitly.',
+				[ 'status' => 400 ]
+			);
+		}
+		return $matches[0];
+	}
+
+	private static function parse_tb_parent_selector( string $selector ) {
+		if ( ! preg_match( '/^(divi\/[a-z0-9_-]+)(?:\[adminLabel=(["\'])(.*?)\2\])?$/i', $selector, $m ) ) {
+			return new WP_Error(
+				'invalid_input',
+				'parent_selector must look like divi/group or divi/group[adminLabel="Legal Col"].',
+				[ 'status' => 400 ]
+			);
+		}
+		return [
+			'block_name'  => $m[1],
+			'admin_label' => array_key_exists( 3, $m ) ? $m[3] : null,
+		];
+	}
+
+	private static function collect_tb_selector_matches( array &$blocks, array $selector, array &$matches, string $prefix = '' ) {
+		$count = count( $blocks );
+		for ( $i = 0; $i < $count; $i++ ) {
+			$block = &$blocks[ $i ];
+			if ( empty( $block['blockName'] ) ) {
+				unset( $block );
+				continue;
+			}
+			$path  = '' === $prefix ? (string) $i : $prefix . '.' . $i;
+			$label = self::tb_block_admin_label( $block );
+			if (
+				(string) $block['blockName'] === $selector['block_name']
+				&& ( null === $selector['admin_label'] || $label === $selector['admin_label'] )
+			) {
+				$matches[] = self::tb_target_payload( $blocks, $i, $block, $path );
+			}
+			if ( isset( $block['innerBlocks'] ) && is_array( $block['innerBlocks'] ) ) {
+				self::collect_tb_selector_matches( $block['innerBlocks'], $selector, $matches, $path );
+			}
+			unset( $block );
+		}
+	}
+
+	private static function tb_target_payload( array &$siblings, int $index, array &$block, string $path ) {
+		if ( ! isset( $block['innerBlocks'] ) || ! is_array( $block['innerBlocks'] ) ) {
+			$block['innerBlocks'] = [];
+		}
+		return [
+			'path'        => $path,
+			'index'       => $index,
+			'block_name'  => (string) ( $block['blockName'] ?? '' ),
+			'admin_label' => self::tb_block_admin_label( $block ),
+			'siblings'    => $siblings,
+			'children'    => $block['innerBlocks'],
+		];
+	}
+
+	private static function tb_block_admin_label( array $block ): string {
+		$attrs = isset( $block['attrs'] ) && is_array( $block['attrs'] ) ? $block['attrs'] : [];
+		$label = $attrs['module']['meta']['adminLabel']['desktop']['value'] ?? '';
+		if ( '' === $label ) {
+			$label = $attrs['meta']['adminLabel']['desktop']['value'] ?? '';
+		}
+		return is_string( $label ) ? $label : '';
+	}
+
+	private static function tb_insert_sequence_matches( array $haystack, array $needle, int $offset ): bool {
+		if ( $offset < 0 || $offset + count( $needle ) > count( $haystack ) ) {
+			return false;
+		}
+		foreach ( $needle as $i => $block ) {
+			if ( ! self::tb_blocks_equivalent( $haystack[ $offset + $i ], $block ) ) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	private static function tb_blocks_equivalent( array $a, array $b ): bool {
+		$a_normalized = [
+			'blockName'   => $a['blockName'] ?? null,
+			'attrs'       => $a['attrs'] ?? [],
+			'innerBlocks' => [],
+			'innerHTML'   => $a['innerHTML'] ?? '',
+		];
+		$b_normalized = [
+			'blockName'   => $b['blockName'] ?? null,
+			'attrs'       => $b['attrs'] ?? [],
+			'innerBlocks' => [],
+			'innerHTML'   => $b['innerHTML'] ?? '',
+		];
+		foreach ( $a['innerBlocks'] ?? [] as $child ) {
+			$a_normalized['innerBlocks'][] = is_array( $child ) ? $child : [];
+		}
+		foreach ( $b['innerBlocks'] ?? [] as $child ) {
+			$b_normalized['innerBlocks'][] = is_array( $child ) ? $child : [];
+		}
+		return $a_normalized == $b_normalized;
+	}
+
+	private static function tb_stable_labeled_sequence_exists( array $haystack, array $needle ): bool {
+		if ( empty( $needle ) || count( $needle ) > count( $haystack ) ) {
+			return false;
+		}
+		$needle_signatures = [];
+		foreach ( $needle as $block ) {
+			$signature = self::tb_stable_block_signature( $block );
+			if ( null === $signature ) {
+				return false;
+			}
+			$needle_signatures[] = $signature;
+		}
+		$limit = count( $haystack ) - count( $needle );
+		for ( $offset = 0; $offset <= $limit; $offset++ ) {
+			$matched = true;
+			foreach ( $needle_signatures as $i => $signature ) {
+				if ( self::tb_stable_block_signature( $haystack[ $offset + $i ] ) !== $signature ) {
+					$matched = false;
+					break;
+				}
+			}
+			if ( $matched ) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private static function tb_stable_labeled_sequence_exists_deep( array $blocks, array $needle ): bool {
+		if ( self::tb_stable_labeled_sequence_exists( $blocks, $needle ) ) {
+			return true;
+		}
+		foreach ( $blocks as $block ) {
+			if ( isset( $block['innerBlocks'] ) && is_array( $block['innerBlocks'] ) && self::tb_stable_labeled_sequence_exists_deep( $block['innerBlocks'], $needle ) ) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private static function tb_stable_block_signature( array $block ): ?string {
+		$label = self::tb_block_admin_label( $block );
+		if ( '' === $label ) {
+			return null;
+		}
+		return (string) ( $block['blockName'] ?? '' ) . '|' . $label;
+	}
+
+	private static function apply_tb_block_insert( array &$blocks, string $path, string $position, array $inserted ): void {
+		$parts = array_map( 'intval', explode( '.', $path ) );
+		self::apply_tb_block_insert_at_path( $blocks, $parts, $position, $inserted );
+	}
+
+	private static function apply_tb_block_insert_at_path( array &$siblings, array $parts, string $position, array $inserted, ?array &$parent_block = null ): void {
+		$idx = array_shift( $parts );
+		if ( ! isset( $siblings[ $idx ] ) || ! is_array( $siblings[ $idx ] ) ) {
+			throw new \RuntimeException( 'Target path disappeared while applying insertion.' );
+		}
+		$block = &$siblings[ $idx ];
+		if ( ! empty( $parts ) ) {
+			if ( ! isset( $block['innerBlocks'] ) || ! is_array( $block['innerBlocks'] ) ) {
+				throw new \RuntimeException( 'Target path descends through a block with no children.' );
+			}
+			self::apply_tb_block_insert_at_path( $block['innerBlocks'], $parts, $position, $inserted, $block );
+			unset( $block );
+			return;
+		}
+
+		if ( in_array( $position, [ 'append', 'prepend' ], true ) ) {
+			if ( ! isset( $block['innerBlocks'] ) || ! is_array( $block['innerBlocks'] ) ) {
+				$block['innerBlocks'] = [];
+			}
+			if ( ! isset( $block['innerContent'] ) || ! is_array( $block['innerContent'] ) ) {
+				$block['innerContent'] = [];
+			}
+			$insert_at = 'append' === $position ? count( $block['innerBlocks'] ) : 0;
+			array_splice( $block['innerBlocks'], $insert_at, 0, $inserted );
+			self::splice_tb_inner_content_placeholders( $block, $insert_at, count( $inserted ) );
+			unset( $block );
+			return;
+		}
+
+		$insert_at = 'before' === $position ? $idx : $idx + 1;
+		array_splice( $siblings, $insert_at, 0, $inserted );
+		if ( null !== $parent_block ) {
+			self::splice_tb_inner_content_placeholders( $parent_block, $insert_at, count( $inserted ) );
+		}
+		unset( $block );
+	}
+
+	private static function splice_tb_inner_content_placeholders( array &$parent_block, int $insert_at, int $count ): void {
+		if ( $count <= 0 ) {
+			return;
+		}
+		if ( ! isset( $parent_block['innerContent'] ) || ! is_array( $parent_block['innerContent'] ) ) {
+			$parent_block['innerContent'] = [];
+		}
+
+		// Empty containers can parse as one HTML chunk containing both the
+		// opening and closing tags. Split that shell so new child placeholders
+		// serialize inside the container instead of after its closing tag.
+		if ( count( $parent_block['innerBlocks'] ?? [] ) === $count && 1 === count( $parent_block['innerContent'] ) && is_string( $parent_block['innerContent'][0] ) ) {
+			$html     = $parent_block['innerContent'][0];
+			$first_gt = strpos( $html, '>' );
+			$last_lt  = strrpos( $html, '<' );
+			if ( false !== $first_gt && false !== $last_lt && $first_gt < $last_lt ) {
+				$parent_block['innerContent'] = [
+					substr( $html, 0, $first_gt + 1 ),
+					substr( $html, $last_lt ),
+				];
+			}
+		}
+
+		$null_seen     = 0;
+		$last_null_idx = -1;
+		$ic_insert     = null;
+		foreach ( $parent_block['innerContent'] as $ic_idx => $ic_item ) {
+			if ( null === $ic_item ) {
+				if ( $null_seen === $insert_at ) {
+					$ic_insert = $ic_idx;
+					break;
+				}
+				$last_null_idx = $ic_idx;
+				$null_seen++;
+			}
+		}
+		if ( null === $ic_insert ) {
+			$ic_insert = count( $parent_block['innerContent'] ) > 1
+				? count( $parent_block['innerContent'] ) - 1
+				: ( -1 === $last_null_idx ? count( $parent_block['innerContent'] ) : $last_null_idx + 1 );
+		}
+		array_splice( $parent_block['innerContent'], $ic_insert, 0, array_fill( 0, $count, null ) );
 	}
 
 	/**

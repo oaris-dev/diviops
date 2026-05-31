@@ -23,7 +23,7 @@ Claude Code ◄──► MCP Server (stdio) ◄──► WordPress REST API ◄�
 | Component | What it is | Where it lives |
 |---|---|---|
 | **`diviops-agent`** WordPress plugin | REST API endpoints for Divi page data, section targeting, block validation, preset management. The contract layer between WordPress + Divi and the MCP server. | `diviops-agent.zip` at repo root |
-| **`@diviops/mcp-server`** | Node.js MCP server that bridges Claude to WordPress. Distributed via npm — no clone, no build. | `npx @diviops/mcp-server` |
+| **`@diviops/mcp-server`** | Node.js MCP server that bridges Claude to WordPress. Distributed via npm — no clone, no build. | `npx -y --package @diviops/mcp-server diviops-mcp` |
 | **`divi-5-builder`** Claude skill | Block format rules, verified attribute paths, design patterns. Without it, Claude guesses attr formats and produces broken pages. | `skills/divi-5-builder/` (also installable via `claude plugin install oaris-dev/diviops`) |
 | **`diviops-design-library`** plugin | Optional. CSS entrance animations, gradient text, glass effects, Three.js WebGL shaders. | `diviops-design-library.zip` at repo root |
 
@@ -63,10 +63,12 @@ claude mcp add diviops-mysite \
   --env WP_URL=http://your-site.local \
   --env WP_USER=your-wp-username \
   --env WP_APP_PASSWORD=xxxxXXXXxxxxXXXXxxxxXXXX \
-  -- npx @diviops/mcp-server
+  -- npx -y --package @diviops/mcp-server diviops-mcp
 ```
 
 For Local by Flywheel (enables the `diviops_meta_wp_cli` tool), add `--env "WP_PATH=/Users/you/Local Sites/your-site/app/public"`.
+
+For Claude Desktop, use `"command": "npx"` with args `["-y", "--package", "@diviops/mcp-server", "diviops-mcp"]`. If Claude cannot find `npx`, run `npm install -g @diviops/mcp-server@latest` and use `diviops-mcp`, or use `node "$(npm root -g)/@diviops/mcp-server/dist/index.js"`.
 
 Restart Claude Code, then ask: **"List the pages on my site."** Claude calls `diviops_page_list` and renders the result. You're authoring with the suite.
 

@@ -2163,6 +2163,56 @@ registerPluginTool(
 );
 
 registerPluginTool(
+  "diviops_tb_layout_block_insert",
+  {
+    description:
+      "Insert one or more serialized Divi blocks into an existing Theme Builder layout without replacing the whole layout. Target a unique parent with `parent_selector` (for example `divi/group[adminLabel=\"Legal Col\"]`, or `divi/group` only when it is unique) or an explicit zero-based `parent_path` from the parsed block tree such as `0.1.2`. `position=append|prepend` inserts as children of the target block; `position=before|after` inserts beside the target within its parent. Ambiguous selectors return ok:false with code 'invalid_input'; missing targets return 'not_found'. The route parses and validates the inserted blocks, rejects malformed pseudo-escapes such as bare `u003c`, validates the final serialized layout before saving, and returns a no-op when the exact requested block sequence already exists at the insertion point." +
+      DRY_RUN_DESC_SUFFIX,
+    inputSchema: {
+      layout_id: z.number().int().describe("Theme Builder layout post ID to mutate"),
+      parent_selector: z
+        .string()
+        .optional()
+        .describe('Unique selector such as `divi/group[adminLabel="Legal Col"]` or `divi/column`. Provide exactly one of parent_selector or parent_path.'),
+      parent_path: z
+        .string()
+        .optional()
+        .describe('Zero-based parsed-tree path such as `0`, `0.1`, or `0.1.2`. Provide exactly one of parent_selector or parent_path.'),
+      position: z
+        .enum(["append", "prepend", "before", "after"])
+        .optional()
+        .default("append")
+        .describe("Where to insert relative to the target block."),
+      content: z.string().describe("One or more serialized Divi blocks to insert"),
+      dry_run: DRY_RUN_FIELD,
+    },
+    annotations: { idempotentHint: false },
+    _meta: { idempotent: "conditional" },
+  },
+  async ({ layout_id, parent_selector, parent_path, position, content, dry_run }) => {
+    const body: Record<string, unknown> = {
+      content,
+      position: position ?? "append",
+    };
+    if (parent_selector !== undefined) body.parent_selector = parent_selector;
+    if (parent_path !== undefined) body.parent_path = parent_path;
+    if (dry_run) body.dry_run = true;
+    const result = await wp.requestEnveloped(
+      `/theme-builder/layout/block-insert/${layout_id}`,
+      {
+        method: "POST",
+        body,
+      },
+    );
+    return {
+      content: [
+        { type: "text" as const, text: serializeEnvelope(result, "diviops_tb_layout_block_insert") },
+      ],
+    };
+  },
+);
+
+registerPluginTool(
   "diviops_tb_template_create",
   {
     description:
@@ -2505,7 +2555,7 @@ registerLocalTool(
         withCode(
           "meta_wp_cli.not_configured",
           "WP-CLI not configured.",
-          'Set the WP_PATH environment variable to your WordPress installation path. Example: claude mcp add diviops-mcp -- env WP_URL=http://site.local WP_USER=admin WP_APP_PASSWORD="xxxx" WP_PATH="/Users/you/Local Sites/your-site/app/public" npx @diviops/mcp-server. Local site ID is auto-detected from WP_PATH; set LOCAL_SITE_ID explicitly if needed.',
+          'Set the WP_PATH environment variable to your WordPress installation path. Example: claude mcp add diviops-mcp --env WP_URL=http://site.local --env WP_USER=admin --env WP_APP_PASSWORD=xxxx --env "WP_PATH=/Users/you/Local Sites/your-site/app/public" -- npx -y --package @diviops/mcp-server diviops-mcp. Local site ID is auto-detected from WP_PATH; set LOCAL_SITE_ID explicitly if needed.',
         );
       }
       const result = await wpCli.run(command);

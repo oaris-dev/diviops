@@ -34,7 +34,7 @@ Get from zero to generating Divi 5 pages with Claude Code in ~15 minutes. This f
 
 ## Step 3: Register with Claude Code
 
-The MCP server runs via `npx @diviops/mcp-server` — no clone, no build step.
+The MCP server runs from the published npm package — no clone, no build step.
 
 > **Important**: Choose a unique MCP name that won't conflict with other MCP servers you have registered. Use your site name (e.g., `diviops-mysite`).
 
@@ -45,7 +45,7 @@ claude mcp add diviops-mysite \
   --env WP_URL=http://your-site.local \
   --env WP_USER=your-username \
   --env WP_APP_PASSWORD=xxxxXXXXxxxxXXXXxxxxXXXX \
-  -- npx @diviops/mcp-server
+  -- npx -y --package @diviops/mcp-server diviops-mcp
 ```
 
 ### With WP-CLI (Local by Flywheel — enables the `diviops_meta_wp_cli` tool)
@@ -56,7 +56,7 @@ claude mcp add diviops-mysite \
   --env WP_USER=your-username \
   --env WP_APP_PASSWORD=xxxxXXXXxxxxXXXXxxxxXXXX \
   --env "WP_PATH=/Users/you/Local Sites/your-site/app/public" \
-  -- npx @diviops/mcp-server
+  -- npx -y --package @diviops/mcp-server diviops-mcp
 ```
 
 > **Use `--env` flags, not the `env` command.** Claude Code's native `--env KEY=VALUE` flags survive copy-paste; the older `-- env KEY=VALUE` form (piping through unix `env`) breaks silently when any value contains a space. Quote any value with spaces using regular double quotes — no backslash escaping needed inside quotes.
@@ -112,7 +112,7 @@ You should see your MCP server listed with the correct env vars. If anything loo
 
 ```bash
 claude mcp remove diviops-mysite
-claude mcp add diviops-mysite --env KEY=VALUE ... -- npx @diviops/mcp-server
+claude mcp add diviops-mysite --env KEY=VALUE ... -- npx -y --package @diviops/mcp-server diviops-mcp
 ```
 
 ## Step 5: Test Connection
@@ -131,7 +131,51 @@ Then try:
 Use diviops_page_list to show all pages.
 ```
 
-> **If tools don't appear**: Check `claude mcp list` output. The `npx` command must be reachable on your `PATH` (it ships with Node.js, which provides `npm`/`npx`). `npx` then fetches and runs the `@diviops/mcp-server` package on demand.
+> **If tools don't appear**: Check `claude mcp list` output. The `npx` command must be reachable on your `PATH` (it ships with Node.js, which provides `npm`/`npx`). The `-y --package @diviops/mcp-server diviops-mcp` form avoids `npx` prompts and explicitly selects the MCP server bin from the package.
+
+### Claude Desktop JSON
+
+Use the same command shape in Claude Desktop:
+
+```json
+{
+  "mcpServers": {
+    "diviops-mysite": {
+      "command": "npx",
+      "args": ["-y", "--package", "@diviops/mcp-server", "diviops-mcp"],
+      "env": {
+        "WP_URL": "http://your-site.local",
+        "WP_USER": "your-username",
+        "WP_APP_PASSWORD": "xxxxXXXXxxxxXXXXxxxxXXXX"
+      }
+    }
+  }
+}
+```
+
+### Fallback: Global Install
+
+If Claude cannot find `npx`, install the package globally and register the installed bin:
+
+```bash
+npm install -g @diviops/mcp-server@latest
+
+claude mcp add diviops-mysite \
+  --env WP_URL=http://your-site.local \
+  --env WP_USER=your-username \
+  --env WP_APP_PASSWORD=xxxxXXXXxxxxXXXXxxxxXXXX \
+  -- diviops-mcp
+```
+
+If the global bin directory is also missing from Claude's `PATH`, register the absolute entrypoint:
+
+```bash
+claude mcp add diviops-mysite \
+  --env WP_URL=http://your-site.local \
+  --env WP_USER=your-username \
+  --env WP_APP_PASSWORD=xxxxXXXXxxxxXXXXxxxxXXXX \
+  -- node "$(npm root -g)/@diviops/mcp-server/dist/index.js"
+```
 
 ## Step 6: Optional — Install the Design Library Plugin
 
@@ -333,7 +377,7 @@ claude mcp add diviops-mysite \
   --env WP_APP_PASSWORD=xxxxXXXXxxxxXXXXxxxxXXXX \
   --env "WP_PATH=/Users/you/Local Sites/your-site/app/public" \
   --env "DIVIOPS_WP_CLI_ALLOW=option update,post delete,search-replace" \
-  -- npx @diviops/mcp-server
+  -- npx -y --package @diviops/mcp-server diviops-mcp
 ```
 
 Only list the specific commands you need. Unknown entries are ignored with a warning.
@@ -359,21 +403,21 @@ claude mcp add diviops-main \
   --env WP_URL=http://main-site.local \
   --env WP_USER=admin \
   --env WP_APP_PASSWORD=xxxx \
-  -- npx @diviops/mcp-server
+  -- npx -y --package @diviops/mcp-server diviops-mcp
 
 # Test site (same MCP package, different credentials)
 claude mcp add diviops-test \
   --env WP_URL=http://test-site.local \
   --env WP_USER=admin \
   --env WP_APP_PASSWORD=yyyy \
-  -- npx @diviops/mcp-server
+  -- npx -y --package @diviops/mcp-server diviops-mcp
 ```
 
 Each registration is independent — different site, different credentials, different MCP name.
 
 **Teammate setup**: They only need:
 1. The `diviops-agent.zip` (installed in their WP site — download from this repo)
-2. `claude mcp add ... npx @diviops/mcp-server` with their own `WP_URL`, `WP_USER`, `WP_APP_PASSWORD`
+2. `claude mcp add ... npx -y --package @diviops/mcp-server diviops-mcp` with their own `WP_URL`, `WP_USER`, `WP_APP_PASSWORD`
 3. The skill via `claude plugin install oaris-dev/diviops`
 
 No clone, no build.
@@ -387,4 +431,4 @@ No clone, no build.
 | WP-CLI "not configured" | Set `WP_PATH` (Local by Flywheel) or `WP_CLI_CMD` (containerized) |
 | Styles not rendering | Hard-refresh browser (Cmd+Shift+R) — CSS cache |
 | VB shows raw `$variable()$` | Dynamic content binding — click the chip to edit |
-| `npx` can't find package | Update Node.js to 18+; verify `npx --version` works |
+| `npx` can't find package | Update Node.js to 18+; verify `npx --version` works; use `npx -y --package @diviops/mcp-server diviops-mcp`, not `npx @diviops/mcp-server` |

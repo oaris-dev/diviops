@@ -32,7 +32,7 @@ claude mcp add diviops-mcp \
   --env WP_URL=http://your-site.local \
   --env WP_USER=your-wp-username \
   --env WP_APP_PASSWORD=xxxxXXXXxxxxXXXXxxxxXXXX \
-  -- npx @diviops/mcp-server
+  -- npx -y --package @diviops/mcp-server diviops-mcp
 ```
 
 See the [DiviOps MCP Server README](../../../diviops-server/) for full setup and the response contract.

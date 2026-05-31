@@ -110,7 +110,7 @@ class DiviOps_Agent {
 		// section
 		'section_append', 'section_get', 'section_remove', 'section_replace',
 		// theme builder
-		'tb_layout_get', 'tb_layout_update', 'tb_template_create', 'tb_template_list',
+		'tb_layout_block_insert', 'tb_layout_get', 'tb_layout_update', 'tb_template_create', 'tb_template_list',
 		'tb_template_trash',
 		// validate
 		'validate_blocks',
@@ -683,6 +683,19 @@ class DiviOps_Agent {
 			'permission_callback' => [ __CLASS__, 'check_admin_permission' ],
 			'args'                => [
 				'content' => [ 'required' => true, 'type' => 'string' ],
+			],
+		] );
+
+		register_rest_route( self::REST_NAMESPACE, '/theme-builder/layout/block-insert/(?P<id>\d+)', [
+			'methods'             => 'POST',
+			'callback'            => [ __CLASS__, 'tb_layout_block_insert' ],
+			'permission_callback' => [ __CLASS__, 'check_admin_permission' ],
+			'args'                => [
+				'content'         => [ 'required' => true, 'type' => 'string' ],
+				'parent_selector' => [ 'required' => false, 'type' => 'string' ],
+				'parent_path'     => [ 'required' => false, 'type' => 'string' ],
+				'position'        => [ 'required' => false, 'type' => 'string', 'default' => 'append' ],
+				'dry_run'         => [ 'required' => false, 'type' => 'boolean', 'default' => false ],
 			],
 		] );
 

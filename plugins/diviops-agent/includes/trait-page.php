@@ -191,6 +191,18 @@ trait DiviOps_Agent_Page {
 				[ 'field' => 'content', 'received_type' => gettype( $content ) ]
 			);
 		}
+		$normalized = self::normalize_divi_full_content_for_write( $content );
+		if ( empty( $normalized['ok'] ) ) {
+			$error = $normalized['error'] ?? [];
+			return self::envelope_error(
+				'invalid_input',
+				$error['message'] ?? 'content contains unsafe Divi block attribute JSON.',
+				$error['hint'] ?? 'Pass valid WordPress block markup. Raw HTML inside Divi block attributes is allowed, but malformed escapes must be corrected before writing.',
+				400,
+				array_merge( [ 'field' => 'content' ], $error )
+			);
+		}
+		$content = $normalized['content'];
 
 		if ( $dry_run ) {
 			$old_len = strlen( (string) $post->post_content );
