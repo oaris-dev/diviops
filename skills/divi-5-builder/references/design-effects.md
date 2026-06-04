@@ -119,70 +119,129 @@ Skip: `role="marquee"` (deprecated), `aria-live="off"` (default, noise), `role="
 ### Setup
 Three.js r128 is bundled locally in the plugin. Auto-loaded when page content contains keywords: `THREE`, `shader`, `webgl`, `three.js`, `canvas`.
 
-### Two Patterns: Full-Page vs Section-Contained
+### One canonical pattern: canvas absolute-scoped to its section <!-- VB-verified 2026-06-03 -->
 
-| Pattern | Canvas position | Use when |
-|---------|----------------|----------|
-| **Section-contained** | `position: absolute` | Multi-section pages (most common) |
-| **Full-page** | `position: fixed` | Single-section hero pages only |
+There is **one correct way** to put a full-section WebGL background in Divi 5, and it works for both single-section heroes and multi-section pages. The canvas is `position: absolute` inside a `position: relative` section, sized to the **section** (not the viewport), so it fills the hero and scrolls away with it.
 
-### Section-Contained Pattern (multi-section pages) <!-- verified 2026-03-21 -->
-
-Canvas injected via `htmlBefore` on the **first Row** (not Section).
-
-**Critical**: Section's `htmlBefore` injects *outside* the section element (as a sibling). Row's `htmlBefore` injects *inside* the section — canvas becomes a child and can position relative to it.
-
+**Structure — carry the canvas via the first Row's `htmlBefore`:**
 ```
-Section (class: my-hero, freeForm CSS for positioning)
-├── Row (htmlBefore: <canvas> + <script>)
+Section (class: my-hero — position:relative;overflow:hidden via freeForm)
+├── Row (htmlBefore: <canvas> + <script>)   ← injects as a DIRECT child of the section
 │   └── Column
-│       └── Content modules
+│       └── Content modules (heading, text, button …)
 ```
 
-**CSS (freeForm on section):**
+Row `htmlBefore` injects the canvas as a **direct child of `.et_pb_section`**, so `el.closest('.et_pb_section')` resolves and the canvas's containing block is the section. This is the load-bearing reason to use the Row (not the Section, not a Code module — see traps below).
+
+**Canonical `htmlBefore` attr path:** `module.advanced.html.desktop.value.htmlBefore` — i.e. `html → desktop → value → htmlBefore`. NOT `html.htmlBefore.desktop.value` (inverted shape saves clean + validates but renders nothing — a silent no-op).
+
+**Section freeForm CSS:**
 ```css
-.my-hero.et_pb_section { position: relative }
-.my-hero > .et_pb_row { position: relative; z-index: 2 }
+.my-hero.et_pb_section { position: relative; overflow: hidden }
+.my-hero canvas#my-canvas { position: absolute; top: 0; left: 0; width: 100%!important; height: 100%!important; pointer-events: none; z-index: 0; display: block }
+.my-hero > .et_pb_row { position: relative; z-index: 2 }   /* content above the canvas */
 ```
+> **`overflow: hidden` on the section is REQUIRED here** (it clips the absolute canvas to the section box). This reverses older guidance — it was only "don't" for the obsolete viewport-fill approach.
 
-**Canvas (inline styles on the element):**
-```html
-<canvas id="my-canvas" style="position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:0"></canvas>
-```
-
-**Script sizing** — use section dimensions, not viewport:
+**Script — size off the SECTION + ResizeObserver (never the window):**
 ```js
-var sec = el.closest('.et_pb_section');
-renderer.setSize(sec.offsetWidth, sec.offsetHeight);
+var el = document.querySelector('canvas#my-canvas'); // the canvas this script injected
+var host = el.closest('.et_pb_section');             // the canvas's section
+function size(){ renderer.setSize(host.offsetWidth, host.offsetHeight, false); }
+size();
+new ResizeObserver(size).observe(host);              // tracks section growth, not just window resize
+window.addEventListener('resize', size);
 ```
+> Resolve `el` from the DOM (the canvas you just injected) — don't assume an ambient `el`. `document.currentScript` also works since the inline `<script>` runs during parse, but a `querySelector` on the canvas id is what the verified pages use and survives being moved out of an inline context.
 
-**Rules:**
-- Do NOT use `overflow: hidden` on the section (clips the canvas)
-- Do NOT put canvas in Section's `htmlBefore` (injects outside)
-- Sections are always 100vw — `width: 100%` on canvas = full width
+That's it. Single-section hero or 10-section page — the same pattern. You never need `position: fixed`.
 
-### Full-Page Pattern (single-section hero pages)
+### ⚠️ Anti-pattern: `position: fixed` + `100vw/100vh` (the #1 broken-shader bug)
 
-```
-Section (bg: #000, minHeight: 100vh, class: shader-hero)
-├── Row (Code module with canvas + script)
-```
-
+Legacy/AI-authored shader pages frequently do this:
 ```css
-.shader-hero canvas.shader-bg { position: fixed; top: 0; left: 0; width: 100vw !important; height: 100vh !important; pointer-events: none }
-.shader-hero > .et_pb_row { position: relative; z-index: 2 }
+/* DON'T */
+.hero canvas { position: fixed; top: 0; left: 0; width: 100vw!important; height: 100vh!important }
 ```
+with the renderer sized off `window.innerWidth/innerHeight`. It *looks* fine on a single screen, which is why it gets reached for — but it's wrong:
 
-### Common Rules (both patterns):
+- **Glued to the viewport.** The shader does not scroll with its section; it stays pinned to the screen.
+- **Bleeds over later sections.** On any page with content below the hero, the fixed canvas paints over that content as you scroll (verified: a fixed hero shader covering the section beneath it).
+- **Sized to the window, not the section.**
+- **Reads as an unwanted "parallax".** A common variant pairs the `fixed` canvas with `clip-path: inset(0 0 0 0)` (and/or `background-attachment: fixed`) on the hero. The clip windows the *stationary* canvas to the *moving* hero box, so on scroll the shader appears to slide underneath the content — a parallax effect nobody asked for. Same root cause (`fixed` + window sizing), just dressed up; the fix is the same (verified on `effects-…-hero` page id 159, 2026-06-03).
+
+**Repair recipe (verified on 4 legacy pages, 2026-06-03):**
+1. `position: fixed → absolute`; `100vw/100vh → 100%`; add `position: relative; overflow: hidden` to the section. **Also drop any `clip-path: inset(…)` and `background-attachment: fixed`** — once the canvas is `absolute` and section-scoped, the clip/attachment hacks are exactly what produced the parallax artifact.
+2. Renderer: size off `host = el.closest('.et_pb_section')` (offsetWidth/Height) instead of `window`; add a `ResizeObserver(host)`.
+3. **Gotcha that step 1 exposes:** `fixed` ignores all ancestors, so it was *masking* a nesting problem. If the canvas is carried by a **Code module inside a column**, switching to `absolute` makes it anchor to `.et_pb_code_inner` — which Divi renders `position: relative` and 0-height — so the canvas collapses to ~0 height / column width instead of the section. Fix by **moving the canvas to the Row's `htmlBefore`** (direct section child — preferred), or, if you must keep it in a Code module, neutralize the intermediate wrappers:
+   ```css
+   .my-hero .et_pb_column, .my-hero .et_pb_code, .my-hero .et_pb_code_inner { position: static!important }
+   ```
+
+### Carrier traps (where the canvas lands depends on the host)
+
+A container's `htmlBefore` does **not** always inject the canvas inside that container:
+
+| Carrier | Canvas lands… | Full-section shader? |
+|---|---|---|
+| **Row `htmlBefore`** | direct child of `.et_pb_section` | ✅ BEST — fills section, scopes correctly |
+| **Column `htmlBefore`** | inside the **Row's flex container, as a sibling of the columns** — NOT inside the column | ⚠️ breaks column-scoped use (see card section); OK only if you want a row-level overlay |
+| **Section `htmlBefore`** | **outside** the section (into `.et_builder_inner_content`) | ❌ orphan canvas above the page; `closest('.et_pb_section')` misses |
+| **Code module inside column** | inside `.et_pb_code_inner` (relative, 0-height) | ⚠️ works only if you neutralize wrappers (see anti-pattern gotcha) |
+
+### Card / sub-element shaders (scope a shader to a card, not a section) <!-- VB-verified 2026-06-03 -->
+
+To run an independent shader inside a **card** (a column or a Group), the canvas must be inside that box and scoped to it. Column `htmlBefore` does NOT work — it injects the canvas into the row's flex container (sibling of the columns), so `closest('.et_pb_column')` returns null (shader never boots) AND the stray canvas becomes an extra flex item that collapses the cards. **Carry the canvas with a `divi/code` module placed FIRST inside the card** — that lands it inside `.et_pb_column` / `.et_pb_group`, scoped to the card.
+
+```
+Row (display:flex)                        ← flex row so flexType sizing applies
+├── Column / Group  (class: card — position:relative;overflow:hidden;flexType 8_24)
+│   ├── Code module: <canvas> + <script host=closest('.et_pb_column' | '.et_pb_group')>
+│   ├── (neutralize the code wrapper so it adds 0 height)
+│   └── content (eyebrow, title, body)
+```
+```css
+.cards .card { position: relative!important; overflow: hidden; min-height: 360px }
+.cards .card .et_pb_code, .cards .card .et_pb_code_inner { position: static!important; height: 0!important; flex: 0 0 0!important }
+.cards .card canvas { position: absolute!important; inset: 0; width: 100%!important; height: 100%!important; pointer-events: none; z-index: 0 }
+.cards .card .et_pb_text, .cards .card .et_pb_heading { position: relative; z-index: 2 }  /* + a scrim for legibility */
+```
+The shader's `host = el.closest('.et_pb_column')` (or `.et_pb_group`); size off `host.offsetWidth/Height`. A Group-based card is one self-contained, library-saveable unit (shader + copy travel together). Each card needs a **distinct canvas id** and its own fragment-shader string — a shared id collides (only the first boots).
+
+### Responsive: flip direction AND width at the SAME breakpoint <!-- VB-verified 2026-06-03 -->
+
+For multi-card grids (flex row + `flexType` children), a phone-only override is NOT enough. Divi breakpoints: tablet = 768–980px, phone = ≤767px. If the row's `flexDirection: column` is set at **tablet** but each child's full-width `flexType: 24_24` is only at **phone**, the 768–980px band renders stacked-but-1/3-narrow (stranded slivers). Set BOTH at the same breakpoint:
+```jsonc
+// parent row: flip direction at tablet — layout lives under module.decoration
+"module": { "decoration": {
+  "layout": { "desktop": {"value":{"display":"flex","flexDirection":"row"}}, "tablet": {"value":{"flexDirection":"column"}} }
+} }
+// each child column/Group: full width at tablet (not just phone) — sizing lives under module.decoration
+"module": { "decoration": {
+  "sizing": { "desktop": {"value":{"flexType":"8_24"}}, "tablet": {"value":{"flexType":"24_24"}}, "phone": {"value":{"flexType":"24_24"}} }
+} }
+```
+> Both keys are nested under `module.decoration` — i.e. the real paths are `module.decoration.layout.<bp>.value.flexDirection` and `module.decoration.sizing.<bp>.value.flexType`. Top-level `layout`/`sizing` keys are silently ignored.
+Plus a belt-and-suspenders net: `@media(max-width:980px){ .card{ width:100%!important; max-width:100%!important } }`.
+
+### `<script>` survival + distribution caveat
+
+The inline `<script>` in a Code module or `htmlBefore` is stored verbatim **only if the saving user has `unfiltered_html`** (admin, non-multisite). For lower-capability editors, `wp_kses_post` strips `<script>` on save and the canvas sits blank. The inline carrier is the only approach that's identical on local and remote (MCP) sites, so it's the documented default. A parameterized loader (one enqueued script + `data-effect` registry, no inline `<script>`) would be capability-independent and reusable, but that runtime belongs in the Design Library plugin — not a per-page inline script or a local-only mu-plugin. (Deferred.)
+
+### Common rules (all patterns)
 - Script polling: `if(typeof THREE==='undefined'){setTimeout(fn,100);return;}`
+- Guard double-init: `if(el.dataset.init==='1')return; el.dataset.init='1';`
 - Use `THREE.ShaderMaterial` (not `RawShaderMaterial`) for WebGL2 compatibility
-- Guard double-init: `if(el.dataset.init==='1')return;`
-- Fragment shader as single-line string with `\\n` joins
+- Fragment shader as a string with `\n` line joins (e.g. `[...lines].join(String.fromCharCode(10))`)
+- Size off the **section/card host**, never `window` — and observe it with `ResizeObserver`
 
-### Tested Shader Variants
-1. **Chromatic Wave** — animated light refraction lines (from 21st.dev WebGLShader)
-2. **Shader Lines** — mosaic vertical color lines with pixelated look
+### Tested shader variants
+1. **Chromatic Wave / Aurora** — layered sine line-field, blue-violet refraction
+2. **Shader Lines** — mosaic vertical color streaks with chromatic fringing
 3. **Shader Animation** — expanding diamond/ring patterns with RGB separation
+4. **WebGL Arc** — RGB-split glowing horizon arc
+5. **Plasma** — interfering sine plasma (teal/cyan/magenta)
+6. **Metaballs / Gradient Orbs** — drifting soft blobs (warm amber/pink)
 
 ### CSS Animated Gradient (Alternative to WebGL)
 For multi-section pages where WebGL is overkill:

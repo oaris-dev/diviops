@@ -112,7 +112,7 @@ Two silent-failure traps — title shape and icon-mode flag.
       "desktop": {
         "value": {
           "useIcon": "on",
-          "icon": { "unicode": "\uf0e7", "type": "fa", "weight": "900" }
+          "icon": { "unicode": "&#xf0e7;", "type": "fa", "weight": "900" }
         }
       }
     }
@@ -123,7 +123,7 @@ Two silent-failure traps — title shape and icon-mode flag.
 - **Title is an object** `{text}`, NOT a plain string. Plain string → title silently absent from rendered HTML.
 - **`useIcon: "on"` is required** when `icon` is set. Without it, the `.et-pb-icon` span renders empty — icon absent.
 - Default title tag is `<h4>`. Override via `title.decoration.font.font.desktop.value.headingLevel` (same double-`font` shape as Heading).
-- Icon `unicode` is a raw unicode character (e.g. `"\uf0e7"` for FontAwesome bolt, `""` for Divi built-in). Get live icon codes from `diviops_meta_find_icon`.
+- Icon `unicode` is the HTML-entity form `"&#xNNNN;"` (e.g. `"&#xf0e7;"` for FontAwesome bolt; Divi built-ins also use `&#xNNNN;`). Paste `diviops_meta_find_icon`'s `unicode` field verbatim.
 - Swap to image mode: omit `useIcon` and set `imageIcon.innerContent.desktop.value` to `{src, id, alt, titleText}`.
 
 ---
@@ -136,7 +136,7 @@ Two silent-failure traps — title shape and icon-mode flag.
   "icon": {
     "innerContent": {
       "desktop": {
-        "value": { "unicode": "\uf0e7", "type": "fa", "weight": "900" }
+        "value": { "unicode": "&#xf0e7;", "type": "fa", "weight": "900" }
       }
     },
     "advanced": {
@@ -148,6 +148,9 @@ Two silent-failure traps — title shape and icon-mode flag.
 ```
 
 - Icon metadata: `unicode` + `type` (`"fa"` for FontAwesome, `"divi"` for Divi built-in) + `weight` (FA: `"400"` regular, `"900"` solid).
+- **`unicode` is the HTML-entity form `"&#xNNNN;"`** — paste `diviops_meta_find_icon`'s `unicode` field verbatim (it returns `"&#xf0e7;"`, not a raw `\u` glyph). *(verified 2026-06-04)*
+- **Use the native `divi/icon` module for icons — do NOT substitute a text/SVG carrier.** Native `divi/icon` is what makes Divi **enqueue the FontAwesome webfont**, and it injects the glyph as `.et-pb-icon` textContent client-side. Substitutes fail on this stack: a bare `<span style="font-family:FontAwesome">` renders a tofu box (nothing triggers the FA enqueue → font absent → fallback), and inline `<svg>` is `kses`-stripped on save from **both** `divi/text` and `divi/code` innerContent. *(verified live 2026-06-04, Divi 5.6.2)*
+- **`render_preview` cannot verify icons** — `.et-pb-icon` is empty in `render_preview`/server HTML because the glyph is injected **client-side**. An empty span there is normal, not a broken module. Verify icons on the live frontend (see [SKILL.md → Design Quality Checklist](../SKILL.md#design-quality-checklist) → glyph coverage).
 - Border/background go on `module.decoration` (NOT `icon.decoration.border/background` — that creates a non-VB-editable inner ring).
 
 ---
@@ -290,7 +293,7 @@ A common pattern: 3 cards in a row. **Do not use `flexType: "8_24"` on the blurb
   "title": { "innerContent": { "desktop": { "value": { "text": "Card A" } } } },
   "content": { "innerContent": { "desktop": { "value": "\u003cp\u003eDescription.\u003c/p\u003e" } } },
   "imageIcon": {
-    "innerContent": { "desktop": { "value": { "useIcon": "on", "icon": { "unicode": "\uf0e7", "type": "fa", "weight": "900" } } } }
+    "innerContent": { "desktop": { "value": { "useIcon": "on", "icon": { "unicode": "&#xf0e7;", "type": "fa", "weight": "900" } } } }
   },
   "module": {
     "decoration": {

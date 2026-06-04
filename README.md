@@ -102,7 +102,7 @@ The skill enforces the Divi block format, the design system, and the response co
 
 ## Tools at a glance
 
-The suite exposes **74 tools** across the categories below. Per-tool descriptions, request shapes, and response payloads live in the server [README](diviops-server/README.md).
+The suite exposes **70 tools** across the categories below. Per-tool descriptions, request shapes, and response payloads live in the server [README](diviops-server/README.md).
 
 | Category | Use case | Tool prefixes |
 |---|---|---|
@@ -141,7 +141,7 @@ The Free distribution (`oaris-dev/diviops`) carries the full execution surface:
 
 - `diviops-agent` WordPress plugin (REST bridge, Divi 5 + SCF + CPT + WP-CLI handlers)
 - `diviops-design-library` plugin (CSS effects, gradients, glass, Three.js shaders)
-- `@diviops/mcp-server` on npm — all 74 tools
+- `@diviops/mcp-server` on npm — all 70 tools
 - `divi-5-builder` Claude skill, free slice: `SKILL.md`, design patterns, tools reference, preset system, design-effects, mega-menu, minimal snippets, SaaS landing, and the **Tier 1** attribute reference (universal decoration, `innerContent[]` variants, attribute tree layout, design tokens, exceptions quick reference)
 
 ### What ships in Pro (v1.x today)
@@ -152,7 +152,7 @@ The Pro distribution adds the deeper skill knowledge layer for the same Free exe
 |---|:---:|:---:|
 | `diviops-agent` WordPress plugin | ✓ | ✓ (same binary) |
 | `diviops-design-library` plugin | ✓ | ✓ (same binary) |
-| `@diviops/mcp-server` on npm — all 74 tools | ✓ | ✓ (same package) |
+| `@diviops/mcp-server` on npm — all 70 tools | ✓ | ✓ (same package) |
 | Skill: SKILL.md, design patterns, tools reference, preset system, design-effects, mega-menu, minimal snippets, SaaS landing | ✓ | ✓ |
 | Skill: **Tier 1** attribute reference — universal decoration, innerContent variants, attribute tree layout, design tokens, exceptions quick reference | ✓ | ✓ |
 | Skill: **Tier 2** — shared pattern families (font, icon, container cascade, module link) | — | ✓ |
@@ -162,7 +162,7 @@ The Pro distribution adds the deeper skill knowledge layer for the same Free exe
 
 **Practical difference today.** The Free skill is enough to generate pages using universal decoration patterns plus runtime lookups via `diviops_schema_get_module`. Pro adds verified per-module maps, which cuts schema-lookup round-trips and reduces silent-fail risk on quirks only documented in the full maps — e.g., Toggle's `closedTitle.decoration.font.*` (closed-state title styling; without it you'd target the open state only) or Video's `overlay.decoration.background` (the correct background target — not `module.decoration.background`).
 
-No feature gating in the MCP server or the WordPress plugin in v1.x — all 74 tools are available in both distributions.
+No feature gating in the MCP server or the WordPress plugin in v1.x — all 70 tools are available in both distributions.
 
 ### What's coming in Pro (Phase B onwards)
 

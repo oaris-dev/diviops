@@ -68,6 +68,7 @@ When generating pages, ALWAYS apply:
 - **Hover states** on cards, buttons, icons (use `desktop.hover` format)
 - **Responsive overrides** (tablet/phone: padding, font sizes, `flexDirection: column`)
 - **Visual mobile check** for Group/card grids *(verified 2026-05-28)* — validation passing only proves block shape, not phone-safe stacking
+- **Icon glyph-coverage check** *(verified 2026-06-04)* — confirm icons paint the *correct glyph*, not a tofu/missing-glyph box. A tofu box has width too, so `width > 0` ≠ correct glyph. On the live frontend: (a) the icon webfont is in `document.fonts` as `loaded` (native `divi/icon` triggers the FontAwesome enqueue — a bare `font-family:FontAwesome` text span does not), (b) a known-missing codepoint measures ~0px while real glyphs measure > 0, (c) real distinct glyphs have *varying* widths, (d) the glyph is present as `.et-pb-icon` textContent, (e) eyeball a screenshot. `render_preview` static HTML can't verify this — `.et-pb-icon` is empty there because the glyph is injected client-side.
 - **Use `divi/number-counter`** for stats — animates counting on scroll (not plain text)
 - **Use Group flex** for multi-column layouts with `flexType` sizing (not Row with multiple columns)
 - **Minimum**: 8+ animations per page, hover on every interactive element
