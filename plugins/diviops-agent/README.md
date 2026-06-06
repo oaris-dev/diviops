@@ -25,7 +25,7 @@ If Divi is not active, all endpoints return `503 divi_unavailable`. See [setup-g
 
 Communication is via the `/diviops/v1/*` REST namespace, authenticated with Application Passwords. The MCP server reads the plugin's per-tool capability map at startup (the `/handshake` endpoint) and only exposes tools the plugin advertises support for — so you can update the plugin and server independently and unsupported tools fail with a clear `capability_missing` error rather than silent runtime breakage.
 
-After installing the plugin, register the MCP server with Claude:
+After installing the plugin, register the MCP server with Claude Code:
 
 ```bash
 claude mcp add diviops-mcp \
@@ -35,11 +35,24 @@ claude mcp add diviops-mcp \
   -- npx -y --package @diviops/mcp-server diviops-mcp
 ```
 
+For Codex, add the same server to `~/.codex/config.toml`:
+
+```toml
+[mcp_servers.diviops-mcp]
+command = "npx"
+args = ["-y", "--package", "@diviops/mcp-server", "diviops-mcp"]
+
+[mcp_servers.diviops-mcp.env]
+WP_URL = "http://your-site.local"
+WP_USER = "your-wp-username"
+WP_APP_PASSWORD = "xxxxXXXXxxxxXXXXxxxxXXXX"
+```
+
 See the [DiviOps MCP Server README](../../../diviops-server/) for full setup and the response contract.
 
 ## Capabilities
 
-The plugin exposes these capability surfaces (full per-endpoint reference, 73 tools: [docs/server-reference.md](../../../docs/server-reference.md)):
+The plugin exposes these capability surfaces (full per-endpoint reference, 74 always-on tools: [docs/server-reference.md](../../../docs/server-reference.md)):
 
 - **Page building** — Divi page/section/module/canvas CRUD; Theme Builder layouts + templates
 - **SCF setup + management** — field group provisioning, sync, export/import

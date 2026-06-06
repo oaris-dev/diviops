@@ -6,7 +6,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Divi 5](https://img.shields.io/badge/Divi-5.1.0%2B-7E3DD3.svg)](https://www.elegantthemes.com/gallery/divi/)
 
-DiviOps gives Claude Code, Claude Desktop, and other MCP clients a typed control layer over WordPress site state. It pairs an MCP server, a WordPress agent plugin, and Claude skill knowledge so AI agents can author Divi pages, inspect schemas, manage design tokens, work with SCF/CPT data models, run safe WP-CLI operations, and extend into target plugin coverage slices.
+DiviOps gives Claude Code, Codex, Claude Desktop, and other MCP clients a typed control layer over WordPress site state. It pairs an MCP server, a WordPress agent plugin, and skill knowledge so AI agents can author Divi pages, inspect schemas, manage design tokens, work with SCF/CPT data models, run safe WP-CLI operations, and extend into target plugin coverage slices.
 
 ```
 Claude Code ◄──► MCP Server (stdio) ◄──► WordPress REST API ◄──► DiviOps Agent plugin
@@ -23,8 +23,8 @@ Claude Code ◄──► MCP Server (stdio) ◄──► WordPress REST API ◄�
 | Component | What it is | Where it lives |
 |---|---|---|
 | **`diviops-agent`** WordPress plugin | REST API endpoints for Divi page data, section targeting, block validation, preset management. The contract layer between WordPress + Divi and the MCP server. | `diviops-agent.zip` at repo root |
-| **`@diviops/mcp-server`** | Node.js MCP server that bridges Claude to WordPress. Distributed via npm — no clone, no build. | `npx -y --package @diviops/mcp-server diviops-mcp` |
-| **`divi-5-builder`** Claude skill | Block format rules, verified attribute paths, design patterns. Without it, Claude guesses attr formats and produces broken pages. | `skills/divi-5-builder/` (also installable via `claude plugin install oaris-dev/diviops`) |
+| **`@diviops/mcp-server`** | Node.js MCP server that bridges MCP clients to WordPress. Distributed via npm — no clone, no build. | `npx -y --package @diviops/mcp-server diviops-mcp` |
+| **`divi-5-builder`** skill | Block format rules, verified attribute paths, design patterns. Without it, agents guess attr formats and produce broken pages. | `skills/divi-5-builder/` (Claude: `claude plugin install oaris-dev/diviops`; Codex: copy `skills/*` into `~/.codex/skills`) |
 | **`diviops-design-library`** plugin | Optional. CSS entrance animations, gradient text, glass effects, Three.js WebGL shaders. | `diviops-design-library.zip` at repo root |
 
 ## Use cases
@@ -56,7 +56,9 @@ In **WP Admin → Users → Your Profile → Application Passwords**:
 - Click "Add New Application Password"
 - **Strip the spaces** from the generated password — WordPress shows `758r WQ1X URcg ...` for readability but accepts the spaceless form, which avoids argument-parsing surprises in `claude mcp add`.
 
-### 3. Register the MCP server with Claude Code
+### 3. Register the MCP server
+
+Claude Code:
 
 ```bash
 claude mcp add diviops-mysite \
@@ -70,11 +72,24 @@ For Local by Flywheel (enables the `diviops_meta_wp_cli` tool), add `--env "WP_P
 
 For Claude Desktop, use `"command": "npx"` with args `["-y", "--package", "@diviops/mcp-server", "diviops-mcp"]`. If Claude cannot find `npx`, run `npm install -g @diviops/mcp-server@latest` and use `diviops-mcp`, or use `node "$(npm root -g)/@diviops/mcp-server/dist/index.js"`.
 
-Restart Claude Code, then ask: **"List the pages on my site."** Claude calls `diviops_page_list` and renders the result. You're authoring with the suite.
+Codex `~/.codex/config.toml`:
+
+```toml
+[mcp_servers.diviops-mysite]
+command = "npx"
+args = ["-y", "--package", "@diviops/mcp-server", "diviops-mcp"]
+
+[mcp_servers.diviops-mysite.env]
+WP_URL = "http://your-site.local"
+WP_USER = "your-wp-username"
+WP_APP_PASSWORD = "xxxxXXXXxxxxXXXXxxxxXXXX"
+```
+
+Restart your client, then ask: **"List the pages on my site."** The assistant calls `diviops_page_list` and renders the result. You're authoring with the suite.
 
 ### 4. Load the `divi-5-builder` skill
 
-The skill teaches Claude the correct Divi 5 block format. Without it, Claude guesses attr formats and produces broken pages.
+The skill teaches the assistant the correct Divi 5 block format. Without it, the agent guesses attr formats and produces broken pages.
 
 ```bash
 claude plugin install oaris-dev/diviops
@@ -85,6 +100,13 @@ Verify with `What skills do you have?` — you should see `divi-5-builder` liste
 This distribution includes a [`.claude-plugin/marketplace.json`](.claude-plugin/marketplace.json) manifest, so the same install command also works from a local clone of this repo (`claude plugin install <path-to-clone>`). The repository is published as a Claude Code plugin marketplace entry.
 
 For alternative skill installation paths (cloned repo, project-local copy), see [SETUP.md](SETUP.md#step-7-load-the-divi-5-builder-skill).
+
+For Codex, run this from the extracted DiviOps distribution or a local repo clone, then restart Codex:
+
+```bash
+mkdir -p "$HOME/.codex/skills"
+cp -R skills/* "$HOME/.codex/skills/"
+```
 
 ## Example workflow
 
@@ -102,7 +124,7 @@ The skill enforces the Divi block format, the design system, and the response co
 
 ## Tools at a glance
 
-The suite exposes **70 tools** across the categories below. Per-tool descriptions, request shapes, and response payloads live in the server [README](diviops-server/README.md).
+The suite exposes **74 tools** across the categories below. Per-tool descriptions, request shapes, and response payloads live in the server [README](diviops-server/README.md).
 
 | Category | Use case | Tool prefixes |
 |---|---|---|
@@ -141,8 +163,8 @@ The Free distribution (`oaris-dev/diviops`) carries the full execution surface:
 
 - `diviops-agent` WordPress plugin (REST bridge, Divi 5 + SCF + CPT + WP-CLI handlers)
 - `diviops-design-library` plugin (CSS effects, gradients, glass, Three.js shaders)
-- `@diviops/mcp-server` on npm — all 70 tools
-- `divi-5-builder` Claude skill, free slice: `SKILL.md`, design patterns, tools reference, preset system, design-effects, mega-menu, minimal snippets, SaaS landing, and the **Tier 1** attribute reference (universal decoration, `innerContent[]` variants, attribute tree layout, design tokens, exceptions quick reference)
+- `@diviops/mcp-server` on npm — all 74 tools
+- `divi-5-builder` skill, free slice: `SKILL.md`, design patterns, tools reference, preset system, design-effects, mega-menu, minimal snippets, SaaS landing, and the **Tier 1** attribute reference (universal decoration, `innerContent[]` variants, attribute tree layout, design tokens, exceptions quick reference)
 
 ### What ships in Pro (v1.x today)
 
@@ -152,7 +174,7 @@ The Pro distribution adds the deeper skill knowledge layer for the same Free exe
 |---|:---:|:---:|
 | `diviops-agent` WordPress plugin | ✓ | ✓ (same binary) |
 | `diviops-design-library` plugin | ✓ | ✓ (same binary) |
-| `@diviops/mcp-server` on npm — all 70 tools | ✓ | ✓ (same package) |
+| `@diviops/mcp-server` on npm — all 74 tools | ✓ | ✓ (same package) |
 | Skill: SKILL.md, design patterns, tools reference, preset system, design-effects, mega-menu, minimal snippets, SaaS landing | ✓ | ✓ |
 | Skill: **Tier 1** attribute reference — universal decoration, innerContent variants, attribute tree layout, design tokens, exceptions quick reference | ✓ | ✓ |
 | Skill: **Tier 2** — shared pattern families (font, icon, container cascade, module link) | — | ✓ |
@@ -162,7 +184,7 @@ The Pro distribution adds the deeper skill knowledge layer for the same Free exe
 
 **Practical difference today.** The Free skill is enough to generate pages using universal decoration patterns plus runtime lookups via `diviops_schema_get_module`. Pro adds verified per-module maps, which cuts schema-lookup round-trips and reduces silent-fail risk on quirks only documented in the full maps — e.g., Toggle's `closedTitle.decoration.font.*` (closed-state title styling; without it you'd target the open state only) or Video's `overlay.decoration.background` (the correct background target — not `module.decoration.background`).
 
-No feature gating in the MCP server or the WordPress plugin in v1.x — all 70 tools are available in both distributions.
+No feature gating in the MCP server or the WordPress plugin in v1.x — all 74 tools are available in both distributions.
 
 ### What's coming in Pro (Phase B onwards)
 

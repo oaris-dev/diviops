@@ -2,7 +2,7 @@
 
 **An AI harness for WordPress site authoring — Divi-native today, WordPress-wide by design.**
 
-The Node.js MCP server inside the DiviOps harness. It gives Claude Code, Claude Desktop, and other MCP clients a typed control layer over WordPress site state, dispatching to the DiviOps Agent plugin for Divi 5 page authoring, SCF and CPT data models, design tokens, presets, library and Theme Builder templates, site audits, and safe WP-CLI passthrough. Pairs with the `divi-5-builder` Claude skill so the agent applies Divi's block format and design rules correctly.
+The Node.js MCP server inside the DiviOps harness. It gives Claude Code, Codex, Claude Desktop, and other MCP clients a typed control layer over WordPress site state, dispatching to the DiviOps Agent plugin for Divi 5 page authoring, SCF and CPT data models, design tokens, presets, library and Theme Builder templates, site audits, and safe WP-CLI passthrough. Pairs with the `divi-5-builder` skill so the agent applies Divi's block format and design rules correctly.
 
 ```
 Claude Code <-> MCP Server (stdio) <-> WordPress REST API <-> DiviOps Agent plugin
@@ -34,7 +34,9 @@ In **WP Admin → Users → Your Profile → Application Passwords**:
 - Click "Add New Application Password"
 - Copy the generated password and strip the spaces
 
-### 3. Register the MCP server with Claude
+### 3. Register the MCP server
+
+Claude Code:
 
 ```bash
 claude mcp add diviops-mcp \
@@ -44,7 +46,20 @@ claude mcp add diviops-mcp \
   -- npx -y --package @diviops/mcp-server diviops-mcp
 ```
 
-Then ask Claude: **"List the pages on my site."** Claude calls `diviops_page_list` and renders the result. You're authoring with the suite.
+Codex `~/.codex/config.toml`:
+
+```toml
+[mcp_servers.diviops-mcp]
+command = "npx"
+args = ["-y", "--package", "@diviops/mcp-server", "diviops-mcp"]
+
+[mcp_servers.diviops-mcp.env]
+WP_URL = "http://your-site.local"
+WP_USER = "your-wp-username"
+WP_APP_PASSWORD = "xxxxXXXXxxxxXXXXxxxxXXXX"
+```
+
+Then ask your AI client: **"List the pages on my site."** It calls `diviops_page_list` and renders the result. You're authoring with the suite.
 
 For Claude Desktop JSON, use `"command": "npx"` with args `["-y", "--package", "@diviops/mcp-server", "diviops-mcp"]`. The package also ships `diviops-preset`, so the explicit package/bin form is required; `npx @diviops/mcp-server` cannot reliably infer which bin to run.
 
@@ -234,7 +249,7 @@ Common quick fixes — full reference in [troubleshooting.md](../docs/troublesho
 - [safety-patterns.md](../docs/safety-patterns.md) — Pattern A (refuse-with-override) + Pattern B (preview-then-commit) + universal `dry_run`
 - [troubleshooting.md](../docs/troubleshooting.md) — common errors and resolutions
 - [idempotency-audit.md](../docs/idempotency-audit.md) — repeat-call semantics per tool
-- **`divi-5-builder` Claude skill** — block format rules, design patterns, workflow guidance (ships in the dist repo)
+- **`divi-5-builder` skill** — block format rules, design patterns, workflow guidance (ships in the dist repo)
 
 ## Requirements
 

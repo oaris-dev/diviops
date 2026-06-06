@@ -1,6 +1,6 @@
 # MCP Tool Reference
 
-Curated reference for the 55 Divi-builder-relevant tools (Read 26 + Write 27 + Utility 2) — the authoring surface this skill exercises. The full DiviOps server ships 70 tools across all namespaces; see [`diviops-server/README.md`](../../../../diviops-server/README.md) for the complete inventory. SCF coverage lives in the [diviops-scf/](../../diviops-scf/SKILL.md) skill; cross-cutting harness conventions (response envelope, capability handshake, `dry_run` plan shape, idempotency) live in the [diviops/](../../diviops/SKILL.md) primer skill.
+Curated reference for the 55 Divi-builder-relevant tools (Read 26 + Write 27 + Utility 2) — the authoring surface this skill exercises. The full DiviOps server ships 74 tools across all namespaces; see [`diviops-server/README.md`](../../../../diviops-server/README.md) for the complete inventory. SCF coverage lives in the [diviops-scf/](../../diviops-scf/SKILL.md) skill; cross-cutting harness conventions (response envelope, capability handshake, `dry_run` plan shape, idempotency) live in the [diviops/](../../diviops/SKILL.md) primer skill.
 
 ## Response shape
 

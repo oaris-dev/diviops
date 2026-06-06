@@ -1,6 +1,6 @@
 # DiviOps — Setup Guide
 
-Get from zero to generating Divi 5 pages with Claude Code in ~15 minutes. This file ships as `SETUP.md` at the root of the free + pro dist repos; for project framing, suite components, use cases, and the response-contract overview, see the dist-root README.
+Get from zero to generating Divi 5 pages with Claude Code or Codex in ~15 minutes. This file ships as `SETUP.md` at the root of the free + pro dist repos; for project framing, suite components, use cases, and the response-contract overview, see the dist-root README.
 
 > **Beta software.** DiviOps is under active development. Use on production sites at your own discretion. Always back up your WordPress site before running write operations.
 
@@ -9,7 +9,7 @@ Get from zero to generating Divi 5 pages with Claude Code in ~15 minutes. This f
 - **WordPress** 6.5+ with **Divi 5** theme (5.1.0+)
 - **PHP** 7.4+
 - **Node.js** 18+ (for the MCP server)
-- **Claude Code** CLI installed
+- **Claude Code** CLI or **Codex** installed
 - A local or remote WordPress site (Local by Flywheel recommended for local dev)
 
 ## Step 1: Install the WordPress Plugin
@@ -32,13 +32,15 @@ Get from zero to generating Divi 5 pages with Claude Code in ~15 minutes. This f
 
 > Save this — you won't see it again.
 
-## Step 3: Register with Claude Code
+## Step 3: Register with Your AI Client
 
 The MCP server runs from the published npm package — no clone, no build step.
 
 > **Important**: Choose a unique MCP name that won't conflict with other MCP servers you have registered. Use your site name (e.g., `diviops-mysite`).
 
-### Minimal (REST API only — works with any WordPress host)
+### Claude Code
+
+#### Minimal (REST API only — works with any WordPress host)
 
 ```bash
 claude mcp add diviops-mysite \
@@ -48,7 +50,7 @@ claude mcp add diviops-mysite \
   -- npx -y --package @diviops/mcp-server diviops-mcp
 ```
 
-### With WP-CLI (Local by Flywheel — enables the `diviops_meta_wp_cli` tool)
+#### With WP-CLI (Local by Flywheel — enables the `diviops_meta_wp_cli` tool)
 
 ```bash
 claude mcp add diviops-mysite \
@@ -62,6 +64,29 @@ claude mcp add diviops-mysite \
 > **Use `--env` flags, not the `env` command.** Claude Code's native `--env KEY=VALUE` flags survive copy-paste; the older `-- env KEY=VALUE` form (piping through unix `env`) breaks silently when any value contains a space. Quote any value with spaces using regular double quotes — no backslash escaping needed inside quotes.
 
 > `LOCAL_SITE_ID` is auto-detected from `WP_PATH` — no need to find it manually.
+
+### Codex
+
+Add an MCP server entry to `~/.codex/config.toml`:
+
+```toml
+[mcp_servers.diviops-mysite]
+command = "npx"
+args = ["-y", "--package", "@diviops/mcp-server", "diviops-mcp"]
+
+[mcp_servers.diviops-mysite.env]
+WP_URL = "http://your-site.local"
+WP_USER = "your-username"
+WP_APP_PASSWORD = "xxxxXXXXxxxxXXXXxxxxXXXX"
+```
+
+For a local WordPress site where you want WP-CLI passthrough tools, add this line under `[mcp_servers.diviops-mysite.env]`:
+
+```toml
+WP_PATH = "/absolute/path/to/wordpress"
+```
+
+Restart Codex after changing MCP config.
 
 ### Local Development Environments
 
@@ -100,7 +125,7 @@ DiviOps connects via standard WordPress REST API and works with any host that ex
 - **Use absolute paths** for `WP_PATH` — relative paths break when Claude Code runs from a different directory
 - **Unique MCP name** — don't reuse a name from another project
 - **Paths with spaces** — wrap the entire `KEY=VALUE` argument in double quotes (e.g. `--env "WP_PATH=/path with spaces/"`). Same goes for any custom server script path passed after `--`
-- **MCP not appearing after registration** — run `claude mcp list` to verify. If it's not there, `claude mcp remove` and re-add. Fully restart Claude Code (not just the window) after adding.
+- **MCP not appearing after registration** — in Claude Code, run `claude mcp list` to verify. If it's not there, `claude mcp remove` and re-add. In Codex, verify the `~/.codex/config.toml` entry and restart Codex.
 
 ## Step 4: Verify Registration
 
@@ -117,7 +142,7 @@ claude mcp add diviops-mysite --env KEY=VALUE ... -- npx -y --package @diviops/m
 
 ## Step 5: Test Connection
 
-Restart Claude Code (or open a new window), then run:
+Restart Claude Code or Codex, then run:
 
 ```
 Use diviops_meta_ping to verify the MCP is working.
@@ -131,7 +156,7 @@ Then try:
 Use diviops_page_list to show all pages.
 ```
 
-> **If tools don't appear**: Check `claude mcp list` output. The `npx` command must be reachable on your `PATH` (it ships with Node.js, which provides `npm`/`npx`). The `-y --package @diviops/mcp-server diviops-mcp` form avoids `npx` prompts and explicitly selects the MCP server bin from the package.
+> **If tools don't appear**: In Claude Code, check `claude mcp list`. In Codex, check `~/.codex/config.toml` and restart Codex. The `npx` command must be reachable on your `PATH` (it ships with Node.js, which provides `npm`/`npx`). The `-y --package @diviops/mcp-server diviops-mcp` form avoids `npx` prompts and explicitly selects the MCP server bin from the package.
 
 ### Claude Desktop JSON
 
@@ -188,7 +213,7 @@ This is optional — the MCP agent works without it.
 
 ## Step 7: Load the Divi 5 Builder Skill
 
-The skill teaches Claude the correct Divi 5 block format — module attribute paths, design patterns, and format rules. **Without it, Claude will guess attribute formats and produce broken pages** (e.g., empty buttons, wrong innerContent format).
+The skill teaches the assistant the correct Divi 5 block format — module attribute paths, design patterns, and format rules. **Without it, the agent will guess attribute formats and produce broken pages** (e.g., empty buttons, wrong innerContent format).
 
 **Option A — Install as a Claude Code plugin** (recommended):
 ```bash
@@ -220,6 +245,18 @@ Verify the skill loaded:
 What skills do you have?
 ```
 You should see `divi-5-builder` in the list.
+
+**Codex — copy bundled skills into Codex's skill directory** (requires a local repo clone from Option B, or an extracted DiviOps distribution that contains `skills/`):
+```bash
+mkdir -p "$HOME/.codex/skills"
+cp -R /path/to/diviops/skills/* "$HOME/.codex/skills/"
+```
+
+Restart Codex after copying skills. Verify with:
+```
+What skills do you have?
+```
+You should see `divi-5-builder` and any bundled DiviOps slice skills you installed.
 
 ## Step 8: Optional — Bootstrap the Design System
 

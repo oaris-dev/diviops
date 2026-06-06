@@ -1296,10 +1296,15 @@ class DiviOps_Agent {
 		$ddl_active  = class_exists( 'DiviOps_Design_Library' );
 		$ddl_version = $ddl_active && defined( 'DiviOps_Design_Library::VERSION' ) ? DiviOps_Design_Library::VERSION : null;
 
+		// Pro status.
+		$pro_active  = class_exists( 'DiviOps_Agent_Pro' );
+		$pro_version = $pro_active && defined( 'DiviOps_Agent_Pro::VERSION' ) ? constant( 'DiviOps_Agent_Pro::VERSION' ) : null;
+		$pro_url     = add_query_arg( [ 'page' => 'diviops-pro-license' ], admin_url( 'admin.php' ) );
+
 		?>
 		<div class="wrap">
 			<h1>DiviOps</h1>
-			<p>AI agent bridge for Divi 5 &mdash; connects Claude Code to your WordPress site.</p>
+			<p><?php esc_html_e( 'AI agent bridge for Divi 5 — connects Claude Code, Codex, and other MCP clients to your WordPress site.', 'diviops-agent' ); ?></p>
 
 			<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:20px;margin-top:20px;">
 
@@ -1404,20 +1409,39 @@ class DiviOps_Agent {
 					<?php endif; ?>
 				</div>
 
+				<?php // ── Pro ── ?>
+				<div class="card" style="padding:16px 20px;">
+					<h2 style="margin-top:0;"><?php esc_html_e( 'DiviOps Pro', 'diviops-agent' ); ?></h2>
+					<?php if ( $pro_active ) : ?>
+						<p><span style="color:#46b450;">&#10003;</span> <?php esc_html_e( 'Active', 'diviops-agent' ); ?><?php echo $pro_version ? ' (v' . esc_html( $pro_version ) . ')' : ''; ?></p>
+						<p class="description"><?php esc_html_e( 'Pro coverage slices and update/support licensing are managed separately.', 'diviops-agent' ); ?></p>
+						<p><a href="<?php echo esc_url( $pro_url ); ?>" class="button button-secondary"><?php esc_html_e( 'Manage Pro License', 'diviops-agent' ); ?></a></p>
+					<?php else : ?>
+						<p><span style="color:#999;">&#8212;</span> <?php esc_html_e( 'Not installed', 'diviops-agent' ); ?></p>
+						<p class="description"><?php esc_html_e( 'Optional Pro plugin for paid coverage slices and Pro update access.', 'diviops-agent' ); ?></p>
+					<?php endif; ?>
+				</div>
+
 			</div>
 
 			<div style="margin-top:24px;">
-				<h2>Getting Started</h2>
+				<h2><?php esc_html_e( 'Getting Started', 'diviops-agent' ); ?></h2>
 				<p>
-					DiviOps works through Claude Code &mdash; it provides 43 MCP tools for reading and writing Divi 5 pages programmatically.
+					<?php esc_html_e( 'DiviOps works through the MCP server. Install the server from npm, connect it with a WordPress Application Password, then test the connection from your AI client.', 'diviops-agent' ); ?>
 				</p>
 				<ol>
-					<li>Install the <strong>divi-5-builder</strong> skill: <code>claude plugin marketplace add oaris-dev/diviops</code> then <code>claude plugin install divi-5-builder@diviops</code></li>
-					<li>Register the MCP server: <code>claude mcp add diviops-mysite -- env WP_URL=... WP_USER=... WP_APP_PASSWORD=... node /path/to/diviops-server/dist/index.js</code></li>
-					<li>Test: ask Claude Code to <em>&ldquo;Use diviops_meta_ping to verify the MCP is working&rdquo;</em></li>
+					<li><?php esc_html_e( 'Install the DiviOps skill bundle for your AI client.', 'diviops-agent' ); ?></li>
+					<li>
+						<?php esc_html_e( 'Register the MCP server:', 'diviops-agent' ); ?>
+						<code>claude mcp add diviops-mysite --env WP_URL=https://example.com --env WP_USER=admin --env WP_APP_PASSWORD=xxxxXXXXxxxxXXXXxxxxXXXX -- npx -y --package @diviops/mcp-server diviops-mcp</code>
+					</li>
+					<li>
+						<?php esc_html_e( 'Test: ask Claude Code to', 'diviops-agent' ); ?>
+						<em>&ldquo;Use diviops_meta_ping to verify the MCP is working&rdquo;</em>
+					</li>
 				</ol>
 				<p>
-					<a href="https://github.com/oaris-dev/diviops" target="_blank" rel="noopener noreferrer" class="button button-secondary">Documentation &amp; Setup Guide</a>
+					<a href="https://diviops.com/docs/" target="_blank" rel="noopener noreferrer" class="button button-secondary"><?php esc_html_e( 'Documentation & Setup Guide', 'diviops-agent' ); ?></a>
 				</p>
 			</div>
 		</div>
