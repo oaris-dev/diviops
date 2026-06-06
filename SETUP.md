@@ -21,6 +21,20 @@ Get from zero to generating Divi 5 pages with Claude Code or Codex in ~15 minute
 
 > **If Divi is not active**, authenticated requests return `503 divi_unavailable`. Unauthenticated requests return 401 first.
 
+### Purchased Pro: install the Pro plugin too
+
+If you downloaded the Pro package, install the Pro add-on after the Free plugin:
+
+1. Upload and activate `diviops-agent-pro.zip`
+2. Confirm both plugins are active: **DiviOps Agent** and **DiviOps Agent Pro**
+3. Open **DiviOps → Pro License**
+4. Paste your license key and activate it
+5. Confirm the status shows an active matched plan and update eligibility
+
+The Pro plugin requires the Free plugin. Pro runtime features continue to work after install, while the license gates updates and support.
+
+> **Activation policy.** A license activation represents one active WordPress environment where DiviOps Pro is installed and used, including local development sites such as `localhost`, `.local`, `.test`, and `.lab`. Deactivate old environments from your customer account when they are no longer in active use.
+
 ## Step 2: Create an Application Password
 
 1. Go to **WP Admin → Users → Your Profile**
@@ -158,6 +172,16 @@ Use diviops_page_list to show all pages.
 
 > **If tools don't appear**: In Claude Code, check `claude mcp list`. In Codex, check `~/.codex/config.toml` and restart Codex. The `npx` command must be reachable on your `PATH` (it ships with Node.js, which provides `npm`/`npx`). The `-y --package @diviops/mcp-server diviops-mcp` form avoids `npx` prompts and explicitly selects the MCP server bin from the package.
 
+### Purchased Pro: verify Pro capabilities
+
+After activating `diviops-agent-pro.zip` and the Pro license, restart the MCP client and run:
+
+```
+Use diviops_meta_info to show the plugin handshake and capability summary.
+```
+
+If FluentCart and FluentCart Pro are active on the target site, Pro coverage tools such as `diviops_fc_status`, `diviops_fc_product_list`, `diviops_fc_gateway_list`, and license/order readback tools should appear in the MCP tool list. If the target plugin is not installed or the Pro plugin is inactive, those tools are intentionally omitted.
+
 ### Claude Desktop JSON
 
 Use the same command shape in Claude Desktop:
@@ -245,6 +269,8 @@ Verify the skill loaded:
 What skills do you have?
 ```
 You should see `divi-5-builder` in the list.
+
+Pro packages include additional slice skills such as `diviops-fluentcart` and `diviops-scf`. Install or copy all bundled `skills/*` entries when you want those Pro workflows available to the agent.
 
 **Codex — copy bundled skills into Codex's skill directory** (requires a local repo clone from Option B, or an extracted DiviOps distribution that contains `skills/`):
 ```bash
@@ -453,9 +479,10 @@ claude mcp add diviops-test \
 Each registration is independent — different site, different credentials, different MCP name.
 
 **Teammate setup**: They only need:
-1. The `diviops-agent.zip` (installed in their WP site — download from this repo)
-2. `claude mcp add ... npx -y --package @diviops/mcp-server diviops-mcp` with their own `WP_URL`, `WP_USER`, `WP_APP_PASSWORD`
-3. The skill via `claude plugin install oaris-dev/diviops`
+1. `diviops-agent.zip` installed in their WordPress site
+2. For Pro seats, `diviops-agent-pro.zip` installed and activated with their license key
+3. `claude mcp add ... npx -y --package @diviops/mcp-server diviops-mcp` with their own `WP_URL`, `WP_USER`, `WP_APP_PASSWORD`
+4. The bundled skills via `claude plugin install oaris-dev/diviops` or by copying `skills/*` into their Codex skill directory
 
 No clone, no build.
 
@@ -468,4 +495,4 @@ No clone, no build.
 | WP-CLI "not configured" | Set `WP_PATH` (Local by Flywheel) or `WP_CLI_CMD` (containerized) |
 | Styles not rendering | Hard-refresh browser (Cmd+Shift+R) — CSS cache |
 | VB shows raw `$variable()$` | Dynamic content binding — click the chip to edit |
-| `npx` can't find package | Update Node.js to 18+; verify `npx --version` works; use `npx -y --package @diviops/mcp-server diviops-mcp`, not `npx @diviops/mcp-server` |
+| `npx` can't find package | Update Node.js to 18+; verify `npx --version` works; use `npx -y --package @diviops/mcp-server diviops-mcp`; the explicit package/bin form is required |

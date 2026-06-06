@@ -23,6 +23,7 @@ Claude Code ◄──► MCP Server (stdio) ◄──► WordPress REST API ◄�
 | Component | What it is | Where it lives |
 |---|---|---|
 | **`diviops-agent`** WordPress plugin | REST API endpoints for Divi page data, section targeting, block validation, preset management. The contract layer between WordPress + Divi and the MCP server. | `diviops-agent.zip` at repo root |
+| **`diviops-agent-pro`** WordPress plugin | Pro add-on for paid coverage slices, Pro license activation, and update gating. Requires `diviops-agent`. | `diviops-agent-pro.zip` at repo root in the Pro distribution |
 | **`@diviops/mcp-server`** | Node.js MCP server that bridges MCP clients to WordPress. Distributed via npm — no clone, no build. | `npx -y --package @diviops/mcp-server diviops-mcp` |
 | **`divi-5-builder`** skill | Block format rules, verified attribute paths, design patterns. Without it, agents guess attr formats and produce broken pages. | `skills/divi-5-builder/` (Claude: `claude plugin install oaris-dev/diviops`; Codex: copy `skills/*` into `~/.codex/skills`) |
 | **`diviops-design-library`** plugin | Optional. CSS entrance animations, gradient text, glass effects, Three.js WebGL shaders. | `diviops-design-library.zip` at repo root |
@@ -47,6 +48,8 @@ Three steps to your first tool call. For containerized environments, HTTPS confi
 Upload **`diviops-agent.zip`** (at the root of this repo) via **WP Admin → Plugins → Add New → Upload Plugin**, then activate it. Requires Divi 5.1+ on WordPress 6.5+.
 
 Verify: visit `http://your-site.local/wp-json/diviops/v1/schema/settings` — you should get a 401 (auth required).
+
+**Purchased Pro:** upload and activate **`diviops-agent-pro.zip`** after the Free plugin, then open **DiviOps → Pro License** and activate your license key. Pro runtime coverage requires the Pro plugin; license activation gates updates and support.
 
 ### 2. Create an Application Password
 
@@ -155,43 +158,60 @@ Every write tool accepts `dry_run: boolean` (default `false`). When `true`, the 
 
 ## Free vs Pro
 
-DiviOps is a harness; the Free and Pro distributions split along skill knowledge depth today, with execution coverage slices (target plugin handlers + skill knowledge bundled per target) layering on through Phase B and Phase C+.
+DiviOps is a harness. The Free distribution carries the core Divi authoring surface; the Pro distribution adds deeper skill knowledge, the Pro plugin, license/update gating, and paid coverage slices for target plugins.
 
 ### What ships in Free (v1.x today)
 
-The Free distribution (`oaris-dev/diviops`) carries the full execution surface:
+The Free distribution (`oaris-dev/diviops`) carries the core DiviOps execution surface:
 
 - `diviops-agent` WordPress plugin (REST bridge, Divi 5 + SCF + CPT + WP-CLI handlers)
 - `diviops-design-library` plugin (CSS effects, gradients, glass, Three.js shaders)
-- `@diviops/mcp-server` on npm — all 74 tools
+- `@diviops/mcp-server` on npm — the shared MCP server package
 - `divi-5-builder` skill, free slice: `SKILL.md`, design patterns, tools reference, preset system, design-effects, mega-menu, minimal snippets, SaaS landing, and the **Tier 1** attribute reference (universal decoration, `innerContent[]` variants, attribute tree layout, design tokens, exceptions quick reference)
 
 ### What ships in Pro (v1.x today)
 
-The Pro distribution adds the deeper skill knowledge layer for the same Free execution surface — `divi-5-builder` **Tier 2** + **Tier 3**:
+The Pro distribution adds the Pro plugin, license/update gating, target coverage slices, and the deeper skill knowledge layer — `divi-5-builder` **Tier 2** + **Tier 3**:
 
 | | Free | Pro |
 |---|:---:|:---:|
 | `diviops-agent` WordPress plugin | ✓ | ✓ (same binary) |
+| `diviops-agent-pro` WordPress plugin | — | ✓ |
 | `diviops-design-library` plugin | ✓ | ✓ (same binary) |
-| `@diviops/mcp-server` on npm — all 74 tools | ✓ | ✓ (same package) |
+| `@diviops/mcp-server` on npm | ✓ | ✓ (same package) |
 | Skill: SKILL.md, design patterns, tools reference, preset system, design-effects, mega-menu, minimal snippets, SaaS landing | ✓ | ✓ |
 | Skill: **Tier 1** attribute reference — universal decoration, innerContent variants, attribute tree layout, design tokens, exceptions quick reference | ✓ | ✓ |
 | Skill: **Tier 2** — shared pattern families (font, icon, container cascade, module link) | — | ✓ |
 | Skill: **Tier 3** — per-module element maps for 20+ verified modules | — | ✓ |
 | Skill: Advanced attributes (boxShadow, filters, transform, sticky, transition, scroll, animation) | — | ✓ |
 | Skill: `$variable()$` per-module binding examples and Interactions reference | — | ✓ |
+| Skill: `diviops-fluentcart` coverage guide | — | ✓ |
+| Skill: `diviops-scf` deeper SCF guide | — | ✓ |
+| Pro license activation + update gating | — | ✓ |
+| FluentCart Pro coverage handlers | — | ✓ |
 
 **Practical difference today.** The Free skill is enough to generate pages using universal decoration patterns plus runtime lookups via `diviops_schema_get_module`. Pro adds verified per-module maps, which cuts schema-lookup round-trips and reduces silent-fail risk on quirks only documented in the full maps — e.g., Toggle's `closedTitle.decoration.font.*` (closed-state title styling; without it you'd target the open state only) or Video's `overlay.decoration.background` (the correct background target — not `module.decoration.background`).
 
-No feature gating in the MCP server or the WordPress plugin in v1.x — all 74 tools are available in both distributions.
+Pro also includes `diviops-agent-pro`. When the Pro plugin and a supported target plugin are active, the MCP handshake exposes conditional Pro tools. For example, a site with FluentCart + FluentCart Pro + DiviOps Agent Pro can expose `diviops_fc_*` product, gateway, order, license, and activation tools. If those gates are not satisfied, those tools are intentionally omitted from the MCP tool list.
 
-### What's coming in Pro (Phase B onwards)
+### Purchased Pro install path
 
-The harness is designed to grow through **per-target execution coverage slices** — skill knowledge + MCP tools + plugin handlers bundled per target plugin. A per-tool capability handshake at MCP server startup queries the WP plugin for installed capabilities and applies two distinct gating modes: tools whose backing Pro plugin is **not installed** on the site are omitted from the MCP server's exposed tool list entirely (Claude never sees them); tools whose backing Pro plugin is installed but at an **older version** than the tool requires fail with a clear `capability_missing` error rather than silent breakage. The next slices land in this order:
+1. Download the Pro package from your customer account
+2. Install and activate `diviops-agent.zip`
+3. Install and activate `diviops-agent-pro.zip`
+4. Open **DiviOps → Pro License**
+5. Paste your license key and confirm the license is active
+6. Register or restart the MCP server
+7. Verify Pro capabilities with `diviops_meta_info`; with FluentCart + FluentCart Pro active, confirm `diviops_fc_*` tools appear
 
-- **Phase B — FluentCart Pro pilot.** 7 product + variation authoring tools (`diviops_fc_product_*`, `diviops_fc_variation_*`) backed by a `diviops-fluentcart/` skill slice and Pro-plugin handlers in `diviops-agent-pro`. Sequencing reflects the project's own commerce dogfooding on `diviops.com`.
-- **Phase C+ — additional target plugin slices.** SCF deeper knowledge slice (curated patterns + recipes; the existing 6 free SCF MCP tools stay free), Bit Forms Pro, Bit Flows Pro, Gutenberg interop. Each slice ships as its own `diviops-<target>/` skill plus dedicated handlers, following the same per-target-slice packaging shape.
+A license activation represents one active WordPress environment where DiviOps Pro is installed and used, including local development sites such as `localhost`, `.local`, `.test`, and `.lab`. Deactivate old environments from your customer account when they are no longer in active use.
+
+### Current and future Pro coverage
+
+The harness is designed to grow through **per-target execution coverage slices** — skill knowledge + MCP tools + plugin handlers bundled per target plugin. A per-tool capability handshake at MCP server startup queries the WP plugin for installed capabilities and applies two distinct gating modes: tools whose backing Pro plugin is **not installed** on the site are omitted from the MCP server's exposed tool list entirely (Claude never sees them); tools whose backing Pro plugin is installed but at an **older version** than the tool requires fail with a clear `capability_missing` error rather than silent breakage. Current and planned slices:
+
+- **Current — FluentCart Pro pilot.** Product, variation, license-settings, gateway readiness, order, transaction, license, and activation readback tools (`diviops_fc_*`) backed by the `diviops-fluentcart/` skill slice and Pro-plugin handlers in `diviops-agent-pro`. Sequencing reflects the project's own commerce dogfooding on `diviops.com`.
+- **Future slices.** Additional target plugin slices such as Bit Forms Pro, Bit Flows Pro, and deeper Gutenberg interop. Each slice ships as its own `diviops-<target>/` skill plus dedicated handlers, following the same per-target-slice packaging shape.
 
 **MCP tools always ship in the free MCP package.** What separates Free from Pro on a coverage slice is the *curated skill knowledge* and the *Pro-plugin handlers that back the tools*; the dispatch surface itself is universal. A Free-tier user on a site without the Pro plugin installed simply doesn't see Pro-only tools — they're gated by the per-tool capability handshake, not feature-flagged in the MCP server.
 

@@ -61,7 +61,7 @@ WP_APP_PASSWORD = "xxxxXXXXxxxxXXXXxxxxXXXX"
 
 Then ask your AI client: **"List the pages on my site."** It calls `diviops_page_list` and renders the result. You're authoring with the suite.
 
-For Claude Desktop JSON, use `"command": "npx"` with args `["-y", "--package", "@diviops/mcp-server", "diviops-mcp"]`. The package also ships `diviops-preset`, so the explicit package/bin form is required; `npx @diviops/mcp-server` cannot reliably infer which bin to run.
+For Claude Desktop JSON, use `"command": "npx"` with args `["-y", "--package", "@diviops/mcp-server", "diviops-mcp"]`. The package also ships `diviops-preset`, so the explicit package/bin form is required; shorthand package invocation cannot reliably infer which bin to run.
 
 For a deeper walkthrough (containerized environments, WP-CLI configuration, troubleshooting installation), see [setup-guide.md](../docs/setup-guide.md).
 
@@ -236,7 +236,7 @@ The server connects via standard WordPress REST API and works with any environme
 Common quick fixes — full reference in [troubleshooting.md](../docs/troubleshooting.md).
 
 - **"Missing required environment variable(s)"** — ensure `WP_URL`, `WP_USER`, `WP_APP_PASSWORD` are all set on `claude mcp add`.
-- **`npx @diviops/mcp-server` fails with "could not determine executable to run"** — use `npx -y --package @diviops/mcp-server diviops-mcp`; this explicitly selects the MCP server bin.
+- **`npx` fails with "could not determine executable to run"** — use `npx -y --package @diviops/mcp-server diviops-mcp`; this explicitly selects the MCP server bin.
 - **"Connection failed"** — verify the plugin is active by visiting `{WP_URL}/wp-json/diviops/v1/schema/settings`; test the credentials with `curl -u "user:pass" …`.
 - **"This tool requires plugin capability"** — the plugin doesn't advertise the capability this tool needs. Update the plugin to the latest release.
 - **Preset edits not visible on the frontend** — Divi serves frontend CSS from `wp-content/et-cache/{post_id}/`, which `wp cache flush` doesn't touch. Use `diviops_meta_flush_cache` after preset writes.
