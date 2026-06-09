@@ -27,6 +27,8 @@ Three steps to your first tool call.
 
 Download and activate the **DiviOps Agent** plugin — [direct zip](https://github.com/oaris-dev/diviops/raw/main/diviops-agent.zip) or browse the [public distribution repo](https://github.com/oaris-dev/diviops). Requires Divi 5.1+ on WordPress 6.5+.
 
+During beta, Free WordPress plugin updates are manual: download the latest `diviops-agent.zip` from the [Free GitHub release](https://github.com/oaris-dev/diviops/releases/latest), upload it via **WP Admin → Plugins → Add New → Upload Plugin**, and choose **Replace current with uploaded**. Native WordPress.org update notices are planned but not live yet.
+
 ### 2. Create an Application Password
 
 In **WP Admin → Users → Your Profile → Application Passwords**:

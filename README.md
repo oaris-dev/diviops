@@ -49,6 +49,8 @@ Upload **`diviops-agent.zip`** (at the root of this repo) via **WP Admin → Plu
 
 Verify: visit `http://your-site.local/wp-json/diviops/v1/schema/settings` — you should get a 401 (auth required).
 
+**Free beta updates:** the npm MCP server updates through npm, but the Free WordPress plugin is updated manually until the WordPress.org channel is live. Download the latest `diviops-agent.zip` from the [Free GitHub release](https://github.com/oaris-dev/diviops/releases/latest), upload it via **Plugins → Add New → Upload Plugin**, and choose **Replace current with uploaded**. Your Application Password and MCP config stay unchanged.
+
 **Purchased Pro:** upload and activate **`diviops-agent-pro.zip`** after the Free plugin, then open **DiviOps → Pro License** and activate your license key. Pro runtime coverage requires the Pro plugin; license activation gates updates and support.
 
 ### 2. Create an Application Password

@@ -1301,6 +1301,9 @@ class DiviOps_Agent {
 		$pro_version = $pro_active && defined( 'DiviOps_Agent_Pro::VERSION' ) ? constant( 'DiviOps_Agent_Pro::VERSION' ) : null;
 		$pro_url     = add_query_arg( [ 'page' => 'diviops-pro-license' ], admin_url( 'admin.php' ) );
 
+		$free_release_url = 'https://github.com/oaris-dev/diviops/releases/latest';
+		$docs_url         = 'https://diviops.com/docs/';
+
 		?>
 		<div class="wrap">
 			<h1>DiviOps</h1>
@@ -1420,6 +1423,22 @@ class DiviOps_Agent {
 						<p><span style="color:#999;">&#8212;</span> <?php esc_html_e( 'Not installed', 'diviops-agent' ); ?></p>
 						<p class="description"><?php esc_html_e( 'Optional Pro plugin for paid coverage slices and Pro update access.', 'diviops-agent' ); ?></p>
 					<?php endif; ?>
+				</div>
+
+				<?php // ── Updates ── ?>
+				<div class="card" style="padding:16px 20px;">
+					<h2 style="margin-top:0;"><?php esc_html_e( 'Free Plugin Updates', 'diviops-agent' ); ?></h2>
+					<p><?php esc_html_e( 'During beta, the Free WordPress plugin updates manually from the latest release ZIP. Native WordPress.org update notices are planned but not live yet.', 'diviops-agent' ); ?></p>
+					<ol style="margin-left:18px;">
+						<li><?php esc_html_e( 'Download the latest diviops-agent.zip.', 'diviops-agent' ); ?></li>
+						<li><?php esc_html_e( 'Upload it in Plugins → Add New → Upload Plugin.', 'diviops-agent' ); ?></li>
+						<li><?php esc_html_e( 'Choose Replace current with uploaded when WordPress asks.', 'diviops-agent' ); ?></li>
+					</ol>
+					<p>
+						<a href="<?php echo esc_url( $free_release_url ); ?>" target="_blank" rel="noopener noreferrer" class="button button-secondary"><?php esc_html_e( 'Latest Free Release', 'diviops-agent' ); ?></a>
+						<a href="<?php echo esc_url( $docs_url ); ?>" target="_blank" rel="noopener noreferrer" class="button"><?php esc_html_e( 'Setup Guide', 'diviops-agent' ); ?></a>
+					</p>
+					<p class="description"><?php esc_html_e( 'Your Application Password and MCP client configuration stay unchanged after replacing the plugin ZIP.', 'diviops-agent' ); ?></p>
 				</div>
 
 			</div>

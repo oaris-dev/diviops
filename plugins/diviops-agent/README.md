@@ -21,6 +21,17 @@ The WordPress companion plugin for `@diviops/mcp-server`. Pairs with the MCP ser
 
 If Divi is not active, all endpoints return `503 divi_unavailable`. See [setup-guide.md](../../../docs/setup-guide.md) for the full onboarding walkthrough including MCP server registration.
 
+## Updates during beta
+
+The MCP server updates through npm. The Free WordPress plugin does not yet receive native WordPress update notices, so update it manually until the WordPress.org channel is live:
+
+1. Download the latest `diviops-agent.zip` from the Free GitHub release or public dist repo root.
+2. Go to **WP Admin → Plugins → Add New → Upload Plugin**.
+3. Upload the new `diviops-agent.zip`.
+4. Choose **Replace current with uploaded** when WordPress asks.
+
+Your Application Password and MCP client config stay unchanged. Purchased Pro users activate update access separately in **DiviOps → Pro License**.
+
 ## Pairing with the MCP server
 
 Communication is via the `/diviops/v1/*` REST namespace, authenticated with Application Passwords. The MCP server reads the plugin's per-tool capability map at startup (the `/handshake` endpoint) and only exposes tools the plugin advertises support for — so you can update the plugin and server independently and unsupported tools fail with a clear `capability_missing` error rather than silent runtime breakage.

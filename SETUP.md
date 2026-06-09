@@ -21,6 +21,17 @@ Get from zero to generating Divi 5 pages with Claude Code or Codex in ~15 minute
 
 > **If Divi is not active**, authenticated requests return `503 divi_unavailable`. Unauthenticated requests return 401 first.
 
+### Free plugin updates during beta
+
+The npm MCP server updates with `npx`/npm, but the Free WordPress plugin does not yet receive native WordPress update notices. Until the WordPress.org distribution channel is live, update `diviops-agent` manually:
+
+1. Download the latest `diviops-agent.zip` from the [Free GitHub release](https://github.com/oaris-dev/diviops/releases/latest) or the public dist repo root
+2. Go to **WP Admin → Plugins → Add New → Upload Plugin**
+3. Upload the new `diviops-agent.zip`
+4. When WordPress asks, choose **Replace current with uploaded**
+
+Your Application Password and MCP client config stay the same. Native WordPress.org updates are planned separately from the beta ZIP workflow.
+
 ### Purchased Pro: install the Pro plugin too
 
 If you downloaded the Pro package, install the Pro add-on after the Free plugin:

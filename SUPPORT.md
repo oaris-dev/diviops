@@ -16,7 +16,7 @@ For guaranteed support windows, dedicated channels, and SLAs, see the Pro distri
 
 - Check [SETUP.md](SETUP.md) for environment-specific setup (DDEV, wp-env, WordPress Studio, DevKinsta, Local by Flywheel).
 - Check the [troubleshooting section in README.md](README.md#troubleshooting) for common quick fixes.
-- Confirm you're on the latest released version of `@diviops/mcp-server` and the `diviops-agent` WordPress plugin.
+- Confirm you're on the latest released version of `@diviops/mcp-server` and the `diviops-agent` WordPress plugin. During the Free beta, update `diviops-agent` manually from the latest GitHub Release ZIP; native WordPress.org updates are not live yet.
 
 ## What to include
 
