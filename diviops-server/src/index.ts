@@ -4384,7 +4384,7 @@ function registerProTools(): void {
     "diviops_fc_license_settings_get",
     {
       description:
-        "Read the per-product FluentCart Pro license-settings projection (Pro tier; V3; requires FluentCart Pro installed + activated). FluentCart Pro stores license settings in `ProductMeta` under meta_key='license_settings'; this tool reads that meta row and joins it against the product's variations so each variation surfaces with its current activation_limit + validity. Read-only. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }; success payload is { product_id, enabled: boolean, version, prefix, variations: [ { variation_id, title, activation_limit, validity: { unit, value } | null } ] }. Storage semantics: `enabled` is stored as 'yes'/'no' in FCP and projected to boolean here. `activation_limit` is null/'' (unconfigured), 0 (unlimited per FluentCart Pro License::getActivationLimit), or a positive integer. `validity.unit` is one of lifetime/day/week/month/year. Variations the product has but license_settings doesn't mention surface with `activation_limit: null` and `validity: null`. Variations license_settings mentions that no longer exist on the product are filtered out — only the live variation set is returned. Error codes: invalid_input (400) when id is not a positive integer; not_found (404) when the product does not exist; fluentcart.module_inactive (412); fluentcart.query_failed (500). Idempotency: read-only.",
+        "Read the per-product FluentCart Pro license-settings projection (Pro tier; V3/V3.3; requires FluentCart Pro installed + activated). FluentCart Pro stores license settings in `ProductMeta` under meta_key='license_settings'; this tool reads that meta row and joins it against the product's variations so each variation surfaces with its current activation_limit + validity. Read-only. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }; success payload is { product_id, enabled: boolean, version, prefix, variations: [ { variation_id, title, activation_limit, validity: { unit, value } | null } ], update_file: { configured_id: string|null, resolved: DownloadRow|null }, downloads: DownloadRow[], update_file_readiness: { applicable: boolean, ready: boolean|null, problems: [ { code, message } ] } }. DownloadRow is { id, title, file_name, driver, file_size, type } — metadata only, never file paths or signed URLs. `update_file.configured_id` is the raw `global_update_file` pointer (the download-row ID FluentCart Pro's licensed-update path resolves); `resolved` is the matching download row or null. `update_file_readiness` is the updater-pointer verdict: applicable only when licensing is enabled (ready: null otherwise); problem codes are downloads_missing (no download rows at all), update_file_pointer_missing (downloads exist but no pointer persisted — fails even for single-download products because FCP Pro's signed-package-URL path resolves the pointer with no fallback), update_file_pointer_unresolved (pointer matches no download row on the product). The verdict does NOT judge whether the resolved file is the intended updater package — check resolved.file_name/title yourself (e.g. a plugin update ZIP vs a bundle/suite ZIP). The update_file/downloads/update_file_readiness fields require plugin capability `fluentcart_license_update_file_get`; older plugin builds omit them. Storage semantics: `enabled` is stored as 'yes'/'no' in FCP and projected to boolean here. `activation_limit` is null/'' (unconfigured), 0 (unlimited per FluentCart Pro License::getActivationLimit), or a positive integer. `validity.unit` is one of lifetime/day/week/month/year. Variations the product has but license_settings doesn't mention surface with `activation_limit: null` and `validity: null`. Variations license_settings mentions that no longer exist on the product are filtered out — only the live variation set is returned. Error codes: invalid_input (400) when id is not a positive integer; not_found (404) when the product does not exist; fluentcart.module_inactive (412); fluentcart.query_failed (500). Idempotency: read-only.",
       inputSchema: {
         product_id: z
           .number()
@@ -4422,7 +4422,7 @@ function registerProTools(): void {
     "diviops_fc_license_settings_update",
     {
       description:
-        "Write the per-product FluentCart Pro license-settings ProductMeta row (Pro tier; V3; requires FluentCart Pro installed + activated). Authors `enabled`, `version`, `prefix`, and per-variation `activation_limit` + `validity` — the storage shape FluentCart Pro reads via LicenseGenerationHandler when an order is placed. V3 explicitly skips configuring update-ZIP `global_update_file`, `wp` readme/banner/icon, downloadables, and the license-activation API; those fields are preserved when present but not authored. Refuses bundle products with `fluentcart.unsupported_product_shape` (HTTP 422). Inputs (all optional except product_id; partial updates supported): `enabled` (boolean — projected to FCP's 'yes'/'no' on write), `version` (required when enabling; max 50 chars), `prefix` (max 20 chars), `variations` (array of { variation_id (required), activation_limit (integer ≥ 0 or null; 0 = unlimited per FluentCart Pro License::getActivationLimit), validity (optional { unit: lifetime/day/week/month/year, value: positive integer } or null to auto-derive) }). When `validity` is omitted on a variation, the validity is derived from the variation's payment_type: subscription+yearly → { unit: 'year', value: 1 }; onetime → { unit: 'lifetime', value: 1 }. When `enabled: true` and the product carries variations, every variation must end up with a non-empty validity.unit. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }; apply-mode success payload is { product_id, changed_fields[], license_settings: <same shape as diviops_fc_license_settings_get> } (or { noop: true, product_id, license_settings } on no-op). Error codes: invalid_input (400) when any field violates the constraints (unknown variation_id, negative activation_limit, missing version when enabling, missing validity.unit when enabling, bad enum value); not_found (404) when the product does not exist; fluentcart.unsupported_product_shape (422) on bundle products; fluentcart.module_inactive (412); fluentcart.command_failed (500). Idempotency: conditional — identical repeat is a no-op." +
+        "Write the per-product FluentCart Pro license-settings ProductMeta row (Pro tier; V3/V3.3; requires FluentCart Pro installed + activated). Authors `enabled`, `version`, `prefix`, per-variation `activation_limit` + `validity`, and (V3.3) the `global_update_file` updater pointer — the storage shape FluentCart Pro reads via LicenseGenerationHandler when an order is placed and via the licensed-update path when an installed plugin checks for updates. Still out of scope: `wp` readme/banner/icon config, download-asset CRUD/upload, and the license-activation API; the `wp` field is preserved when present but not authored. Refuses bundle products with `fluentcart.unsupported_product_shape` (HTTP 422). Inputs (all optional except product_id; partial updates supported): `enabled` (boolean — projected to FCP's 'yes'/'no' on write), `version` (required when enabling; max 50 chars), `prefix` (max 20 chars), `variations` (array of { variation_id (required), activation_limit (integer ≥ 0 or null; 0 = unlimited per FluentCart Pro License::getActivationLimit), validity (optional { unit: lifetime/day/week/month/year, value: positive integer } or null to auto-derive) }), `global_update_file` (positive integer download-row ID to point licensed updates at, or null to clear the pointer; the ID must match one of the product's download rows — read diviops_fc_license_settings_get's `downloads` array for valid IDs — and is rejected with invalid_input otherwise, never silently coerced; stored as a string to match FluentCart Pro's UI-authored shape; requires plugin capability `fluentcart_license_update_file_set`, otherwise this tool returns capability_missing without calling the plugin). Omitting `global_update_file` preserves the stored pointer — unlike FluentCart Pro's own UI save path, partial updates here never wipe it. When `validity` is omitted on a variation, the validity is derived from the variation's payment_type: subscription+yearly → { unit: 'year', value: 1 }; onetime → { unit: 'lifetime', value: 1 }. When `enabled: true` and the product carries variations, every variation must end up with a non-empty validity.unit. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }; apply-mode success payload is { product_id, changed_fields[], license_settings: <same shape as diviops_fc_license_settings_get> } (or { noop: true, product_id, license_settings } on no-op). Error codes: invalid_input (400) when any field violates the constraints (unknown variation_id, negative activation_limit, missing version when enabling, missing validity.unit when enabling, bad enum value, global_update_file not matching a download row); not_found (404) when the product does not exist; fluentcart.unsupported_product_shape (422) on bundle products; fluentcart.module_inactive (412); fluentcart.command_failed (500); capability_missing when global_update_file is passed against a plugin build without the capability. Idempotency: conditional — identical repeat is a no-op." +
         DRY_RUN_DESC_SUFFIX,
       inputSchema: {
         product_id: z
@@ -4485,6 +4485,15 @@ function registerProTools(): void {
           .describe(
             "Per-variation license configuration. Each entry's variation_id must belong to the product. Omitted variations preserve their existing license_settings.",
           ),
+        global_update_file: z
+          .number()
+          .int()
+          .positive()
+          .nullable()
+          .optional()
+          .describe(
+            "Download-row ID to point licensed updates at (must match one of the product's download rows — see diviops_fc_license_settings_get's downloads array), or null to clear the pointer. Omit to preserve the stored pointer.",
+          ),
         dry_run: DRY_RUN_FIELD,
       },
       annotations: { idempotentHint: false },
@@ -4496,6 +4505,7 @@ function registerProTools(): void {
       version,
       prefix,
       variations,
+      global_update_file,
       dry_run,
     }: {
       product_id: number;
@@ -4507,13 +4517,50 @@ function registerProTools(): void {
         activation_limit?: number | null;
         validity?: { unit: string; value: number } | null;
       }>;
+      global_update_file?: number | null;
       dry_run?: boolean;
     }) => {
+      // Param-level capability gate (mirrors schema_get_module's dump_all
+      // gate): the tool itself registers against older plugins via the V3
+      // fluentcart_license_settings_update key, but those builds silently
+      // ignore an undeclared global_update_file param — surface a typed
+      // envelope error instead of a silent no-op.
+      if (
+        global_update_file !== undefined &&
+        handshakeState.kind === "ok" &&
+        !handshakeState.capabilities["fluentcart_license_update_file_set"]
+      ) {
+        const err = new MissingCapabilityError(
+          "fluentcart_license_update_file_set",
+          handshakeState.pluginVersion,
+        );
+        const failure: DiviopsResponse<never> = {
+          ok: false,
+          error: {
+            code: ErrorCodes.CAPABILITY_MISSING,
+            message: err.message,
+            hint: "Update the diviops-agent-pro WP plugin to a version that supports authoring the global_update_file pointer, or omit global_update_file from this call.",
+          },
+        };
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: serializeEnvelope(
+                failure,
+                "diviops_fc_license_settings_update",
+              ),
+            },
+          ],
+        };
+      }
       const body: Record<string, unknown> = {};
       if (enabled !== undefined) body.enabled = enabled;
       if (version !== undefined) body.version = version;
       if (prefix !== undefined) body.prefix = prefix;
       if (variations !== undefined) body.variations = variations;
+      if (global_update_file !== undefined)
+        body.global_update_file = global_update_file;
       if (dry_run !== undefined) body.dry_run = dry_run;
       const result = await wp.requestEnveloped(
         `/pro/fluentcart/products/${product_id}/license-settings/update`,
