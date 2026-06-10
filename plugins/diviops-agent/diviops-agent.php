@@ -1270,9 +1270,22 @@ class DiviOps_Agent {
 			'manage_options',
 			'diviops',
 			[ __CLASS__, 'render_admin_page' ],
-			'dashicons-rest-api',
+			self::admin_menu_icon(),
 			81
 		);
+	}
+
+	private static function admin_menu_icon(): string {
+		$svg_path = plugin_dir_path( __FILE__ ) . 'assets/diviops-mark.svg';
+		if ( ! is_readable( $svg_path ) ) {
+			return 'dashicons-rest-api';
+		}
+		$svg = file_get_contents( $svg_path );
+		if ( false === $svg ) {
+			return 'dashicons-rest-api';
+		}
+		$svg = str_replace( 'fill="black"', 'fill="#f0f0f1"', $svg );
+		return 'data:image/svg+xml;base64,' . base64_encode( $svg );
 	}
 
 	public static function render_admin_page() {
@@ -1303,11 +1316,15 @@ class DiviOps_Agent {
 
 		$free_release_url = 'https://github.com/oaris-dev/diviops/releases/latest';
 		$docs_url         = 'https://diviops.com/docs/';
+		$brand_logo_url   = plugins_url( 'assets/diviops-wordmark.svg', __FILE__ );
 
 		?>
 		<div class="wrap">
-			<h1>DiviOps</h1>
-			<p><?php esc_html_e( 'AI agent bridge for Divi 5 — connects Claude Code, Codex, and other MCP clients to your WordPress site.', 'diviops-agent' ); ?></p>
+			<h1 class="screen-reader-text"><?php esc_html_e( 'DiviOps', 'diviops-agent' ); ?></h1>
+			<div style="clear:both;margin:20px 0 24px;max-width:1120px;">
+				<img src="<?php echo esc_url( $brand_logo_url ); ?>" alt="<?php esc_attr_e( 'DiviOps', 'diviops-agent' ); ?>" width="166" height="42" style="display:block;width:166px;max-width:100%;height:auto;" />
+				<p style="margin:12px 0 0;max-width:760px;"><?php esc_html_e( 'AI agent bridge for Divi 5 — connects Claude Code, Codex, and other MCP clients to your WordPress site.', 'diviops-agent' ); ?></p>
+			</div>
 
 			<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:20px;margin-top:20px;">
 
