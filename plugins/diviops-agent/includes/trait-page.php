@@ -937,6 +937,15 @@ trait DiviOps_Agent_Page {
 		$json_str    = substr( $comment, $json_start, $json_end - $json_start + 1 );
 		$block_attrs = json_decode( $json_str, true );
 
+		// Record which positions held {} before the assoc decode collapsed
+		// them to [] — restored after the dot-path mutation so the re-encode
+		// keeps the block's untouched empty buckets canonical (#901).
+		$empty_object_paths = [];
+		$objects_decoded    = json_decode( $json_str );
+		if ( is_object( $objects_decoded ) ) {
+			$empty_object_paths = self::collect_empty_object_paths( $objects_decoded );
+		}
+
 		if ( ! is_array( $block_attrs ) ) {
 			return self::envelope_error(
 				'divi_error',
@@ -1000,6 +1009,9 @@ trait DiviOps_Agent_Page {
 		}
 
 		// Re-encode and replace.
+		if ( ! empty( $empty_object_paths ) ) {
+			$block_attrs = self::restore_empty_objects( $block_attrs, $empty_object_paths );
+		}
 		$new_json    = wp_json_encode( $block_attrs, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES );
 		$prefix      = '<!-- wp:divi/' . $type . ' ';
 		$suffix      = $is_self_closing ? ' /-->' : ' -->';
@@ -2014,7 +2026,14 @@ trait DiviOps_Agent_Page {
 		if ( ! current_user_can( 'edit_post', $post_id ) ) {
 			return new WP_Error( 'forbidden', 'Cannot edit this post', [ 'status' => 403 ] );
 		}
-		return [ 'post' => $post, 'blocks' => parse_blocks( $post->post_content ) ];
+		// Sidecar enrichment records which attr positions held {} in the
+		// stored markup, so save_mutated_blocks() can undo core's
+		// assoc-decode {} → [] collapse on re-serialization (#901).
+		$content = (string) $post->post_content;
+		return [
+			'post'   => $post,
+			'blocks' => self::enrich_blocks_with_empty_object_paths( parse_blocks( $content ), $content ),
+		];
 	}
 
 	/**
@@ -2022,7 +2041,7 @@ trait DiviOps_Agent_Page {
 	 * WP_Error on failure.
 	 */
 	private static function save_mutated_blocks( $post, array $blocks ) {
-		$new_content = serialize_blocks( $blocks );
+		$new_content = serialize_blocks( self::restore_blocks_empty_objects( $blocks ) );
 		$result      = wp_update_post(
 			[ 'ID' => $post->ID, 'post_content' => wp_slash( $new_content ) ],
 			true

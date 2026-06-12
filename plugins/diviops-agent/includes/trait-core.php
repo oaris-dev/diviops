@@ -67,8 +67,13 @@ trait DiviOps_Agent_Core {
 					return $matches[0];
 				}
 
+				// The canonical ` /-->` self-close slash lands in group 4 (it sits
+				// immediately before `-->`); a whitespace-separated `/ -->` variant
+				// leaves the slash at the end of the lazy tail instead. Honor both,
+				// or every self-closing block re-serializes as an opener and the
+				// block tree scrambles (openers > closers).
 				$trimmed_tail    = trim( $tail );
-				$is_self_closing = false;
+				$is_self_closing = ! empty( $matches[4] );
 				if ( '' !== $trimmed_tail && '/' === substr( $trimmed_tail, -1 ) ) {
 					$is_self_closing = true;
 					$trimmed_tail    = rtrim( substr( $trimmed_tail, 0, -1 ) );
@@ -98,8 +103,12 @@ trait DiviOps_Agent_Core {
 					return $matches[0];
 				}
 
-				$attrs = json_decode( $trimmed_tail, true );
-				if ( ! is_array( $attrs ) || JSON_ERROR_NONE !== json_last_error() ) {
+				// Decode WITHOUT assoc: PHP's assoc decode collapses empty JSON
+				// objects to empty arrays, so a re-encode mutates `"decoration":{}`
+				// into `"decoration":[]`. stdClass round-trips object/array
+				// distinction byte-faithfully.
+				$attrs = json_decode( $trimmed_tail );
+				if ( ! is_object( $attrs ) || JSON_ERROR_NONE !== json_last_error() ) {
 					$error = [
 						'message'    => 'Divi block attributes are not valid JSON.',
 						'block'      => $block,
@@ -146,10 +155,12 @@ trait DiviOps_Agent_Core {
 	 * Mirror core serialize_block_attributes() while keeping tests runnable
 	 * against minimal WordPress stubs.
 	 *
-	 * @param array $attrs Block attributes.
+	 * @param object|array $attrs Block attributes. Callers pass the stdClass
+	 *                            tree from a non-assoc json_decode so empty
+	 *                            objects re-encode as `{}`, not `[]`.
 	 * @return string|null
 	 */
-	private static function serialize_block_attrs_canonical( array $attrs ): ?string {
+	private static function serialize_block_attrs_canonical( $attrs ): ?string {
 		if ( function_exists( 'serialize_block_attributes' ) ) {
 			return serialize_block_attributes( $attrs );
 		}
@@ -188,6 +199,226 @@ trait DiviOps_Agent_Core {
 			return $match[0];
 		}
 		return null;
+	}
+
+	// ── Block-tree empty-object round-trip guard (#901) ─────────────
+	//
+	// Core parse_blocks() decodes block attrs with assoc=true, so nested
+	// empty JSON objects ("decoration":{}) collapse to PHP [] and
+	// serialize_blocks() re-emits them as []. PHP render is unaffected
+	// (Divi's BlockParser assoc-decodes too), but [] is non-canonical in
+	// stored markup and type-visible to the Visual Builder's JS parser.
+	// Tools that round-trip a parsed tree through serialize_blocks()
+	// record the empty-object attr paths per block at parse time (sidecar
+	// key on the block entry, ignored by serialize_blocks) and restore
+	// stdClass at those paths right before re-serialization so
+	// wp_json_encode emits {} again. Sidecars travel with array copies,
+	// so cloned/moved blocks are repaired too.
+
+	/**
+	 * Sidecar key attached to parsed block entries. serialize_blocks()
+	 * only reads blockName/attrs/innerBlocks/innerContent, so the key is
+	 * inert if it ever leaks through — but restore_blocks_empty_objects()
+	 * strips it anyway.
+	 */
+	private static function empty_object_paths_key(): string {
+		return '__diviops_empty_object_paths';
+	}
+
+	/**
+	 * Scan serialized content for block opener comments in document order.
+	 *
+	 * The pattern is a verbatim copy of the token grammar in
+	 * WP_Block_Parser::next_token() (wp-includes/class-wp-block-parser.php),
+	 * so scanned openers align 1:1 with the preorder of parse_blocks()
+	 * output (freeform HTML chunks produce no token and no named block).
+	 *
+	 * @param string $content Serialized block markup.
+	 * @return array<int,array{name:string,attrs:?string}> Openers in document order.
+	 */
+	private static function scan_block_opener_attrs( string $content ): array {
+		$pattern = '/<!--\s+(?P<closer>\/)?wp:(?P<namespace>[a-z][a-z0-9_-]*\/)?(?P<name>[a-z][a-z0-9_-]*)\s+(?P<attrs>{(?:(?:[^}]+|}+(?=})|(?!}\s+\/?-->).)*+)?}\s+)?(?P<void>\/)?-->/s';
+		if ( ! preg_match_all( $pattern, $content, $matches, PREG_SET_ORDER ) ) {
+			return [];
+		}
+		$openers = [];
+		foreach ( $matches as $m ) {
+			if ( ! empty( $m['closer'] ) ) {
+				continue;
+			}
+			// Implicit namespace resolves to core/ — mirrors WP_Block_Parser.
+			$namespace = ! empty( $m['namespace'] ) ? $m['namespace'] : 'core/';
+			$openers[] = [
+				'name'  => $namespace . $m['name'],
+				'attrs' => isset( $m['attrs'] ) && '' !== $m['attrs'] ? trim( $m['attrs'] ) : null,
+			];
+		}
+		return $openers;
+	}
+
+	/**
+	 * Collect attr paths whose value is an empty JSON object, from an
+	 * assoc=false decode (stdClass distinguishes {} from []).
+	 *
+	 * @param mixed $value  Decoded attrs (objects + arrays).
+	 * @param array $prefix Current path prefix (internal).
+	 * @return array<int,array<int,string|int>> Paths as key lists, depth >= 1.
+	 */
+	private static function collect_empty_object_paths( $value, array $prefix = [] ): array {
+		$out = [];
+		self::collect_empty_object_paths_recursive( $value, $prefix, $out );
+		return $out;
+	}
+
+	/**
+	 * Recursive worker for collect_empty_object_paths().
+	 *
+	 * @param mixed $value Decoded attrs (objects + arrays).
+	 * @param array $prefix Current path prefix.
+	 * @param array $out Collected paths, appended by reference.
+	 * @return void
+	 */
+	private static function collect_empty_object_paths_recursive( $value, array $prefix, array &$out ): void {
+		if ( is_object( $value ) ) {
+			$vars = get_object_vars( $value );
+			if ( empty( $vars ) ) {
+				// Depth 0 ({} as the whole attrs) is excluded: core's own
+				// serialize_blocks() omits empty attrs entirely either way.
+				if ( ! empty( $prefix ) ) {
+					$out[] = $prefix;
+				}
+				return;
+			}
+			foreach ( $vars as $k => $v ) {
+				$next_prefix   = $prefix;
+				$next_prefix[] = (string) $k;
+				self::collect_empty_object_paths_recursive( $v, $next_prefix, $out );
+			}
+			return;
+		}
+		if ( is_array( $value ) ) {
+			foreach ( $value as $k => $v ) {
+				$next_prefix   = $prefix;
+				$next_prefix[] = $k;
+				self::collect_empty_object_paths_recursive( $v, $next_prefix, $out );
+			}
+		}
+	}
+
+	/**
+	 * Restore stdClass at each recorded path whose current value is still
+	 * an empty array. Paths invalidated by mutation (parent replaced or
+	 * removed, value now non-empty) are skipped — a recorded {} that a
+	 * mutator filled with real data stays whatever the mutator wrote.
+	 *
+	 * @param array $attrs Block attrs after mutation.
+	 * @param array $paths Paths from collect_empty_object_paths().
+	 * @return array Attrs with stdClass markers at surviving empty positions.
+	 */
+	private static function restore_empty_objects( array $attrs, array $paths ): array {
+		foreach ( $paths as $path ) {
+			if ( ! is_array( $path ) || empty( $path ) ) {
+				continue;
+			}
+			$last = array_pop( $path );
+			$ref  = &$attrs;
+			$ok   = true;
+			foreach ( $path as $key ) {
+				if ( ! is_array( $ref ) || ! array_key_exists( $key, $ref ) ) {
+					$ok = false;
+					break;
+				}
+				$ref = &$ref[ $key ];
+			}
+			if ( $ok && is_array( $ref ) && array_key_exists( $last, $ref ) && [] === $ref[ $last ] ) {
+				$ref[ $last ] = new stdClass();
+			}
+			unset( $ref );
+		}
+		return $attrs;
+	}
+
+	/**
+	 * Attach empty-object-path sidecars to a freshly parsed tree by aligning
+	 * the preorder walk with the scanned opener tokens of the SAME content.
+	 *
+	 * Returns the enriched tree, or the original tree untouched when
+	 * alignment fails (count or block-name mismatch at any position) —
+	 * fallback is today's lossy behavior, never worse.
+	 *
+	 * @param array  $blocks  parse_blocks() output for $content.
+	 * @param string $content The exact content that was parsed.
+	 * @return array
+	 */
+	private static function enrich_blocks_with_empty_object_paths( array $blocks, string $content ): array {
+		$openers = self::scan_block_opener_attrs( $content );
+		if ( empty( $openers ) ) {
+			return $blocks;
+		}
+		$enriched = $blocks;
+		$index    = 0;
+		if ( ! self::attach_empty_object_paths_walk( $enriched, $openers, $index ) || $index !== count( $openers ) ) {
+			return $blocks;
+		}
+		return $enriched;
+	}
+
+	/**
+	 * Preorder recursion for enrich_blocks_with_empty_object_paths().
+	 * Freeform chunks (null blockName) consume no opener token.
+	 */
+	private static function attach_empty_object_paths_walk( array &$blocks, array $openers, int &$index ): bool {
+		foreach ( $blocks as &$block ) {
+			$name = isset( $block['blockName'] ) ? $block['blockName'] : null;
+			if ( null !== $name && '' !== $name ) {
+				if ( ! isset( $openers[ $index ] ) || $openers[ $index ]['name'] !== $name ) {
+					return false;
+				}
+				$json = $openers[ $index ]['attrs'];
+				$index++;
+				if ( null !== $json ) {
+					$decoded = json_decode( $json );
+					if ( is_object( $decoded ) ) {
+						$paths = self::collect_empty_object_paths( $decoded );
+						if ( ! empty( $paths ) ) {
+							$block[ self::empty_object_paths_key() ] = $paths;
+						}
+					}
+				}
+			}
+			if ( isset( $block['innerBlocks'] ) && is_array( $block['innerBlocks'] ) && ! empty( $block['innerBlocks'] ) ) {
+				if ( ! self::attach_empty_object_paths_walk( $block['innerBlocks'], $openers, $index ) ) {
+					return false;
+				}
+			}
+		}
+		unset( $block );
+		return true;
+	}
+
+	/**
+	 * Strip sidecars and restore {} markers across a mutated tree — call
+	 * immediately before serialize_blocks().
+	 *
+	 * @param array $blocks Mutated tree (possibly carrying sidecars).
+	 * @return array Tree ready for serialize_blocks().
+	 */
+	private static function restore_blocks_empty_objects( array $blocks ): array {
+		$key = self::empty_object_paths_key();
+		foreach ( $blocks as &$block ) {
+			if ( array_key_exists( $key, $block ) ) {
+				$paths = $block[ $key ];
+				unset( $block[ $key ] );
+				if ( is_array( $paths ) && isset( $block['attrs'] ) && is_array( $block['attrs'] ) ) {
+					$block['attrs'] = self::restore_empty_objects( $block['attrs'], $paths );
+				}
+			}
+			if ( isset( $block['innerBlocks'] ) && is_array( $block['innerBlocks'] ) && ! empty( $block['innerBlocks'] ) ) {
+				$block['innerBlocks'] = self::restore_blocks_empty_objects( $block['innerBlocks'] );
+			}
+		}
+		unset( $block );
+		return $blocks;
 	}
 
 	// ── Storage-path contract (#719) ────────────────────────────────

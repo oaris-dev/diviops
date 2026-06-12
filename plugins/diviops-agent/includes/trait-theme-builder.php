@@ -337,7 +337,12 @@ trait DiviOps_Agent_ThemeBuilder {
 			return self::envelope_from_wp_error( $inserted );
 		}
 
-		$blocks = parse_blocks( (string) $post->post_content );
+		// Sidecar enrichment records which attr positions held {} in the
+		// stored markup, so the pre-serialize restore below can undo core's
+		// assoc-decode {} → [] collapse layout-wide (#903; same guard as the
+		// module ops in #901).
+		$stored_content = (string) $post->post_content;
+		$blocks         = self::enrich_blocks_with_empty_object_paths( parse_blocks( $stored_content ), $stored_content );
 		if ( '' !== $parent_path ) {
 			$target = self::find_tb_block_by_path( $blocks, $parent_path );
 		} else {
@@ -420,7 +425,7 @@ trait DiviOps_Agent_ThemeBuilder {
 			);
 		}
 
-		$new_content = serialize_blocks( $blocks );
+		$new_content = serialize_blocks( self::restore_blocks_empty_objects( $blocks ) );
 		$normalized  = self::normalize_and_validate_divi_markup_before_write( $new_content, 'final_layout' );
 		if ( is_wp_error( $normalized ) ) {
 			return self::envelope_from_wp_error( $normalized );
@@ -473,7 +478,11 @@ trait DiviOps_Agent_ThemeBuilder {
 			return $normalized;
 		}
 		$content = $normalized['content'];
-		$blocks = parse_blocks( $content );
+		// Enrich against the normalized request markup so {} buckets on the
+		// INSERTED blocks survive their first write too. Filtering out the
+		// empty freeform chunks below doesn't disturb the opener alignment —
+		// freeform blocks produce no opener token (#903).
+		$blocks = self::enrich_blocks_with_empty_object_paths( parse_blocks( $content ), $content );
 		$out    = [];
 		foreach ( $blocks as $block ) {
 			if ( empty( $block['blockName'] ) ) {
@@ -695,25 +704,29 @@ trait DiviOps_Agent_ThemeBuilder {
 	}
 
 	private static function tb_blocks_equivalent( array $a, array $b ): bool {
-		$a_normalized = [
-			'blockName'   => $a['blockName'] ?? null,
-			'attrs'       => $a['attrs'] ?? [],
+		return self::tb_block_normalized_for_equivalence( $a ) == self::tb_block_normalized_for_equivalence( $b );
+	}
+
+	/**
+	 * Reduce a block (recursively) to the four keys that define insert
+	 * equivalence. The previous shape only normalized the TOP level and
+	 * compared children raw, which made equivalence sensitive to keys that
+	 * don't affect serialization — including the #901 empty-object-path
+	 * sidecars, present on stored-tree blocks but not (or with different
+	 * paths) on request-parsed blocks. Applying the same key set at every
+	 * depth keeps the comparison consistent with its top-level intent.
+	 */
+	private static function tb_block_normalized_for_equivalence( array $block ): array {
+		$normalized = [
+			'blockName'   => $block['blockName'] ?? null,
+			'attrs'       => $block['attrs'] ?? [],
 			'innerBlocks' => [],
-			'innerHTML'   => $a['innerHTML'] ?? '',
+			'innerHTML'   => $block['innerHTML'] ?? '',
 		];
-		$b_normalized = [
-			'blockName'   => $b['blockName'] ?? null,
-			'attrs'       => $b['attrs'] ?? [],
-			'innerBlocks' => [],
-			'innerHTML'   => $b['innerHTML'] ?? '',
-		];
-		foreach ( $a['innerBlocks'] ?? [] as $child ) {
-			$a_normalized['innerBlocks'][] = is_array( $child ) ? $child : [];
+		foreach ( $block['innerBlocks'] ?? [] as $child ) {
+			$normalized['innerBlocks'][] = is_array( $child ) ? self::tb_block_normalized_for_equivalence( $child ) : [];
 		}
-		foreach ( $b['innerBlocks'] ?? [] as $child ) {
-			$b_normalized['innerBlocks'][] = is_array( $child ) ? $child : [];
-		}
-		return $a_normalized == $b_normalized;
+		return $normalized;
 	}
 
 	private static function tb_stable_labeled_sequence_exists( array $haystack, array $needle ): bool {
