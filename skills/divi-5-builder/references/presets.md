@@ -27,7 +27,7 @@ Block Markup (groupPreset / modulePreset)   ← page generation
 
 ### Variable Tokens
 
-Variables are stored in the Divi Variable Manager. 6 native types:
+Variables are stored in the Divi Variable Manager. 7 native types (Divi 5.7.4 added `gradients`):
 
 | Type | ID prefix | Storage | Example |
 |------|-----------|---------|---------|
@@ -37,12 +37,15 @@ Variables are stored in the Divi Variable Manager. 6 native types:
 | `strings` | `gvid-` | `et_divi_global_variables.strings` | Arbitrary text |
 | `images` | `gvid-` | `et_divi_global_variables.images` | Base64 or URL |
 | `links` | `gvid-` | `et_divi_global_variables.links` | URL values |
+| `gradients` *(5.7.4)* | `gvid-` | `et_divi_global_variables.gradients` | structured `$variable({type:gradient,…settings…})$` token — see caveat below |
+
+> **Gradient-variable value shape (5.7.4, VB-verified 2026-06-15):** a renderable `gradients` entry's stored `value` is itself a `$variable({"type":"gradient","value":{"name":"gradient","settings":{"enabled":"on","stops":[{position,color},…],"type":"linear|circular|elliptical|conic","direction","directionRadial","length","overlaysImage"}}})$` token — **not** a raw CSS `linear-gradient(…)` string. Divi defines the `--gvid-…` custom property only for the structured shape; a CSS-string value is referenced (`var(--gvid-…)`) but never defined, so any bound module renders nothing. Create gradient variables either in the VB Variable Manager **or** via `diviops_variable_create({type:"gradients", gradient:{stops:[…], type, direction, …}})` (diviops-agent ≥ 1.5.4 / server ≥ 1.5.28) — the server serializes this exact token. A raw CSS-string `value` is rejected.
 
 **Token format in block attrs** — note the `$` on BOTH ends:
 ```json
 "$variable({\"type\":\"content\",\"value\":{\"name\":\"gvid-oa-size-h1\",\"settings\":{}}})$"
 ```
-- Colors use `"type":"color"`, everything else uses `"type":"content"`
+- Colors use `"type":"color"`, gradient variables use `"type":"gradient"`, everything else uses `"type":"content"`
 - **The trailing `$` is required** — without it, the token silently fails to resolve
 - Resolved at render time: colors → HSL transform, numbers/fonts → `var(--name)`
 

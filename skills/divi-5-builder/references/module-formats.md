@@ -183,11 +183,15 @@ Divi theme CSS (base visual defaults: font-size, color, line-height, margins)
 ```
 - **`enabled: "on"`** is REQUIRED — without it the gradient silently fails
 - **`position`**: strings (`"0"`, `"50"`, `"100"`) — VB exports strings, not numbers
-- `direction`: CSS angle (`"135deg"`, `"180deg"`) — optional, defaults to `"180deg"`
-- `stops`: array of `{position, color}` (min 2)
+- **`type`** — VB-verified enum `"linear"` / `"circular"` / `"elliptical"` / `"conic"` (default linear), **not** `"radial"`. `circular`→`radial-gradient(circle at …)`, `elliptical`→`radial-gradient(ellipse at …)`, `conic`→`conic-gradient(from <direction> at …)`. Render-verified Divi 5.7.4 (2026-06-15).
+- `direction`: CSS angle (`"135deg"`, `"180deg"`) — used by linear + conic; defaults to `"180deg"`
+- `directionRadial`: position keyword (`"center"`, `"top left"`, …) — used by circular/elliptical/conic; defaults to `"center"`
+- `stops[]`: array of `{position, color}` (min 2)
 - Works on any module with `decoration.background`
 - Gradient + color coexist (gradient on top); `gradient.overlaysImage: "on"` places gradient above image
 - `gradient.repeat: "off"` — repeat toggle
+- **Preset binding (Divi 5.7+)**: the canonical *preset-map* key for a background gradient is now `…background__gradient` (subName `gradient`, binds the whole gradient object), replacing the pre-5.7 `…background__gradient.stops` (subName `gradient.stops`, which bound only the stops array). The sibling `gradient.*` preset keys (`enabled`, `type`, `direction`, `directionRadial`, `repeat`, `length`, `overlaysImage`) are unchanged. The module-attr **value path above is unchanged** — author gradients at `…background.<breakpoint>.<state>.gradient.{enabled,stops[],…}` exactly as shown; only the preset-binding key shape moved. The new whole-object `gradient` slot also backs Divi 5.7's gradient global variables (a single slot can now carry a `gvid-…` reference).
+- **Gradient global variables — value-shape caveat (5.7.4, VB-verified 2026-06-15):** to reference a gradient variable, the VB sets `gradient.stops` to a string token `"$variable({\"type\":\"gradient\",\"value\":{\"name\":\"gvid-…\",\"settings\":{}}})$"` (keep `enabled:"on"`). Divi resolves it **only** when the referenced gvid is stored in its canonical structured shape (its `value` is itself a `$variable({type:gradient,value:{name:"gradient",settings:{stops[],type,direction,…}}})$` token). A gradient variable whose stored `value` is a plain CSS string (e.g. `linear-gradient(…)`) is referenced via `var(--gvid-…)` but never defined → renders nothing. Create gradient variables through the VB Variable Manager **or** via `diviops_variable_create({type:"gradients", gradient:{stops:[…], type, direction, …}})` (diviops-agent ≥ 1.5.4 / server ≥ 1.5.28), which serializes this exact token; a raw CSS-string `value` is rejected.
 
 ### Video background
 ```json
@@ -317,6 +321,7 @@ Need a semantic name? Register it inside Divi as a `gvid-*` / `gcid-*` in the Va
 
 The Pro version includes shared pattern documentation for:
 - Font Family A (bodyFont) and Font Family B (element.decoration.font.font)
+- Font Text Effects (gradient/image fill, stroke) *(Divi 5.7+)*
 - Icon Family (element.decoration.icon)
 - Container Cascade (children.module.decoration)
 - Module Link
@@ -337,7 +342,7 @@ Upgrade to Pro: https://diviops.com
 
 > Generated mechanically by `diviops-server/scripts/regen-module-formats.mjs` from `diviops_schema_get_module` dump-all output. Each module block lives between `BEGIN GENERATED:module:divi/<slug>` / `END GENERATED:module:divi/<slug>` HTML-comment sentinels (see `diviops-server/CONTRIBUTING.md` for the full convention). Do **not** edit between sentinels — edits are clobbered on regen.
 
-> Generated against Divi `5.6.1`, schema `e4a89f645f3d…`.
+> Generated against Divi `5.7.4`, schema `af7c9d795e77…`.
 
 Per CLAUDE.md "Suite architecture coherence": schema dump is the canonical index; VB-verified prose above is the canonical interpretation. The two sections are complementary, not competing — prose explains surprises, this index enumerates paths exhaustively. On conflicts, the prose above wins (per `feedback_vb_first_verification`).
 

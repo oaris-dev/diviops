@@ -334,7 +334,7 @@ trait DiviOps_Agent_Variable {
 		// Non-color types.
 		$vars = get_option( 'et_divi_global_variables', [] );
 		if ( is_array( $vars ) ) {
-			foreach ( [ 'numbers', 'strings', 'images', 'links', 'fonts' ] as $type ) {
+			foreach ( [ 'numbers', 'strings', 'images', 'links', 'fonts', 'gradients' ] as $type ) {
 				if ( ! is_array( $vars[ $type ] ?? null ) ) {
 					continue;
 				}
@@ -358,14 +358,14 @@ trait DiviOps_Agent_Variable {
 	/**
 	 * List all variables, optionally filtered by type or ID prefix.
 	 * Colors come from et_divi.et_global_data.global_colors.
-	 * Numbers/strings/images/links/fonts come from et_divi_global_variables.
+	 * Numbers/strings/images/links/fonts/gradients come from et_divi_global_variables.
 	 */
 	public static function variable_list( $request ) {
 		$filter_type   = sanitize_key( (string) ( $request->get_param( 'type' ) ?? '' ) );
 		$filter_prefix = sanitize_text_field( (string) ( $request->get_param( 'prefix' ) ?? '' ) );
 		$result        = [];
 
-		$valid_types = [ 'colors', 'numbers', 'strings', 'images', 'links', 'fonts' ];
+		$valid_types = [ 'colors', 'numbers', 'strings', 'images', 'links', 'fonts', 'gradients' ];
 		if ( $filter_type && ! in_array( $filter_type, $valid_types, true ) ) {
 			return self::envelope_error(
 				'invalid_input',
@@ -394,7 +394,7 @@ trait DiviOps_Agent_Variable {
 			'gcid-link-color'      => 5,
 		];
 
-		// Comparator for non-color buckets (numbers/strings/images/links/fonts).
+		// Comparator for non-color buckets (numbers/strings/images/links/fonts/gradients).
 		// Active first, then numeric `order` ascending, then no-order legacy entries,
 		// then inactive/archived. Stable label tiebreak.
 		$sort_by_order = static function ( array $a, array $b ) use ( $is_active ): int {
@@ -468,7 +468,7 @@ trait DiviOps_Agent_Variable {
 		if ( ! is_array( $vars ) ) {
 			$vars = [];
 		}
-		$var_types  = [ 'numbers', 'strings', 'images', 'links', 'fonts' ];
+		$var_types  = [ 'numbers', 'strings', 'images', 'links', 'fonts', 'gradients' ];
 
 		foreach ( $var_types as $type ) {
 			if ( $filter_type && $filter_type !== $type ) {
@@ -750,7 +750,7 @@ trait DiviOps_Agent_Variable {
 		$output_unit       = $request->get_param( 'output_unit' );
 		$root_font_size_px = $request->get_param( 'root_font_size_px' );
 
-		$valid_types = [ 'colors', 'numbers', 'strings', 'images', 'links', 'fonts' ];
+		$valid_types = [ 'colors', 'numbers', 'strings', 'images', 'links', 'fonts', 'gradients' ];
 		if ( ! in_array( $type, $valid_types, true ) ) {
 			return self::envelope_error(
 				'invalid_input',
@@ -921,7 +921,10 @@ trait DiviOps_Agent_Variable {
 			}
 		}
 
-		if ( ! is_scalar( $value ) ) {
+		// Gradient variables may be created from a structured `gradient` object
+		// instead of a scalar `value` (the server serializes the canonical token).
+		$gradient_structured = ( 'gradients' === $type && is_array( $request->get_param( 'gradient' ) ) );
+		if ( ! $gradient_structured && ! is_scalar( $value ) ) {
 			return self::envelope_error(
 				'invalid_input',
 				'value must be a scalar string (or supply min/max/targets for type=numbers).',
@@ -934,7 +937,7 @@ trait DiviOps_Agent_Variable {
 				]
 			);
 		}
-		$value = (string) $value;
+		$value = is_scalar( $value ) ? (string) $value : $value;
 
 		$dry_run = (bool) $request->get_param( 'dry_run' );
 
@@ -1035,7 +1038,16 @@ trait DiviOps_Agent_Variable {
 
 		// Type-specific sanitization.
 		$sanitized_value = $value;
-		if ( in_array( $type, [ 'images', 'links' ], true ) ) {
+		if ( 'gradients' === $type ) {
+			// Gradient variables require Divi's canonical structured token, NOT a
+			// raw CSS gradient string. Build it from structured `gradient` input, or
+			// accept a ready-made token verbatim; reject anything else (#921).
+			$built = self::build_gradient_variable_value( $value, $request->get_param( 'gradient' ) );
+			if ( $built instanceof WP_REST_Response ) {
+				return $built; // envelope_error
+			}
+			$sanitized_value = $built;
+		} elseif ( in_array( $type, [ 'images', 'links' ], true ) ) {
 			$sanitized_value = esc_url_raw( $value );
 		} else {
 			$sanitized_value = sanitize_text_field( $value );
@@ -1080,6 +1092,108 @@ trait DiviOps_Agent_Variable {
 			'label'   => $label,
 			'value'   => $sanitized_value,
 		] );
+	}
+
+	/**
+	 * Build the canonical stored value for a `gradients` variable.
+	 *
+	 * Divi gradient variables are NOT CSS strings. A renderable entry's stored
+	 * value is a `$variable({"type":"gradient","value":{"name":"gradient",
+	 * "settings":{…}}})$` token whose `settings` carries the structured gradient
+	 * (stops[], type, direction, …). Divi emits the `--gvid-…` custom-property
+	 * definition only for this shape; a raw CSS string yields an undefined
+	 * `var(--gvid-…)` that renders nothing (#921). VB-verified on Divi 5.7.4.
+	 *
+	 * Three input paths:
+	 *  1. Structured `gradient` object → serialize the canonical token here.
+	 *  2. `value` already a `$variable(...gradient...)$` token → accept verbatim.
+	 *  3. CSS string / empty / anything else → reject with a hint.
+	 *
+	 * @param mixed $value          The `value` param (token string or legacy CSS string).
+	 * @param mixed $gradient_input The structured `gradient` param (array) if supplied.
+	 *
+	 * @return string|WP_REST_Response Canonical token string, or an envelope_error.
+	 */
+	private static function build_gradient_variable_value( $value, $gradient_input ) {
+		// Path 1 — structured input → serialize the canonical token.
+		if ( is_array( $gradient_input ) ) {
+			$stops_in = $gradient_input['stops'] ?? null;
+			if ( ! is_array( $stops_in ) || count( $stops_in ) < 2 ) {
+				return self::envelope_error(
+					'invalid_input',
+					'gradient.stops must be an array of at least 2 {position, color} entries.',
+					null,
+					400,
+					[ 'field' => 'gradient.stops' ]
+				);
+			}
+
+			$stops = [];
+			foreach ( array_values( $stops_in ) as $i => $stop ) {
+				$position = is_array( $stop ) && isset( $stop['position'] ) ? sanitize_text_field( (string) $stop['position'] ) : '';
+				$color    = is_array( $stop ) && isset( $stop['color'] ) ? sanitize_text_field( (string) $stop['color'] ) : '';
+				if ( '' === $position || '' === $color ) {
+					return self::envelope_error(
+						'invalid_input',
+						"gradient.stops[$i] requires both position and color.",
+						null,
+						400,
+						[ 'field' => "gradient.stops[$i]" ]
+					);
+				}
+				$stops[] = [ 'position' => $position, 'color' => $color ];
+			}
+
+			$allowed_types = [ 'linear', 'circular', 'elliptical', 'conic' ];
+			$g_type        = isset( $gradient_input['type'] ) ? sanitize_text_field( (string) $gradient_input['type'] ) : 'linear';
+			if ( ! in_array( $g_type, $allowed_types, true ) ) {
+				return self::envelope_error(
+					'invalid_input',
+					'gradient.type must be one of: ' . implode( ', ', $allowed_types ) . ' (not "radial").',
+					null,
+					400,
+					[ 'field' => 'gradient.type', 'allowed' => $allowed_types, 'received' => $g_type ]
+				);
+			}
+
+			$settings = [
+				'enabled'         => 'on',
+				'stops'           => $stops,
+				'length'          => isset( $gradient_input['length'] ) ? sanitize_text_field( (string) $gradient_input['length'] ) : '100%',
+				'type'            => $g_type,
+				'direction'       => isset( $gradient_input['direction'] ) ? sanitize_text_field( (string) $gradient_input['direction'] ) : '180deg',
+				'directionRadial' => isset( $gradient_input['directionRadial'] ) ? sanitize_text_field( (string) $gradient_input['directionRadial'] ) : 'center',
+				'repeat'          => isset( $gradient_input['repeat'] ) && 'on' === $gradient_input['repeat'] ? 'on' : 'off',
+				'overlaysImage'   => isset( $gradient_input['overlaysImage'] ) && 'on' === $gradient_input['overlaysImage'] ? 'on' : 'off',
+			];
+
+			$payload = [
+				'type'  => 'gradient',
+				'value' => [ 'name' => 'gradient', 'settings' => $settings ],
+			];
+
+			return '$variable(' . wp_json_encode( $payload, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE ) . ')$';
+		}
+
+		// Path 2 — caller passed a ready-made gradient token → accept verbatim.
+		$value_str = is_string( $value ) ? trim( $value ) : '';
+		if (
+			'' !== $value_str
+			&& 0 === strpos( $value_str, '$variable(' )
+			&& '$' === substr( $value_str, -1 )
+			&& false !== strpos( $value_str, '"type":"gradient"' )
+		) {
+			return $value_str;
+		}
+
+		// Path 3 — CSS string / empty / anything else → reject (the #921 footgun).
+		return self::envelope_error(
+			'invalid_input',
+			'Gradient variables require structured input. Pass a `gradient` object ({stops:[{position,color},…], type, direction, …}) so the server emits the canonical $variable(gradient) token, OR pass `value` as a full $variable({"type":"gradient",…})$ token. A raw CSS gradient string (e.g. "linear-gradient(…)") is NOT renderable — Divi never defines the --gvid-… custom property for it.',
+			null,
+			400,
+			[ 'field' => 'gradient|value', 'received_value' => is_string( $value ) ? $value : null ]
+		);
 	}
 
 	/**
@@ -1647,7 +1761,7 @@ trait DiviOps_Agent_Variable {
 				);
 			}
 			$found_type = null;
-			foreach ( [ 'numbers', 'strings', 'images', 'links', 'fonts' ] as $type ) {
+			foreach ( [ 'numbers', 'strings', 'images', 'links', 'fonts', 'gradients' ] as $type ) {
 				if ( is_array( $vars[ $type ] ?? null ) && isset( $vars[ $type ][ $id ] ) ) {
 					$found_type = $type;
 					break;

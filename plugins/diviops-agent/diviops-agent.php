@@ -3,7 +3,7 @@
  * Plugin Name: DiviOps Agent
  * Plugin URI: https://github.com/oaris-dev/diviops
  * Description: REST API bridge for DiviOps — connects Claude Code to your Divi 5 site for AI-powered page building and design management.
- * Version: 1.5.3
+ * Version: 1.5.4
  * Author: oaris.de
  * Author URI: https://oaris.de
  * Text Domain: diviops-agent
@@ -60,7 +60,7 @@ class DiviOps_Agent {
 	 * Plugin version — surfaced in /handshake for self-diagnosis only;
 	 * server no longer gates on it (capability map is the gate).
 	 */
-	const VERSION = '1.5.3';
+	const VERSION = '1.5.4';
 
 	/**
 	 * Minimum MCP server version this plugin is compatible with.
@@ -120,6 +120,10 @@ class DiviOps_Agent {
 		// variable
 		'variable_create', 'variable_create_fluid_system', 'variable_delete',
 		'variable_list', 'variable_scan_orphans', 'variable_used_on_page',
+		// Sub-feature: structured `gradient` input on variable_create serializes
+		// the canonical $variable(gradient) token (#921). Gated separately so a
+		// new server fails loud against a plugin too old to serialize it.
+		'variable_create_gradient',
 		// Storage-path contract (#719). Single contract-level key advertises
 		// implementation of the full read-probe + write-canonical + audit-
 		// aggregates contract across preset / global_color / global_font
@@ -1195,6 +1199,9 @@ class DiviOps_Agent {
 				// either value OR fluid params (min+max or targets) is present
 				// and returns the richer 400 (fluid_value_conflict / etc).
 				'value'             => [ 'required' => false, 'type' => 'string' ],
+				// Structured gradient settings for type=gradients — the callback
+				// serializes the canonical $variable(gradient) token (#921).
+				'gradient'          => [ 'required' => false, 'type' => 'object' ],
 				'min'               => [ 'required' => false, 'type' => 'string' ],
 				'max'               => [ 'required' => false, 'type' => 'string' ],
 				'targets'           => [ 'required' => false, 'type' => 'object' ],

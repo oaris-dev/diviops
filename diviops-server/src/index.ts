@@ -3323,7 +3323,7 @@ registerPluginTool(
       "List all design token variables from the Divi Variable Manager. Colors (gcid-*) come from et_global_data, numbers/strings/etc (gvid-*) from et_divi_global_variables. Filter by type or ID prefix. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }; invalid `type` returns ok:false with code 'invalid_input'.",
     inputSchema: {
       type: z
-        .enum(["colors", "numbers", "strings", "images", "links", "fonts"])
+        .enum(["colors", "numbers", "strings", "images", "links", "fonts", "gradients"])
         .optional()
         .describe("Filter by variable type"),
       prefix: z
@@ -3357,7 +3357,7 @@ registerPluginTool(
       DRY_RUN_DESC_SUFFIX,
     inputSchema: {
       type: z
-        .enum(["colors", "numbers", "strings", "images", "links", "fonts"])
+        .enum(["colors", "numbers", "strings", "images", "links", "fonts", "gradients"])
         .describe("Variable type"),
       id: z
         .string()
@@ -3372,7 +3372,27 @@ registerPluginTool(
         .string()
         .optional()
         .describe(
-          'Variable value (required unless using fluid min/max/targets for type=numbers): hex color for colors (e.g. "#3a7a6a"), CSS value for numbers (e.g. "clamp(30px, 8vw, 100px)" or "2rem")',
+          'Variable value (required unless using fluid min/max/targets for type=numbers, OR the structured `gradient` object for type=gradients): hex color for colors (e.g. "#3a7a6a"), CSS value for numbers (e.g. "clamp(30px, 8vw, 100px)" or "2rem"), arbitrary text/URL for strings/links/images. For type=gradients do NOT pass a CSS gradient string here — it stores an unrenderable variable; use the `gradient` object instead (or pass a full $variable({"type":"gradient",…})$ token verbatim).',
+        ),
+      gradient: z
+        .object({
+          stops: z
+            .array(z.object({ position: z.union([z.string(), z.number()]), color: z.string() }))
+            .min(2)
+            .describe('Gradient color stops, min 2. position = unitless number 0–100 (string or number; PHP normalizes to string); color = hex or a $variable(gcid-…)$ token.'),
+          type: z
+            .enum(["linear", "circular", "elliptical", "conic"])
+            .optional()
+            .describe('Gradient type (default linear). circular/elliptical render as radial-gradient(circle|ellipse …); conic as conic-gradient. NOTE: the enum is circular/elliptical, NOT "radial".'),
+          direction: z.string().optional().describe('CSS angle for linear/conic (default "180deg"), e.g. "90deg".'),
+          directionRadial: z.string().optional().describe('Position keyword for circular/elliptical/conic (default "center"), e.g. "top left".'),
+          length: z.string().optional().describe('Gradient length (default "100%").'),
+          repeat: z.enum(["on", "off"]).optional().describe('Repeat the gradient (default "off").'),
+          overlaysImage: z.enum(["on", "off"]).optional().describe('Place gradient above a background image (default "off").'),
+        })
+        .optional()
+        .describe(
+          'Structured gradient settings for type="gradients" (5.7.4). The server serializes the canonical $variable({"type":"gradient",value:{name:"gradient",settings:{…}}})$ token that Divi resolves to a defined --gvid-* custom property. REQUIRED for a renderable gradient variable — a raw CSS-string `value` is rejected. Ignored for non-gradient types.',
         ),
       min: z
         .string()
@@ -3418,6 +3438,7 @@ registerPluginTool(
     id,
     label,
     value,
+    gradient,
     min,
     max,
     targets,
@@ -3425,8 +3446,14 @@ registerPluginTool(
     root_font_size_px,
     dry_run,
   }) => {
+    // Structured gradient serialization is a plugin-side capability (#921).
+    // Gate it so a new server + old plugin fails with a clear "update plugin"
+    // error instead of the confusing "value must be scalar" the old callback
+    // would emit for a gradient-without-value request.
+    if (gradient !== undefined) requireCapability("variable_create_gradient");
     const body: Record<string, unknown> = { type, label };
     if (value !== undefined) body.value = value;
+    if (gradient !== undefined) body.gradient = gradient;
     if (id) body.id = id;
     if (min !== undefined) body.min = min;
     if (max !== undefined) body.max = max;
