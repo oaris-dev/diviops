@@ -4611,6 +4611,260 @@ function registerProTools(): void {
     },
   );
 
+  // ── V3.4 — downloadable artifact metadata + license changelog ──────
+  //
+  // Store-deployment helper surface. This intentionally complements
+  // FluentCart's native MCP by focusing on DiviOps-specific launch
+  // readiness: metadata-only download rows, attaching an already-present
+  // server-side ZIP, and the FCP Pro updater changelog field. No binary
+  // upload and no signed buyer URLs.
+
+  // diviops_fc_download_list — POST /diviops/v1/pro/fluentcart/products/{id}/downloads
+  registerProTool(
+    "diviops_fc_download_list",
+    {
+      description:
+        "List FluentCart downloadable-file rows for a product (Pro tier; V3.4; requires FluentCart Pro installed + activated). Read-only metadata surface for store artifact deployment. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }; success payload is { product_id, downloads: DownloadRow[] }. DownloadRow is { id, title, file_name, driver, file_size, type, variation_ids, is_update_file } — metadata only, never file_path, file_url, download_identifier, signed URLs, or buyer URLs. `is_update_file` is derived from the product's license_settings.global_update_file pointer when present. Use this before `diviops_fc_license_settings_update` so the updater pointer can be set to the plugin ZIP row, not the suite ZIP row. Error codes: invalid_input (400), not_found (404), fluentcart.module_inactive (412), fluentcart.query_failed (500). Idempotency: read-only.",
+      inputSchema: {
+        product_id: z
+          .number()
+          .int()
+          .positive()
+          .describe(
+            "FluentCart product ID (the post ID of the fluent_products CPT entry).",
+          ),
+      },
+      annotations: { idempotentHint: true },
+      _meta: { idempotent: "true" },
+    },
+    async ({ product_id }: { product_id: number }) => {
+      const result = await wp.requestEnveloped(
+        `/pro/fluentcart/products/${product_id}/downloads`,
+        { method: "POST" },
+      );
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: serializeEnvelope(result, "diviops_fc_download_list"),
+          },
+        ],
+      };
+    },
+    { target: "fluentcart", capabilityKey: "fluentcart_download_list" },
+  );
+
+  // diviops_fc_download_attach — POST /diviops/v1/pro/fluentcart/products/{id}/downloads/attach
+  registerProTool(
+    "diviops_fc_download_attach",
+    {
+      description:
+        "Attach an already-present server-side ZIP as a FluentCart downloadable-file row (Pro tier; V3.4; requires FluentCart Pro installed + activated). This is NOT a binary upload tool: `file_path` must resolve to a readable .zip on the WordPress server under ABSPATH or the uploads directory. The response never exposes file paths, file URLs, download identifiers, signed URLs, or buyer URLs. Required: product_id, file_path. Optional: file_name (defaults to basename(file_path), must end in .zip), title (defaults to filename without .zip), variation_ids (must belong to this product; empty means all variants), expected_sha1, expected_size, allow_duplicate (default false), dry_run. Duplicate detection rejects an existing row with the same file_name or title unless allow_duplicate:true is passed. Expected hash/size let operators verify the server-side file matches the locally built artifact before creating the row. Apply-mode success payload is { product_id, created: DownloadRow, downloads: DownloadRow[] } with DownloadRow metadata only. This tool only creates the download row and enables manage_downloadable; it does NOT set license_settings.global_update_file — follow with diviops_fc_license_settings_update using the created row ID. Error codes: invalid_input (400), not_found (404), fluentcart.download_duplicate (409), fluentcart.module_inactive (412), fluentcart.command_failed (500). Idempotency: false; repeat calls are rejected by duplicate detection unless allow_duplicate:true." +
+        DRY_RUN_DESC_SUFFIX,
+      inputSchema: {
+        product_id: z
+          .number()
+          .int()
+          .positive()
+          .describe(
+            "FluentCart product ID (the post ID of the fluent_products CPT entry).",
+          ),
+        file_path: z
+          .string()
+          .min(1)
+          .describe(
+            "Server-side .zip path under ABSPATH or wp_upload_dir().basedir. Relative paths resolve under ABSPATH. No local-client upload occurs.",
+          ),
+        file_name: z
+          .string()
+          .min(1)
+          .optional()
+          .describe(
+            "Download filename shown to buyers/admins. Defaults to basename(file_path). Must end in .zip.",
+          ),
+        title: z
+          .string()
+          .min(1)
+          .optional()
+          .describe(
+            "FluentCart download title. Defaults to file_name without the .zip suffix.",
+          ),
+        variation_ids: z
+          .array(z.number().int().positive())
+          .optional()
+          .describe(
+            "Optional product variation IDs this download applies to. Omit or pass [] for all variants.",
+          ),
+        expected_sha1: z
+          .string()
+          .regex(/^[a-fA-F0-9]{40}$/)
+          .optional()
+          .describe(
+            "Optional SHA1 of the expected server-side file. Mismatch aborts before mutation.",
+          ),
+        expected_size: z
+          .number()
+          .int()
+          .min(0)
+          .optional()
+          .describe(
+            "Optional byte size of the expected server-side file. Mismatch aborts before mutation.",
+          ),
+        allow_duplicate: z
+          .boolean()
+          .optional()
+          .describe(
+            "Default false. When false, an existing row with the same file_name or title returns fluentcart.download_duplicate.",
+          ),
+        dry_run: DRY_RUN_FIELD,
+      },
+      annotations: { idempotentHint: false },
+      _meta: { idempotent: "false" },
+    },
+    async ({
+      product_id,
+      file_path,
+      file_name,
+      title,
+      variation_ids,
+      expected_sha1,
+      expected_size,
+      allow_duplicate,
+      dry_run,
+    }: {
+      product_id: number;
+      file_path: string;
+      file_name?: string;
+      title?: string;
+      variation_ids?: number[];
+      expected_sha1?: string;
+      expected_size?: number;
+      allow_duplicate?: boolean;
+      dry_run?: boolean;
+    }) => {
+      const body: Record<string, unknown> = { file_path };
+      if (file_name !== undefined) body.file_name = file_name;
+      if (title !== undefined) body.title = title;
+      if (variation_ids !== undefined) body.variation_ids = variation_ids;
+      if (expected_sha1 !== undefined) body.expected_sha1 = expected_sha1;
+      if (expected_size !== undefined) body.expected_size = expected_size;
+      if (allow_duplicate !== undefined) body.allow_duplicate = allow_duplicate;
+      if (dry_run !== undefined) body.dry_run = dry_run;
+      const result = await wp.requestEnveloped(
+        `/pro/fluentcart/products/${product_id}/downloads/attach`,
+        { method: "POST", body },
+      );
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: serializeEnvelope(result, "diviops_fc_download_attach"),
+          },
+        ],
+      };
+    },
+    { target: "fluentcart", capabilityKey: "fluentcart_download_attach" },
+  );
+
+  // diviops_fc_license_changelog_get — POST /diviops/v1/pro/fluentcart/products/{id}/license-changelog
+  registerProTool(
+    "diviops_fc_license_changelog_get",
+    {
+      description:
+        "Read the FluentCart Pro software-license changelog HTML for a product (Pro tier; V3.4; requires FluentCart Pro installed + activated). This reads ProductMeta meta_key='_fluent_sl_changelog', the field FluentCart Pro shows in Product → License Settings → Changelog Description. Read-only. Returns the standardized envelope { ok, data?, error }; success payload is { product_id, changelog_html, is_empty, storage_meta_key }. Error codes: invalid_input (400), not_found (404), fluentcart.module_inactive (412), fluentcart.query_failed (500). Idempotency: read-only.",
+      inputSchema: {
+        product_id: z
+          .number()
+          .int()
+          .positive()
+          .describe(
+            "FluentCart product ID (the post ID of the fluent_products CPT entry).",
+          ),
+      },
+      annotations: { idempotentHint: true },
+      _meta: { idempotent: "true" },
+    },
+    async ({ product_id }: { product_id: number }) => {
+      const result = await wp.requestEnveloped(
+        `/pro/fluentcart/products/${product_id}/license-changelog`,
+        { method: "POST" },
+      );
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: serializeEnvelope(
+              result,
+              "diviops_fc_license_changelog_get",
+            ),
+          },
+        ],
+      };
+    },
+    {
+      target: "fluentcart",
+      capabilityKey: "fluentcart_license_changelog_get",
+    },
+  );
+
+  // diviops_fc_license_changelog_update — POST /diviops/v1/pro/fluentcart/products/{id}/license-changelog/update
+  registerProTool(
+    "diviops_fc_license_changelog_update",
+    {
+      description:
+        "Write the FluentCart Pro software-license changelog HTML for a product (Pro tier; V3.4; requires FluentCart Pro installed + activated). This writes ProductMeta meta_key='_fluent_sl_changelog', the field FluentCart Pro shows in Product → License Settings → Changelog Description. Input is sanitized by WordPress wp_kses_post on the plugin side. Supports dry_run and no-op detection. Success payload is { product_id, changed, changelog_html } or { noop:true, dry_run, product_id, changelog_html }. Error codes: invalid_input (400), not_found (404), fluentcart.module_inactive (412), fluentcart.command_failed (500). Idempotency: conditional — identical repeat is a no-op." +
+        DRY_RUN_DESC_SUFFIX,
+      inputSchema: {
+        product_id: z
+          .number()
+          .int()
+          .positive()
+          .describe(
+            "FluentCart product ID (the post ID of the fluent_products CPT entry).",
+          ),
+        changelog_html: z
+          .string()
+          .describe(
+            "Buyer/update-facing changelog HTML. Sanitized with wp_kses_post before storage.",
+          ),
+        dry_run: DRY_RUN_FIELD,
+      },
+      annotations: { idempotentHint: false },
+      _meta: { idempotent: "conditional" },
+    },
+    async ({
+      product_id,
+      changelog_html,
+      dry_run,
+    }: {
+      product_id: number;
+      changelog_html: string;
+      dry_run?: boolean;
+    }) => {
+      const body: Record<string, unknown> = { changelog_html };
+      if (dry_run !== undefined) body.dry_run = dry_run;
+      const result = await wp.requestEnveloped(
+        `/pro/fluentcart/products/${product_id}/license-changelog/update`,
+        { method: "POST", body },
+      );
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: serializeEnvelope(
+              result,
+              "diviops_fc_license_changelog_update",
+            ),
+          },
+        ],
+      };
+    },
+    {
+      target: "fluentcart",
+      capabilityKey: "fluentcart_license_changelog_update",
+    },
+  );
+
   // ── V3.1 — order/license/activation read + guarded mark-paid ───────
   //
   // FluentCart commerce-artifact readback surface plus a single
