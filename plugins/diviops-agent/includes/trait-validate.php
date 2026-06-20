@@ -70,7 +70,16 @@ trait DiviOps_Agent_Validate {
 	/**
 	 * Recursively validate a block tree.
 	 */
-	private static function validate_block_tree( $blocks, $registry, $container_types, &$errors, &$warnings, &$index ) {
+	private static function validate_block_tree( $blocks, $registry, $container_types, &$errors, &$warnings, &$index, &$nav_refs = null ) {
+		$owns_nav_refs = false;
+		if ( null === $nav_refs ) {
+			$nav_refs      = [
+				'ids'           => [],
+				'aria_controls' => [],
+			];
+			$owns_nav_refs = true;
+		}
+
 		foreach ( $blocks as $block ) {
 			$name  = $block['blockName'] ?? null;
 			$attrs = $block['attrs'] ?? [];
@@ -134,6 +143,58 @@ trait DiviOps_Agent_Validate {
 								'code'    => 'missing_layout_display',
 								'message' => 'Container missing layout display declaration',
 								'path'    => 'module.decoration.layout.desktop.value.display',
+							];
+						}
+					}
+				}
+			}
+
+			// ── Navigation reliability checks (errors + warnings) ───
+
+			if ( $is_divi_block ) {
+				$element_type = self::get_divi_html_value( $attrs, 'elementType' );
+				if ( 'divi/link' === $name && 'li' === $element_type ) {
+					$errors[] = [
+						'block'   => $name,
+						'index'   => $index,
+						'code'    => 'nav_link_elementtype_li',
+						'message' => 'divi/link with elementType:"li" destroys the anchor. Use htmlBefore:"<li>" and htmlAfter:"</li>" around the link instead.',
+						'path'    => 'module.advanced.html.desktop.value.elementType',
+					];
+				}
+
+				foreach ( self::extract_divi_custom_attributes( $attrs ) as $custom_attr ) {
+					$attr_name = $custom_attr['name'];
+					$attr_val  = $custom_attr['value'];
+					$path      = $custom_attr['path'];
+
+					if ( '' === $attr_val ) {
+						$warnings[] = [
+							'block'   => $name,
+							'index'   => $index,
+							'code'    => 'nav_empty_custom_attribute',
+							'message' => sprintf(
+								'Custom attribute "%s" has an empty string value. Divi drops empty-valued custom attrs at render; use a non-empty value such as "true" for boolean data flags.',
+								$attr_name
+							),
+							'path'    => $path . '.value',
+						];
+					}
+
+					if ( 'id' === $attr_name && is_string( $attr_val ) && '' !== trim( $attr_val ) ) {
+						$nav_refs['ids'][ trim( $attr_val ) ] = true;
+					}
+
+					if ( 'aria-controls' === $attr_name && is_string( $attr_val ) && '' !== $attr_val ) {
+						foreach ( preg_split( '/\s+/', trim( $attr_val ) ) as $controlled_id ) {
+							if ( '' === $controlled_id ) {
+								continue;
+							}
+							$nav_refs['aria_controls'][] = [
+								'id'    => $controlled_id,
+								'block' => $name,
+								'index' => $index,
+								'path'  => $path . '.value',
 							];
 						}
 					}
@@ -500,8 +561,77 @@ trait DiviOps_Agent_Validate {
 			// ── Recurse into inner blocks ───────────────────────────
 
 			if ( ! empty( $block['innerBlocks'] ) ) {
-				self::validate_block_tree( $block['innerBlocks'], $registry, $container_types, $errors, $warnings, $index );
+				self::validate_block_tree( $block['innerBlocks'], $registry, $container_types, $errors, $warnings, $index, $nav_refs );
 			}
+		}
+
+		if ( $owns_nav_refs ) {
+			self::validate_nav_aria_references( $nav_refs, $warnings );
+		}
+	}
+
+	/**
+	 * Read Divi's canonical HTML customization values, with legacy fallback for
+	 * older hand-authored markup that stored elementType under decoration attrs.
+	 */
+	private static function get_divi_html_value( array $attrs, string $key ) {
+		$value = self::get_nested_array_value( $attrs, [ 'module', 'advanced', 'html', 'desktop', 'value', $key ] );
+		if ( null !== $value ) {
+			return $value;
+		}
+
+		return self::get_nested_array_value( $attrs, [ 'module', 'decoration', 'attributes', 'desktop', 'value', $key ] );
+	}
+
+	/**
+	 * Extract custom attributes from known Divi storage shapes only.
+	 *
+	 * @return array<int,array{name:string,value:mixed,path:string}>
+	 */
+	private static function extract_divi_custom_attributes( array $attrs ): array {
+		$found = [];
+		foreach ( [ 'desktop', 'tablet', 'phone' ] as $breakpoint ) {
+			$custom_attrs = self::get_nested_array_value( $attrs, [ 'module', 'decoration', 'attributes', $breakpoint, 'value', 'attributes' ] );
+			if ( ! is_array( $custom_attrs ) ) {
+				continue;
+			}
+
+			foreach ( $custom_attrs as $attr_index => $custom_attr ) {
+				if ( ! is_array( $custom_attr ) || ! array_key_exists( 'name', $custom_attr ) || ! array_key_exists( 'value', $custom_attr ) ) {
+					continue;
+				}
+				if ( ! is_string( $custom_attr['name'] ) || '' === $custom_attr['name'] ) {
+					continue;
+				}
+
+				$found[] = [
+					'name'  => $custom_attr['name'],
+					'value' => $custom_attr['value'],
+					'path'  => sprintf( 'module.decoration.attributes.%s.value.attributes[%s]', $breakpoint, (string) $attr_index ),
+				];
+			}
+		}
+
+		return $found;
+	}
+
+	private static function validate_nav_aria_references( array $nav_refs, array &$warnings ): void {
+		$ids = is_array( $nav_refs['ids'] ?? null ) ? $nav_refs['ids'] : [];
+		foreach ( $nav_refs['aria_controls'] ?? [] as $ref ) {
+			if ( ! is_array( $ref ) || ! isset( $ref['id'] ) || isset( $ids[ $ref['id'] ] ) ) {
+				continue;
+			}
+
+			$warnings[] = [
+				'block'   => $ref['block'] ?? '(unknown)',
+				'index'   => $ref['index'] ?? 0,
+				'code'    => 'nav_unresolved_aria_controls',
+				'message' => sprintf(
+					'aria-controls references "%s", but no matching custom attribute id was found in the submitted content. The Divi dropdown trigger will silently no-op when the pair does not resolve.',
+					(string) $ref['id']
+				),
+				'path'    => $ref['path'] ?? 'module.decoration.attributes.*.value.attributes[].value',
+			];
 		}
 	}
 }

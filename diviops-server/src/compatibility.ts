@@ -120,6 +120,23 @@ export interface HandshakeResult {
   active_modules?: Record<string, boolean>;
 }
 
+export function proToolGatesSatisfied(
+  state: {
+    proActive: boolean;
+    availableTargets: Record<string, HandshakeTarget>;
+    activeModules: Record<string, boolean>;
+    capabilities: Record<string, boolean>;
+  },
+  gates: { target: string; capabilityKey: string },
+): boolean {
+  if (state.proActive !== true) return false;
+  const target = state.availableTargets[gates.target];
+  if (!target || target.present !== true) return false;
+  if (state.activeModules[gates.target] !== true) return false;
+  if (state.capabilities[gates.capabilityKey] !== true) return false;
+  return true;
+}
+
 /**
  * Thrown when a tool handler calls `requireCapability(key)` and the
  * plugin's handshake response did not include `key`. The server's

@@ -15,7 +15,6 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 trait DiviOps_Agent_Meta {
-
 	/**
 	 * Get Divi global settings (theme options, customizer values).
 	 *
@@ -217,6 +216,8 @@ trait DiviOps_Agent_Meta {
 		$all          = rest_sanitize_boolean( $request->get_param( 'all' ) ?? false );
 		$after_raw    = $request->get_param( 'after' );
 		$has_after    = null !== $after_raw;
+		$cleanup_dynamic_assets = rest_sanitize_boolean( $request->get_param( 'cleanup_dynamic_assets' ) ?? false );
+		$cleanup_canvas_refs    = rest_sanitize_boolean( $request->get_param( 'cleanup_canvas_refs' ) ?? false );
 
 		$selectors_used = (int) $has_post_id + (int) $all + (int) $has_after;
 		if ( 0 === $selectors_used ) {
@@ -232,6 +233,22 @@ trait DiviOps_Agent_Meta {
 				'invalid_input',
 				'Only one of post_id, all, after may be provided per call.',
 				null,
+				400
+			);
+		}
+		if ( $cleanup_canvas_refs && ! $cleanup_dynamic_assets ) {
+			return self::envelope_error(
+				'invalid_input',
+				'cleanup_canvas_refs requires cleanup_dynamic_assets: true.',
+				'Dynamic-assets postmeta cleanup must be explicitly enabled before the opt-in canvas/off-canvas meta key can be deleted.',
+				400
+			);
+		}
+		if ( $has_after && $cleanup_dynamic_assets ) {
+			return self::envelope_error(
+				'invalid_input',
+				'Dynamic-assets postmeta cleanup is only supported with post_id or all selectors.',
+				'after mode cannot produce a defensible dry-run target ID list without performing the live mtime sweep. Use post_id for a known target, or all for posts that already carry the dynamic-assets postmeta keys.',
 				400
 			);
 		}
@@ -300,13 +317,22 @@ trait DiviOps_Agent_Meta {
 			$pre = self::et_cache_dir_snapshot( $cache_root, $post_id );
 
 			if ( $dry_run ) {
+				$changes = [ [
+					'kind'   => 'meta.flush_cache',
+					'target' => "post#{$post_id}",
+					'before' => [ 'files' => $pre['files'], 'bytes' => $pre['bytes'] ],
+				] ];
+				$extra = [];
+				if ( $cleanup_dynamic_assets ) {
+					$cleanup_report = self::dynamic_assets_postmeta_cleanup_report( [ $post_id ], $cleanup_canvas_refs, true );
+					$changes = array_merge( $changes, self::dynamic_assets_postmeta_cleanup_changes( $cleanup_report ) );
+					$extra['dynamic_assets_cleanup'] = $cleanup_report;
+				}
 				return self::dry_run_response(
 					"Would flush et-cache for post #{$post_id} ({$pre['files']} file(s), {$pre['bytes']} bytes; backend=" . ( $use_native ? 'divi_native' : 'fs_fallback' ) . ').',
-					[ [
-						'kind'   => 'meta.flush_cache',
-						'target' => "post#{$post_id}",
-						'before' => [ 'files' => $pre['files'], 'bytes' => $pre['bytes'] ],
-					] ]
+					$changes,
+					[],
+					(object) $extra
 				);
 			}
 
@@ -329,6 +355,9 @@ trait DiviOps_Agent_Meta {
 					'bytes_freed' => $pre['bytes'],
 					'scope_note'  => 'Divi native clearer also removed matching Theme Builder CSS across other post dirs and purged object/module/post/dynamic-assets caches. Visual Builder (-vb-*) runtime CSS preserved to avoid unstyling an open VB session. files_freed / bytes_freed reflect the pre-delete snapshot of et-cache/' . $post_id . '/ only — they are a lower bound; the clearer may have freed more outside this dir.',
 				];
+				if ( $cleanup_dynamic_assets ) {
+					$response['dynamic_assets_cleanup'] = self::dynamic_assets_postmeta_cleanup_report( [ $post_id ], $cleanup_canvas_refs, false );
+				}
 				return self::envelope_success( $response );
 			}
 
@@ -342,6 +371,9 @@ trait DiviOps_Agent_Meta {
 				'files_freed' => $result['files'],
 				'bytes_freed' => $result['bytes'],
 			];
+			if ( $cleanup_dynamic_assets ) {
+				$response['dynamic_assets_cleanup'] = self::dynamic_assets_postmeta_cleanup_report( [ $post_id ], $cleanup_canvas_refs, false );
+			}
 			return self::envelope_success( $response );
 		}
 
@@ -349,17 +381,31 @@ trait DiviOps_Agent_Meta {
 			if ( $dry_run ) {
 				$snap = self::et_cache_total_snapshot( $cache_root );
 				$post_ids = self::et_cache_numeric_post_ids( $cache_root );
+				$changes = [ [
+					'kind'   => 'meta.flush_cache',
+					'target' => 'et-cache/all',
+					'before' => [
+						'files'    => $snap['files'],
+						'bytes'    => $snap['bytes'],
+						'post_ids' => $post_ids,
+					],
+				] ];
+				$extra    = [];
+				$warnings = [];
+				if ( $cleanup_dynamic_assets ) {
+					$cleanup_ids = self::dynamic_assets_postmeta_cleanup_target_ids( $cleanup_canvas_refs );
+					$cleanup_report = self::dynamic_assets_postmeta_cleanup_report( $cleanup_ids, $cleanup_canvas_refs, true );
+					$changes = array_merge( $changes, self::dynamic_assets_postmeta_cleanup_changes( $cleanup_report ) );
+					$extra['dynamic_assets_cleanup'] = $cleanup_report;
+					if ( ! empty( $cleanup_report['target_post_ids_truncated'] ) ) {
+						$warnings[] = 'Dynamic-assets cleanup report is truncated to ' . count( $cleanup_report['target_post_ids'] ) . ' of ' . (int) $cleanup_report['target_post_ids_total'] . ' target posts.';
+					}
+				}
 				return self::dry_run_response(
 					"Would flush all et-cache entries (≈{$snap['files']} file(s), {$snap['bytes']} bytes across " . count( $post_ids ) . " post dir(s); backend=" . ( $use_native ? 'divi_native' : 'fs_fallback' ) . ').',
-					[ [
-						'kind'   => 'meta.flush_cache',
-						'target' => 'et-cache/all',
-						'before' => [
-							'files'    => $snap['files'],
-							'bytes'    => $snap['bytes'],
-							'post_ids' => $post_ids,
-						],
-					] ]
+					$changes,
+					$warnings,
+					(object) $extra
 				);
 			}
 
@@ -430,6 +476,10 @@ trait DiviOps_Agent_Meta {
 					'bytes_freed' => $pass1['bytes'],
 					'scope_note'  => 'Two-phase native clear: (1) WP_Filesystem-driven recursive sweep deleting Divi CSS (et-*.css) across numeric post dirs AND archive/taxonomy/home/notfound/global subtrees, skipping Visual Builder (-vb-*) runtime CSS to avoid unstyling an open VB session; (2) inlined site-wide purges — object cache, module features, post features, Google Fonts, dynamic assets, post meta caches. DONOTCACHEPAGE sentinel written to et-cache root to match Divi\'s post-clear convention (page-cache plugins skip caching the first regenerated request). .cache-cleared-at timestamp deliberately NOT written — Divi\'s is_file_stale() compares file mtime against it, so bumping would invalidate the preserved VB files. Phase 1\'s physical sweep covers frontend-level invalidation without needing the stamp.',
 				];
+				if ( $cleanup_dynamic_assets ) {
+					$cleanup_ids = self::dynamic_assets_postmeta_cleanup_target_ids( $cleanup_canvas_refs );
+					$response['dynamic_assets_cleanup'] = self::dynamic_assets_postmeta_cleanup_report( $cleanup_ids, $cleanup_canvas_refs, false );
+				}
 				return self::envelope_success( $response );
 			}
 
@@ -467,6 +517,10 @@ trait DiviOps_Agent_Meta {
 				'non_post_files_freed'  => $non_post['files'],
 				'non_post_bytes_freed'  => $non_post['bytes'],
 			];
+			if ( $cleanup_dynamic_assets ) {
+				$cleanup_ids = self::dynamic_assets_postmeta_cleanup_target_ids( $cleanup_canvas_refs );
+				$response['dynamic_assets_cleanup'] = self::dynamic_assets_postmeta_cleanup_report( $cleanup_ids, $cleanup_canvas_refs, false );
+			}
 			return self::envelope_success( $response );
 		}
 
@@ -651,6 +705,284 @@ trait DiviOps_Agent_Meta {
 			'files_freed' => $files_freed,
 			'bytes_freed' => $bytes_freed,
 		] );
+	}
+
+	/**
+	 * Postmeta keys owned by Divi's dynamic-assets feature cache.
+	 *
+	 * `_divi_dynamic_assets_canvases_used` is deliberately opt-in because
+	 * it is only appropriate when canvas/off-canvas references are affected.
+	 *
+	 * @param bool $include_canvas_refs
+	 * @return string[]
+	 */
+	private static function dynamic_assets_postmeta_keys( $include_canvas_refs ) {
+		$keys = [ '_divi_dynamic_assets_cached_feature_used' ];
+		if ( $include_canvas_refs ) {
+			$keys[] = '_divi_dynamic_assets_canvases_used';
+		}
+		return $keys;
+	}
+
+	/**
+	 * Find the bounded `all` cleanup target set: posts that already carry
+	 * one of the explicit dynamic-assets postmeta keys. This avoids scanning
+	 * or reporting every post on the site.
+	 *
+	 * @param bool $include_canvas_refs
+	 * @return int[]
+	 */
+	private static function dynamic_assets_postmeta_cleanup_target_ids( $include_canvas_refs ) {
+		global $wpdb;
+		if ( ! is_object( $wpdb ) || empty( $wpdb->postmeta ) || ! method_exists( $wpdb, 'get_col' ) || ! method_exists( $wpdb, 'prepare' ) ) {
+			return [];
+		}
+		$keys         = self::dynamic_assets_postmeta_keys( $include_canvas_refs );
+		$placeholders = implode( ', ', array_fill( 0, count( $keys ), '%s' ) );
+		$sql          = $wpdb->prepare(
+			"SELECT DISTINCT post_id FROM {$wpdb->postmeta} WHERE meta_key IN ({$placeholders}) ORDER BY post_id ASC",
+			$keys
+		);
+		$ids = array_map( 'intval', (array) $wpdb->get_col( $sql ) );
+		return array_values( array_filter( $ids, static function ( $id ) {
+			return $id > 0;
+		} ) );
+	}
+
+	/**
+	 * Count dynamic-assets postmeta rows for the requested post/key matrix.
+	 *
+	 * @param int[]    $post_ids
+	 * @param string[] $keys
+	 * @return array<int,array<string,int>>
+	 */
+	private static function dynamic_assets_postmeta_counts( $post_ids, $keys ) {
+		global $wpdb;
+		if ( empty( $post_ids ) || empty( $keys ) || ! is_object( $wpdb ) || empty( $wpdb->postmeta ) || ! method_exists( $wpdb, 'get_results' ) || ! method_exists( $wpdb, 'prepare' ) ) {
+			return [];
+		}
+
+		$counts = [];
+		$key_placeholders = implode( ', ', array_fill( 0, count( $keys ), '%s' ) );
+		foreach ( array_chunk( $post_ids, 500 ) as $chunk ) {
+			$id_placeholders = implode( ', ', array_fill( 0, count( $chunk ), '%d' ) );
+			$sql             = $wpdb->prepare(
+				"SELECT post_id, meta_key, COUNT(*) AS meta_count FROM {$wpdb->postmeta} WHERE meta_key IN ({$key_placeholders}) AND post_id IN ({$id_placeholders}) GROUP BY post_id, meta_key",
+				array_merge( $keys, $chunk )
+			);
+
+			foreach ( (array) $wpdb->get_results( $sql ) as $row ) {
+				$post_id = (int) ( $row->post_id ?? 0 );
+				$key     = (string) ( $row->meta_key ?? '' );
+				if ( $post_id <= 0 || '' === $key ) {
+					continue;
+				}
+				$counts[ $post_id ][ $key ] = (int) ( $row->meta_count ?? 0 );
+			}
+		}
+		return $counts;
+	}
+
+	/**
+	 * Count dynamic-assets postmeta rows for the total cleanup target set.
+	 *
+	 * Uses bounded post_id batches so callers can pass either one post, the
+	 * `all` cleanup target set, or any future subset without changing meaning.
+	 *
+	 * @param int[]    $post_ids
+	 * @param string[] $keys
+	 * @return int
+	 */
+	private static function dynamic_assets_postmeta_total_count( $post_ids, $keys ) {
+		global $wpdb;
+		if ( empty( $post_ids ) || empty( $keys ) || ! is_object( $wpdb ) || empty( $wpdb->postmeta ) || ! method_exists( $wpdb, 'get_var' ) || ! method_exists( $wpdb, 'prepare' ) ) {
+			return 0;
+		}
+
+		$total            = 0;
+		$key_placeholders = implode( ', ', array_fill( 0, count( $keys ), '%s' ) );
+		foreach ( array_chunk( $post_ids, 500 ) as $chunk ) {
+			$id_placeholders = implode( ', ', array_fill( 0, count( $chunk ), '%d' ) );
+			$sql             = $wpdb->prepare(
+				"SELECT COUNT(*) FROM {$wpdb->postmeta} WHERE meta_key IN ({$key_placeholders}) AND post_id IN ({$id_placeholders})",
+				array_merge( $keys, $chunk )
+			);
+			$total += (int) $wpdb->get_var( $sql );
+		}
+		return $total;
+	}
+
+	/**
+	 * Delete dynamic-assets postmeta rows in bounded SQL batches.
+	 *
+	 * @param int[]    $post_ids
+	 * @param string[] $keys
+	 * @return array{rows_deleted:int,failed_post_ids:int[]}
+	 */
+	private static function dynamic_assets_postmeta_delete_bulk( $post_ids, $keys ) {
+		global $wpdb;
+		$result = [
+			'rows_deleted'    => 0,
+			'failed_post_ids' => [],
+		];
+		if ( empty( $post_ids ) || empty( $keys ) || ! is_object( $wpdb ) || empty( $wpdb->postmeta ) || ! method_exists( $wpdb, 'query' ) || ! method_exists( $wpdb, 'prepare' ) ) {
+			$result['failed_post_ids'] = $post_ids;
+			return $result;
+		}
+
+		$key_placeholders = implode( ', ', array_fill( 0, count( $keys ), '%s' ) );
+		foreach ( array_chunk( $post_ids, 500 ) as $chunk ) {
+			$id_placeholders = implode( ', ', array_fill( 0, count( $chunk ), '%d' ) );
+			$sql             = $wpdb->prepare(
+				"DELETE FROM {$wpdb->postmeta} WHERE meta_key IN ({$key_placeholders}) AND post_id IN ({$id_placeholders})",
+				array_merge( $keys, $chunk )
+			);
+			$deleted = $wpdb->query( $sql );
+			if ( false === $deleted ) {
+				$result['failed_post_ids'] = array_merge( $result['failed_post_ids'], $chunk );
+				continue;
+			}
+			$result['rows_deleted'] += (int) $deleted;
+			foreach ( $chunk as $post_id ) {
+				if ( function_exists( 'wp_cache_delete' ) ) {
+					wp_cache_delete( (int) $post_id, 'post_meta' );
+				}
+			}
+		}
+		$result['failed_post_ids'] = array_values( array_unique( array_map( 'intval', $result['failed_post_ids'] ) ) );
+		return $result;
+	}
+
+	/**
+	 * Build the typed dynamic-assets postmeta cleanup report and optionally
+	 * apply the deletion.
+	 *
+	 * @param int[] $post_ids
+	 * @param bool  $include_canvas_refs
+	 * @param bool  $dry_run
+	 * @return array
+	 */
+	private static function dynamic_assets_postmeta_cleanup_report( $post_ids, $include_canvas_refs, $dry_run ) {
+		$post_ids = array_map( 'intval', (array) $post_ids );
+		$post_ids = array_values( array_unique( array_filter( $post_ids, static function ( $id ) {
+			return $id > 0;
+		} ) ) );
+		sort( $post_ids );
+
+		$detail_limit      = 100;
+		$detailed_post_ids = array_slice( $post_ids, 0, $detail_limit );
+		$keys              = self::dynamic_assets_postmeta_keys( $include_canvas_refs );
+		$report = [
+			'enabled'                   => true,
+			'dry_run'                   => (bool) $dry_run,
+			'cleanup_canvas_refs'       => (bool) $include_canvas_refs,
+			'meta_keys'                 => $keys,
+			'target_post_ids'           => $detailed_post_ids,
+			'target_post_ids_total'     => count( $post_ids ),
+			'target_post_ids_truncated' => count( $post_ids ) > $detail_limit,
+			'totals'                    => [
+				'target_posts' => count( $post_ids ),
+				'rows_present' => 0,
+				'rows_deleted' => 0,
+				'would_delete' => 0,
+				'absent_keys'  => 0,
+			],
+			'posts'                     => [],
+		];
+
+		$counts = self::dynamic_assets_postmeta_counts( $detailed_post_ids, $keys );
+		$present_key_pairs = 0;
+		if ( count( $post_ids ) > $detail_limit ) {
+			$report['totals']['rows_present'] = self::dynamic_assets_postmeta_total_count( $post_ids, $keys );
+			$present_key_pairs = $report['totals']['rows_present'];
+		} else {
+			foreach ( $counts as $post_counts ) {
+				foreach ( $post_counts as $count ) {
+					$report['totals']['rows_present'] += (int) $count;
+					if ( (int) $count > 0 ) {
+						$present_key_pairs++;
+					}
+				}
+			}
+		}
+		$report['totals']['absent_keys'] = max( 0, ( count( $post_ids ) * count( $keys ) ) - $present_key_pairs );
+		if ( $dry_run ) {
+			$report['totals']['would_delete'] = $report['totals']['rows_present'];
+		}
+		$failed_post_ids = [];
+		if ( ! $dry_run ) {
+			$delete_result = self::dynamic_assets_postmeta_delete_bulk( $post_ids, $keys );
+			$report['totals']['rows_deleted'] = (int) $delete_result['rows_deleted'];
+			$failed_post_ids = array_flip( $delete_result['failed_post_ids'] );
+		}
+
+		foreach ( $detailed_post_ids as $post_id ) {
+			$post_report = [
+				'post_id' => $post_id,
+				'keys'    => [],
+			];
+			foreach ( $keys as $key ) {
+				$count = (int) ( $counts[ $post_id ][ $key ] ?? 0 );
+				if ( $count <= 0 ) {
+					$post_report['keys'][ $key ] = [
+						'before_count' => 0,
+						'status'       => 'absent',
+					];
+					continue;
+				}
+
+				if ( $dry_run ) {
+					$post_report['keys'][ $key ] = [
+						'before_count' => $count,
+						'status'       => 'would_delete',
+					];
+					continue;
+				}
+
+				if ( isset( $failed_post_ids[ $post_id ] ) ) {
+					$post_report['keys'][ $key ] = [
+						'before_count' => $count,
+						'status'       => 'delete_failed',
+					];
+					continue;
+				}
+				$post_report['keys'][ $key ] = [
+					'before_count' => $count,
+					'status'       => 'deleted',
+					'deleted'      => $count,
+				];
+			}
+			$post_report['keys'] = (object) $post_report['keys'];
+			$report['posts'][]   = $post_report;
+		}
+
+		return $report;
+	}
+
+	/**
+	 * Convert a cleanup report into dry-run plan changes.
+	 *
+	 * @param array $report
+	 * @return array[]
+	 */
+	private static function dynamic_assets_postmeta_cleanup_changes( $report ) {
+		$changes = [];
+		foreach ( $report['posts'] ?? [] as $post ) {
+			$post_id = (int) ( $post['post_id'] ?? 0 );
+			foreach ( $post['keys'] ?? [] as $key => $detail ) {
+				$count = (int) ( $detail['before_count'] ?? 0 );
+				if ( $count <= 0 ) {
+					continue;
+				}
+				$changes[] = [
+					'kind'   => 'meta.dynamic_assets_postmeta_cleanup',
+					'target' => "post#{$post_id}/{$key}",
+					'before' => [ 'rows' => $count ],
+					'after'  => null,
+				];
+			}
+		}
+		return $changes;
 	}
 
 	/**

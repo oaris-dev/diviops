@@ -218,17 +218,16 @@ trait DiviOps_Agent_Page {
 			);
 		}
 
-		// Use wp_slash() instead of wp_kses_post() because block comment
-		// attributes contain HTML strings (e.g. <h1>...</h1> in innerContent)
-		// that wp_kses_post() would entity-encode, breaking the block parser.
-		// This mirrors how the block editor itself saves content.
-		$result = wp_update_post( [
-			'ID'           => $post_id,
-			'post_content' => wp_slash( $content ),
-		], true );
+		$result = self::update_post_content_with_integrity_guard(
+			$post_id,
+			$content,
+			'page',
+			"page #{$post_id}",
+			(string) $post->post_content
+		);
 
 		if ( is_wp_error( $result ) ) {
-			return self::envelope_from_wp_error( $result );
+			return self::envelope_from_content_write_error( $result );
 		}
 
 		// Mirror Divi's own page creation flow once Divi block content exists.
@@ -398,13 +397,29 @@ trait DiviOps_Agent_Page {
 		// Re-wrap in placeholder.
 		$final = '<!-- wp:divi/placeholder -->' . $inner . '<!-- /wp:divi/placeholder -->';
 
-		$result = wp_update_post( [
-			'ID'           => $post_id,
-			'post_content' => wp_slash( $final ),
-		], true );
+		$normalized = self::normalize_divi_full_content_for_write( $final );
+		if ( empty( $normalized['ok'] ) ) {
+			$error = $normalized['error'] ?? [];
+			return self::envelope_error(
+				'invalid_input',
+				$error['message'] ?? 'content contains unsafe Divi block attribute JSON.',
+				$error['hint'] ?? 'Pass valid WordPress block markup. Raw HTML inside Divi block attributes is allowed, but malformed escapes must be corrected before writing.',
+				400,
+				array_merge( [ 'field' => 'content' ], $error )
+			);
+		}
+		$final = $normalized['content'];
+
+		$result = self::update_post_content_with_integrity_guard(
+			$post_id,
+			$final,
+			'section',
+			"page #{$post_id} section append",
+			(string) $post->post_content
+		);
 
 		if ( is_wp_error( $result ) ) {
-			return self::envelope_from_wp_error( $result );
+			return self::envelope_from_content_write_error( $result );
 		}
 
 		self::invalidate_divi_cache( $post_id );
@@ -491,13 +506,28 @@ trait DiviOps_Agent_Page {
 			);
 		}
 
-		$update = wp_update_post( [
-			'ID'           => $post_id,
-			'post_content' => wp_slash( $result['content'] ),
-		], true );
+		$normalized = self::normalize_divi_full_content_for_write( $result['content'] );
+		if ( empty( $normalized['ok'] ) ) {
+			$error = $normalized['error'] ?? [];
+			return self::envelope_error(
+				'invalid_input',
+				$error['message'] ?? 'content contains unsafe Divi block attribute JSON.',
+				$error['hint'] ?? 'Pass valid WordPress block markup. Raw HTML inside Divi block attributes is allowed, but malformed escapes must be corrected before writing.',
+				400,
+				array_merge( [ 'field' => 'content' ], $error )
+			);
+		}
+
+		$update = self::update_post_content_with_integrity_guard(
+			$post_id,
+			$normalized['content'],
+			'section',
+			"page #{$post_id} section replace",
+			(string) $post->post_content
+		);
 
 		if ( is_wp_error( $update ) ) {
-			return self::envelope_from_wp_error( $update );
+			return self::envelope_from_content_write_error( $update );
 		}
 
 		self::invalidate_divi_cache( $post_id );
@@ -586,13 +616,28 @@ trait DiviOps_Agent_Page {
 			);
 		}
 
-		$update = wp_update_post( [
-			'ID'           => $post_id,
-			'post_content' => wp_slash( $result['content'] ),
-		], true );
+		$normalized = self::normalize_divi_full_content_for_write( $result['content'] );
+		if ( empty( $normalized['ok'] ) ) {
+			$error = $normalized['error'] ?? [];
+			return self::envelope_error(
+				'invalid_input',
+				$error['message'] ?? 'content contains unsafe Divi block attribute JSON.',
+				$error['hint'] ?? 'Pass valid WordPress block markup. Raw HTML inside Divi block attributes is allowed, but malformed escapes must be corrected before writing.',
+				400,
+				array_merge( [ 'field' => 'content' ], $error )
+			);
+		}
+
+		$update = self::update_post_content_with_integrity_guard(
+			$post_id,
+			$normalized['content'],
+			'section',
+			"page #{$post_id} section remove",
+			(string) $post->post_content
+		);
 
 		if ( is_wp_error( $update ) ) {
-			return self::envelope_from_wp_error( $update );
+			return self::envelope_from_content_write_error( $update );
 		}
 
 		self::invalidate_divi_cache( $post_id );
@@ -702,6 +747,84 @@ trait DiviOps_Agent_Page {
 			},
 			$segments
 		);
+	}
+
+	/**
+	 * Read one targeted Divi module/block without mutating post_content.
+	 */
+	public static function module_get( $request ) {
+		$post_id = absint( $request['id'] );
+		$full    = rest_sanitize_boolean( $request->get_param( 'full' ) ?? false );
+		$post    = get_post( $post_id );
+
+		if ( ! $post ) {
+			return self::envelope_error(
+				'not_found',
+				"Page #{$post_id} not found.",
+				'Verify the page id via diviops_page_list or diviops_tb_template_list.',
+				404,
+				[ 'target_kind' => 'page', 'page_id' => $post_id ]
+			);
+		}
+
+		$target = self::resolve_module_target( $request );
+		if ( is_wp_error( $target ) ) {
+			return self::envelope_from_helper_error( $target, 'module', $post_id );
+		}
+
+		$label      = 'label' === $target['mode'] ? $target['needle'] : '';
+		$match_text = 'match_text' === $target['mode'] ? $target['needle'] : '';
+		$auto_index = 'auto_index' === $target['mode'] ? $target['needle'] : '';
+		$content    = (string) $post->post_content;
+
+		$match = self::find_block( $content, $label, $match_text, $auto_index, $target['occurrence'] );
+		if ( is_wp_error( $match ) ) {
+			return self::envelope_from_helper_error( $match, 'module', $post_id );
+		}
+
+		$raw_block = substr( $content, (int) $match['start'], (int) $match['end'] - (int) $match['start'] );
+		$attrs     = self::extract_attrs_from_block_markup( $raw_block );
+		if ( is_wp_error( $attrs ) ) {
+			return self::envelope_from_helper_error( $attrs, 'module', $post_id );
+		}
+
+		$response = [
+			'id'         => $post->ID,
+			'post_id'    => $post->ID,
+			'post_type'  => $post->post_type,
+			'post_title' => $post->post_title,
+			'target'     => [
+				'mode'       => $target['mode'],
+				'value'      => $target['needle'],
+				'occurrence' => $target['occurrence'],
+			],
+			'module'     => [
+				'block_name'    => 'divi/' . $match['type'],
+				'block_type'    => $match['type'],
+				'admin_label'   => self::module_admin_label_from_attrs( $attrs ),
+				'auto_index'    => $match['auto_index'] ?? '',
+				'matched_by'    => $match['matched_by'],
+				'target_desc'   => $match['target_desc'],
+				'text_preview'  => self::module_text_preview_from_attrs( $attrs ),
+				'bounds'        => [
+					'start'  => (int) $match['start'],
+					'end'    => (int) $match['end'],
+					'length' => (int) $match['end'] - (int) $match['start'],
+				],
+				'attrs_summary' => self::module_attrs_summary( $attrs ),
+			],
+		];
+
+		if ( array_key_exists( 'total_matches', $match ) ) {
+			$response['module']['total_matches'] = $match['total_matches'];
+		}
+
+		if ( $full ) {
+			$response['module']['attrs'] = (object) $attrs;
+			$response['module']['raw']   = $raw_block;
+		}
+
+		return self::envelope_success( $response );
 	}
 
 	/**
@@ -1177,9 +1300,10 @@ trait DiviOps_Agent_Page {
 			}
 
 			$match_info = [
-				'start' => $pos,
-				'end'   => $block_end,
-				'type'  => $type,
+				'start'      => $pos,
+				'end'        => $block_end,
+				'type'       => $type,
+				'auto_index' => $type . ':' . $type_counters[ $type ],
 			];
 
 			if ( 'auto_index' === $mode ) {
@@ -1226,7 +1350,10 @@ trait DiviOps_Agent_Page {
 					]
 				);
 			}
-			$found_match = $all_matches[ $occurrence - 1 ];
+			$found_match = $all_matches[ $occurrence - 1 ] ?? null;
+			if ( $found_match ) {
+				$found_match['total_matches'] = count( $all_matches );
+			}
 		}
 
 		if ( ! $found_match ) {
@@ -1253,6 +1380,108 @@ trait DiviOps_Agent_Page {
 			'matched_by'  => $mode,
 			'target_desc' => $target_desc,
 		] );
+	}
+
+	private static function extract_attrs_from_block_markup( string $markup ) {
+		$comment_end = strpos( $markup, '-->' );
+		if ( false === $comment_end ) {
+			return new WP_Error( 'parse_error', 'Malformed block markup: no opening comment terminator found.', [ 'status' => 500 ] );
+		}
+
+		$comment    = substr( $markup, 0, $comment_end + 3 );
+		$json_start = strpos( $comment, '{' );
+		if ( false === $json_start ) {
+			return [];
+		}
+
+		$json_end = strrpos( $comment, '}' );
+		if ( false === $json_end || $json_end < $json_start ) {
+			return new WP_Error( 'parse_error', 'Malformed block markup: could not locate a complete attribute JSON object.', [ 'status' => 500 ] );
+		}
+
+		$json  = substr( $comment, $json_start, $json_end - $json_start + 1 );
+		$attrs = json_decode( $json, true );
+		if ( ! is_array( $attrs ) || JSON_ERROR_NONE !== json_last_error() ) {
+			return new WP_Error(
+				'parse_error',
+				'Malformed block markup: block attributes are not valid JSON.',
+				[ 'status' => 500, 'json_error' => json_last_error_msg() ]
+			);
+		}
+
+		return $attrs;
+	}
+
+	private static function module_admin_label_from_attrs( array $attrs ): string {
+		$admin_label = self::get_nested_array_value( $attrs, [ 'module', 'meta', 'adminLabel', 'desktop', 'value' ], '' );
+		if ( '' === $admin_label ) {
+			$admin_label = self::get_nested_array_value( $attrs, [ 'meta', 'adminLabel', 'desktop', 'value' ], '' );
+		}
+		return is_string( $admin_label ) ? $admin_label : '';
+	}
+
+	private static function module_text_preview_from_attrs( array $attrs ): string {
+		$paths = [
+			[ 'content', 'innerContent', 'desktop', 'value' ],
+			[ 'title', 'innerContent', 'desktop', 'value' ],
+			[ 'button', 'innerContent', 'desktop', 'value', 'text' ],
+		];
+		foreach ( $paths as $path ) {
+			$value = self::get_nested_array_value( $attrs, $path );
+			if ( is_string( $value ) && '' !== $value ) {
+				$preview = wp_strip_all_tags( html_entity_decode( $value ) );
+				return mb_substr( trim( $preview ), 0, 80 );
+			}
+		}
+		return '';
+	}
+
+	private static function module_attrs_summary( array $attrs ): array {
+		$summary = [
+			'top_level_keys' => array_values( array_keys( $attrs ) ),
+			'attr_count'     => self::count_attr_leaves( $attrs ),
+		];
+
+		$admin_label = self::module_admin_label_from_attrs( $attrs );
+		if ( '' !== $admin_label ) {
+			$summary['admin_label'] = $admin_label;
+		}
+
+		$text_preview = self::module_text_preview_from_attrs( $attrs );
+		if ( '' !== $text_preview ) {
+			$summary['text_preview'] = $text_preview;
+		}
+
+		$module_preset = self::get_nested_array_value( $attrs, [ 'module', 'meta', 'modulePreset', 'desktop', 'value' ] );
+		if ( null !== $module_preset ) {
+			$summary['module_preset'] = $module_preset;
+		}
+
+		$group_preset = self::get_nested_array_value( $attrs, [ 'groupPreset' ] );
+		if ( is_array( $group_preset ) && ! empty( $group_preset ) ) {
+			$summary['group_preset_keys'] = array_values( array_keys( $group_preset ) );
+		}
+
+		$locked = self::get_nested_array_value( $attrs, [ 'locked', 'desktop', 'value' ] );
+		if ( null !== $locked ) {
+			$summary['locked'] = $locked;
+		}
+
+		return $summary;
+	}
+
+	private static function count_attr_leaves( $value ): int {
+		if ( ! is_array( $value ) ) {
+			return 1;
+		}
+		if ( empty( $value ) ) {
+			return 0;
+		}
+		$count = 0;
+		foreach ( $value as $child ) {
+			$count += self::count_attr_leaves( $child );
+		}
+		return $count;
 	}
 
 	/**

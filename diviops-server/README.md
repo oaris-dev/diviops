@@ -83,7 +83,7 @@ The skill enforces the Divi block format, the design system, and the response co
 
 ## Tools at a glance
 
-The server exposes **74 always-on tools** across the categories below. Each category links to representative tools; the full table lives in [server-reference.md](../docs/server-reference.md).
+The server exposes **77 always-on tools** across the categories below. Each category links to representative tools; the full table lives in [server-reference.md](../docs/server-reference.md).
 
 | Category | Use case | Tool prefixes |
 |----------|----------|---------------|
@@ -108,6 +108,7 @@ Additional **conditionally-registered Pro tools** appear only on sites that have
 | FluentCart order readback + guarded mark-paid (V3.1) | Pro plugin + FluentCart installed + module enabled | `diviops_fc_order_list`, `diviops_fc_order_get`, `diviops_fc_order_mark_paid` |
 | FluentCart license readback (V3.1) | Pro plugin + FluentCart Pro installed + module enabled | `diviops_fc_license_list`, `diviops_fc_license_get`, `diviops_fc_license_activations_list` |
 | FluentCart checkout readiness / gateway inspection (V3.2) | Pro plugin + FluentCart installed + module enabled | `diviops_fc_status`, `diviops_fc_gateway_list`, `diviops_fc_gateway_get` |
+| Cross-env guarded apply | Pro plugin + `cross_env` module enabled | `diviops_cross_env_header_apply` |
 
 When the gates are not satisfied, the tools simply don't appear on the MCP surface — no error envelope, no missing-capability hint. See the `diviops-fluentcart` skill bundle for the operator-side guide.
 
@@ -155,6 +156,63 @@ additional vertical slice lands with its own verified evidence. See the
 [preset-cli reference](https://github.com/oaris-dev/diviops/blob/main/diviops-server/src/preset-cli/README.md)
 for the full command reference (the `src/` tree is not part of the published
 npm package — this link resolves on the repository).
+
+## Bundled CLI — `diviops-cross-env-preflight`
+
+The package also ships a dry-run-only cross-environment Theme Builder header
+sync preflight:
+
+```bash
+diviops-cross-env-preflight --source source.json --target target.json --dry-run
+```
+
+This command reads two secret-free JSON files and prints a report. It does not
+connect to WordPress, does not accept credentials, and has no write/apply path.
+The MVP supports `tb_header_layout` source payloads preflighted against an
+existing `tb_header_layout` target context. It reports source-domain upload URL
+rewrites, attachment remap status, `gcid-*` target resolution including Divi
+built-in customizer colors, resolved target global-color value evidence,
+off-canvas/canvas refusal, and the required cache cleanup plan. Each report also
+emits a deterministic `confirmation_binding` fingerprint over the reviewed
+source identity/checksum, target identity/current target checksum, rewrite plan,
+cache plan, blocker/operator-action codes, reference-resolution summaries, and
+the per-`gcid` value evidence for target colors referenced by the source layout.
+The fingerprint is reviewed-plan evidence for the Pro-gated
+`diviops_cross_env_header_apply` tool. The CLI itself still has no apply path.
+
+To collect the source JSON from the source WordPress site, call the Free/core
+read-only MCP tool `diviops_cross_env_source_export_get` and save the returned
+`data` object as `source.json`. The export includes the source origin, header
+layout metadata, sanitized markup, a bare SHA-256 checksum of the exported
+markup, export metadata, and best-effort attachment inventory from upload URLs
+and attachment IDs. It strips query strings, fragments, credentials, nonces,
+cookies, signed URL material, admin URLs, and local filesystem paths.
+
+To collect the target JSON from the target WordPress site, call the Free/core
+read-only MCP tool `diviops_cross_env_target_context_get` against the target
+server and save the returned `data` object as `target.json`. Optional
+`source_asset_hints` and `source_attachment_ids` let the target site search for
+exact media-library candidates by upload path or basename. Ambiguous matches
+remain candidates only; no media is uploaded and no global colors or layouts are
+created. The export includes a SHA-256 checksum of the current target layout
+`post_content` as `destination_checksum` so preflight can bind the reviewed plan
+to the target state without exposing the raw target content. It also includes
+`global_color_value_evidence`, a deterministic SHA-256 digest map for resolved
+user global colors and WP Customizer-backed built-ins; preflight binds only the
+entries that are referenced by source markup.
+
+Workflow:
+
+1. Call `diviops_cross_env_source_export_get` on the source site and save the
+   returned `data` object as `source.json`.
+2. Call `diviops_cross_env_target_context_get` on the target site and save the
+   returned `data` object as `target.json`.
+3. Run `diviops-cross-env-preflight --source source.json --target target.json --dry-run`.
+
+`--apply` is intentionally refused. To mutate a target, use the separate
+Pro-gated `diviops_cross_env_header_apply` tool with the reviewed fingerprint.
+That MVP still refuses media upload/import, global color creation/import,
+off-canvas reconcile, and new target layout creation.
 
 ## Response contract
 

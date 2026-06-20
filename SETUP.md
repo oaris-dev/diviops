@@ -191,7 +191,7 @@ After activating `diviops-agent-pro.zip` and the Pro license, restart the MCP cl
 Use diviops_meta_info to show the plugin handshake and capability summary.
 ```
 
-If FluentCart and FluentCart Pro are active on the target site, Pro coverage tools such as `diviops_fc_status`, `diviops_fc_product_list`, `diviops_fc_gateway_list`, and license/order readback tools should appear in the MCP tool list. If the target plugin is not installed or the Pro plugin is inactive, those tools are intentionally omitted.
+If FluentCart and FluentCart Pro are active on the target site, `diviops_meta_info` should report `slices.fluentcart.active: true` and list `fluentcart_*` entries under `slices.fluentcart.tool_capabilities`. Pro coverage tools such as `diviops_fc_status`, `diviops_fc_product_list`, `diviops_fc_gateway_list`, and license/order readback tools should also appear in the MCP tool list. If the target plugin is not installed or the Pro plugin is inactive, those tools are intentionally omitted.
 
 ### Claude Desktop JSON
 

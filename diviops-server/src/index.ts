@@ -14,7 +14,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import { WPClient } from "./wp-client.js";
-import { MissingCapabilityError } from "./compatibility.js";
+import { MissingCapabilityError, proToolGatesSatisfied } from "./compatibility.js";
 import {
   type DiviopsResponse,
   ErrorCodes,
@@ -24,6 +24,11 @@ import {
   withCode,
   wrapResponse,
 } from "./envelope.js";
+import {
+  preflightCrossEnvHeaderSync,
+  type SourceLayoutPayload,
+  type TargetLayoutContext,
+} from "./cross-env-preflight/header-preflight.js";
 import { optimizeSchema } from "./schema-optimizer.js";
 import { schemaModuleRoute } from "./schema-route.js";
 import { createWpCli } from "./wp-cli.js";
@@ -138,6 +143,7 @@ type HandshakeState =
       kind: "ok";
       capabilities: Record<string, boolean>;
       pluginVersion: string;
+      proVersion?: string;
       // ADR-003 / ADR-007 Pro-extension fields — present on `ok` only.
       // Free-only sites populate these as `false` / `{}` via wp-client
       // normalization so gates can read them without per-call checks.
@@ -149,6 +155,105 @@ type HandshakeState =
   | { kind: "pending" };
 
 let handshakeState: HandshakeState = { kind: "pending" };
+
+const BASE_META_CAPABILITIES = [
+  "pages",
+  "modules",
+  "presets",
+  "library",
+  "theme_builder",
+  "canvas",
+  "variables",
+  "templates",
+  "icons",
+  "validation",
+  "preview",
+];
+
+function enabledCapabilityKeys(prefix?: string): string[] {
+  if (handshakeState.kind !== "ok") return [];
+  const state = handshakeState;
+  return Object.keys(state.capabilities)
+    .filter((key) => state.capabilities[key])
+    .filter((key) => (prefix ? key.startsWith(prefix) : true))
+    .sort();
+}
+
+function buildMetaInfo() {
+  const fluentCartCapabilityKeys = enabledCapabilityKeys("fluentcart_");
+  const crossEnvCapabilityKeys = enabledCapabilityKeys("cross_env_");
+  const fluentCartTarget =
+    handshakeState.kind === "ok"
+      ? handshakeState.availableTargets.fluentcart ?? null
+      : null;
+  const crossEnvTarget =
+    handshakeState.kind === "ok"
+      ? handshakeState.availableTargets.cross_env ?? null
+      : null;
+  const fluentCartActive =
+    handshakeState.kind === "ok" &&
+    handshakeState.proActive === true &&
+    fluentCartTarget?.present === true &&
+    handshakeState.activeModules.fluentcart === true &&
+    fluentCartCapabilityKeys.length > 0;
+  const crossEnvActive =
+    handshakeState.kind === "ok" &&
+    handshakeState.proActive === true &&
+    crossEnvTarget?.present === true &&
+    handshakeState.activeModules.cross_env === true &&
+    crossEnvCapabilityKeys.length > 0;
+  const capabilities = fluentCartActive
+    ? [...BASE_META_CAPABILITIES, "fluentcart"]
+    : [...BASE_META_CAPABILITIES];
+  if (crossEnvActive) capabilities.push("cross_env");
+
+  return {
+    brand: "DiviOps",
+    server: "diviops-mcp",
+    version: SERVER_VERSION,
+    license: "MIT",
+    capabilities,
+    handshake:
+      handshakeState.kind === "ok"
+        ? {
+            state: "ok",
+            plugin_version: handshakeState.pluginVersion,
+            capability_count: enabledCapabilityKeys().length,
+          }
+        : { state: handshakeState.kind },
+    pro:
+      handshakeState.kind === "ok"
+        ? {
+            active: handshakeState.proActive,
+            version: handshakeState.proVersion ?? null,
+          }
+        : {
+            active: false,
+            version: null,
+          },
+    slices: {
+      fluentcart: {
+        target: fluentCartTarget,
+        active: fluentCartActive,
+        module_active:
+          handshakeState.kind === "ok"
+            ? handshakeState.activeModules.fluentcart === true
+            : false,
+        tool_capabilities: fluentCartCapabilityKeys,
+      },
+      cross_env: {
+        target: crossEnvTarget,
+        active: crossEnvActive,
+        module_active:
+          handshakeState.kind === "ok"
+            ? handshakeState.activeModules.cross_env === true
+            : false,
+        tool_capabilities: crossEnvCapabilityKeys,
+      },
+    },
+    wp_cli: wpCli ? wpCli.getAllowedCommands() : false,
+  };
+}
 
 function requireCapability(key: string): void {
   // Only gate when we have a real capability map. On handshake failure,
@@ -254,11 +359,7 @@ function registerProTool<H extends (args: any) => Promise<any>>(
   gates: { target: string; capabilityKey: string },
 ): void {
   if (handshakeState.kind !== "ok") return;
-  if (!handshakeState.proActive) return;
-  const target = handshakeState.availableTargets[gates.target];
-  if (!target || target.present !== true) return;
-  if (handshakeState.activeModules[gates.target] !== true) return;
-  if (!handshakeState.capabilities[gates.capabilityKey]) return;
+  if (!proToolGatesSatisfied(handshakeState, gates)) return;
 
   recordIdempotent(name, config?._meta);
   server.registerTool(name, config, handler);
@@ -373,6 +474,68 @@ registerPluginTool(
     return {
       content: [
         { type: "text" as const, text: serializeEnvelope(result, "diviops_page_get_layout") },
+      ],
+    };
+  },
+);
+
+registerPluginTool(
+  "diviops_module_get",
+  {
+    description:
+      'Get one targeted Divi module/block from a page, post, or Theme Builder layout by auto_index (e.g. "text:5"), admin label, or text content. Uses the same selector validation as diviops_module_update: pass exactly one of auto_index, label, or match_text; use occurrence with duplicate labels. Default mode returns identity, block name, admin label, auto_index, text preview, source bounds, and a compact attr summary. Use full: true to include decoded attrs and raw serialized block markup for the matched module only. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }; missing module returns code "not_found" with error.data = { target_kind: "module", target_mode, target_value, page_id }.',
+    inputSchema: {
+      page_id: z
+        .number()
+        .int()
+        .describe("WordPress post/layout ID whose Divi block content should be searched"),
+      label: z
+        .string()
+        .optional()
+        .describe("Admin label of the module (exact match)"),
+      match_text: z
+        .string()
+        .optional()
+        .describe(
+          "Text to find in module attrs/innerContent (case-insensitive substring, first match)",
+        ),
+      auto_index: z
+        .string()
+        .optional()
+        .describe(
+          'Auto-index target in "type:N" format (e.g. "text:5", "icon:3"). Get from diviops_page_get_layout.',
+        ),
+      occurrence: z
+        .number()
+        .int()
+        .min(1)
+        .optional()
+        .default(1)
+        .describe(
+          "Which occurrence to target when multiple modules share the same label (1-based)",
+        ),
+      full: z
+        .boolean()
+        .optional()
+        .default(false)
+        .describe("Include decoded attrs and raw serialized block markup for the matched module only"),
+    },
+    annotations: { idempotentHint: true },
+    _meta: { idempotent: "true" },
+  },
+  async ({ page_id, label, match_text, auto_index, occurrence, full }) => {
+    const params: Record<string, string> = {};
+    if (auto_index) params.auto_index = auto_index;
+    if (label) params.label = label;
+    if (match_text) params.match_text = match_text;
+    if (occurrence > 1) params.occurrence = String(occurrence);
+    if (full) params.full = "true";
+    const qs = new URLSearchParams(params).toString();
+    const suffix = qs ? `?${qs}` : "";
+    const result = await wp.requestEnveloped(`/module/get/${page_id}${suffix}`);
+    return {
+      content: [
+        { type: "text" as const, text: serializeEnvelope(result, "diviops_module_get") },
       ],
     };
   },
@@ -2134,6 +2297,115 @@ registerPluginTool(
 );
 
 registerPluginTool(
+  "diviops_cross_env_target_context_get",
+  {
+    description:
+      "Export read-only, secret-free target-site context for the offline cross-environment Theme Builder header preflight. Produces JSON suitable for `diviops-cross-env-preflight --target`: target origin derived from WordPress, destination header layout metadata, a sha256 checksum of current target layout post_content without exposing raw content, target global colors, built-in customizer color IDs, sha256 value evidence for user/customizer global colors, defensible attachment candidates/remaps from optional source asset hints, and cache_scope. This Free/core tool does not write layouts, upload media, create global colors, or expose cookies, nonces, app passwords, signed URLs, query strings, fragments, or local filesystem paths. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }; unsupported destination_kind returns invalid_input, and missing/non-header layouts return not_found.",
+    inputSchema: {
+      destination_id: z
+        .number()
+        .int()
+        .positive()
+        .describe("Existing target Theme Builder header layout post ID."),
+      destination_kind: z
+        .enum(["tb_header_layout"])
+        .optional()
+        .default("tb_header_layout")
+        .describe("Destination kind. Only tb_header_layout is supported in this read-only slice."),
+      source_asset_hints: z
+        .array(z.string())
+        .optional()
+        .describe("Optional source upload paths, asset URLs, or basenames used to search target media candidates. Query strings, fragments, and credentials are stripped from output."),
+      source_attachment_ids: z
+        .array(z.number())
+        .optional()
+        .describe("Optional numeric source attachment IDs found in source markup. A remap is emitted only when exactly one source ID and one exact target candidate are present."),
+      dry_run: z
+        .boolean()
+        .optional()
+        .default(true)
+        .describe("Accepted for workflow symmetry; the tool is always read-only and never mutates state."),
+    },
+    annotations: { idempotentHint: true },
+    _meta: { idempotent: "true" },
+  },
+  async ({
+    destination_id,
+    destination_kind,
+    source_asset_hints,
+    source_attachment_ids,
+  }) => {
+    const body: Record<string, unknown> = {
+      destination_id,
+      destination_kind: destination_kind ?? "tb_header_layout",
+    };
+    if (source_asset_hints && source_asset_hints.length > 0) {
+      body.source_asset_hints = source_asset_hints;
+    }
+    if (source_attachment_ids && source_attachment_ids.length > 0) {
+      body.source_attachment_ids = source_attachment_ids;
+    }
+    const result = await wp.requestEnveloped("/cross-env/target-context", {
+      method: "POST",
+      body,
+    });
+    return {
+      content: [
+        {
+          type: "text" as const,
+          text: serializeEnvelope(result, "diviops_cross_env_target_context_get"),
+        },
+      ],
+    };
+  },
+);
+
+registerPluginTool(
+  "diviops_cross_env_source_export_get",
+  {
+    description:
+      "Export read-only, secret-free source-site payload for the offline cross-environment Theme Builder header preflight. Produces JSON suitable for `diviops-cross-env-preflight --source`: source origin, `tb_header_layout` metadata, sanitized markup, bare sha256 checksum of that exported markup, export timestamp, DiviOps plugin version, and best-effort attachment inventory from markup media URLs and attachment IDs. This Free/core tool does not write layouts, upload media, create global colors, reconcile references, expose cookies, nonces, app passwords, signed URLs, query strings, fragments, admin URLs, or local filesystem paths. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }; unsupported source_kind returns invalid_input, and missing/non-header source layouts return not_found.",
+    inputSchema: {
+      source_id: z
+        .number()
+        .int()
+        .positive()
+        .describe("Existing source Theme Builder header layout post ID."),
+      source_kind: z
+        .enum(["tb_header_layout"])
+        .optional()
+        .default("tb_header_layout")
+        .describe("Source kind. Only tb_header_layout is supported in this read-only slice."),
+      dry_run: z
+        .boolean()
+        .optional()
+        .default(true)
+        .describe("Accepted for workflow symmetry; the tool is always read-only and never mutates state."),
+    },
+    annotations: { idempotentHint: true },
+    _meta: { idempotent: "true" },
+  },
+  async ({ source_id, source_kind }) => {
+    const body: Record<string, unknown> = {
+      source_id,
+      source_kind: source_kind ?? "tb_header_layout",
+    };
+    const result = await wp.requestEnveloped("/cross-env/source-export", {
+      method: "POST",
+      body,
+    });
+    return {
+      content: [
+        {
+          type: "text" as const,
+          text: serializeEnvelope(result, "diviops_cross_env_source_export_get"),
+        },
+      ],
+    };
+  },
+);
+
+registerPluginTool(
   "diviops_tb_layout_update",
   {
     description:
@@ -3115,31 +3387,12 @@ registerLocalTool(
   "diviops_meta_info",
   {
     description:
-      "Returns DiviOps MCP server identity, version, license type, and available capabilities. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }.",
+      "Returns DiviOps MCP server identity, version, license type, available capability groups, WP-CLI allowlist, and plugin handshake/slice state including Pro and FluentCart target readiness. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }.",
     annotations: { idempotentHint: true },
     _meta: { idempotent: "true" },
   },
   async () => {
-    const response = await wrapResponse(async () => ({
-      brand: "DiviOps",
-      server: "diviops-mcp",
-      version: SERVER_VERSION,
-      license: "MIT",
-      capabilities: [
-        "pages",
-        "modules",
-        "presets",
-        "library",
-        "theme_builder",
-        "canvas",
-        "variables",
-        "templates",
-        "icons",
-        "validation",
-        "preview",
-      ],
-      wp_cli: wpCli ? wpCli.getAllowedCommands() : false,
-    }));
+    const response = await wrapResponse(async () => buildMetaInfo());
     return {
       content: [
         { type: "text" as const, text: serializeEnvelope(response, "diviops_meta_info") },
@@ -3776,7 +4029,7 @@ registerPluginTool(
   "diviops_meta_flush_cache",
   {
     description:
-      "Flush Divi's compiled static CSS cache under wp-content/et-cache/. wp cache flush does NOT touch these files — the frontend can keep serving stale CSS after a preset/variable/module mutation until the cache is cleared. Delegates to Divi's native ET_Core_PageResource::remove_static_resources when available (response backend: \"divi_native\"), which additionally clears Theme Builder CSS scattered across other post dirs, archive/taxonomy/home/notfound CSS, the object cache, module features cache, post features cache, Google Fonts cache, dynamic assets cache, and post meta caches. Falls back to a targeted filesystem walk of numeric-named et-cache subdirs when the Divi class is absent (backend: \"fs_fallback\"). Provide exactly one selector — no site-wide default to prevent accidental full flush. Idempotent: missing cache root returns 200 with empty list. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }; namespace-specific error codes: meta_flush_cache.unwritable (filesystem refused), meta_flush_cache.fs_init_failed (WP_Filesystem could not authenticate)." +
+      "Flush Divi's compiled static CSS cache under wp-content/et-cache/. wp cache flush does NOT touch these files — the frontend can keep serving stale CSS after a preset/variable/module mutation until the cache is cleared. Delegates to Divi's native ET_Core_PageResource::remove_static_resources when available (response backend: \"divi_native\"), which additionally clears Theme Builder CSS scattered across other post dirs, archive/taxonomy/home/notfound CSS, the object cache, module features cache, post features cache, Google Fonts cache, dynamic assets cache, and post meta caches. Falls back to a targeted filesystem walk of numeric-named et-cache subdirs when the Divi class is absent (backend: \"fs_fallback\"). Provide exactly one selector — no site-wide default to prevent accidental full flush. Optional cleanup_dynamic_assets=true explicitly deletes and reports _divi_dynamic_assets_cached_feature_used postmeta for the selected target IDs; cleanup_canvas_refs=true also deletes _divi_dynamic_assets_canvases_used and is only appropriate when canvas/off-canvas references are affected. Dynamic-assets postmeta cleanup is supported with post_id or all (bounded to posts that already carry the selected meta keys), not after. Idempotent: missing cache root returns 200 with empty list and repeat postmeta cleanup reports absent keys. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }; namespace-specific error codes: meta_flush_cache.unwritable (filesystem refused), meta_flush_cache.fs_init_failed (WP_Filesystem could not authenticate)." +
       DRY_RUN_DESC_SUFFIX +
       " Note: in `after` mode the dry-run plan reports the cutoff only — accurate file count requires the live mtime walk.",
     inputSchema: {
@@ -3804,16 +4057,32 @@ registerPluginTool(
           "Unix timestamp — flush Divi CSS files (et-*.css) with mtime strictly greater than this value. Useful for flushing entries touched since a known deployment or mutation batch. Native backend does a single-pass filesystem sweep covering numeric post dirs AND archive/taxonomy/home/notfound/global subtrees in one walk (Visual Builder -vb-* runtime CSS preserved); fs_fallback iterates numeric post dirs whose latest file mtime > after. `flushed` lists numeric post_ids whose files were actually deleted; `skipped` lists numeric post_ids that exist but had no files pass the filter.",
         ),
       dry_run: DRY_RUN_FIELD,
+      cleanup_dynamic_assets: z
+        .boolean()
+        .optional()
+        .default(false)
+        .describe(
+          "Explicitly delete and report Divi's _divi_dynamic_assets_cached_feature_used postmeta for the selected post_id, or for all posts that already carry selected dynamic-assets postmeta when all=true. Supported with post_id or all only.",
+        ),
+      cleanup_canvas_refs: z
+        .boolean()
+        .optional()
+        .default(false)
+        .describe(
+          "Opt-in canvas/off-canvas cleanup. Requires cleanup_dynamic_assets=true and also deletes _divi_dynamic_assets_canvases_used. Use only when canvas/off-canvas references are affected.",
+        ),
     },
     annotations: { idempotentHint: true },
     _meta: { idempotent: "true" },
   },
-  async ({ post_id, all, after, dry_run }) => {
+  async ({ post_id, all, after, dry_run, cleanup_dynamic_assets, cleanup_canvas_refs }) => {
     const body: Record<string, unknown> = {};
     if (post_id !== undefined) body.post_id = post_id;
     if (all) body.all = true;
     if (after !== undefined) body.after = after;
     if (dry_run) body.dry_run = true;
+    if (cleanup_dynamic_assets) body.cleanup_dynamic_assets = true;
+    if (cleanup_canvas_refs) body.cleanup_canvas_refs = true;
     const result = await wp.requestEnveloped("/meta/flush-cache", {
       method: "POST",
       body,
@@ -3837,7 +4106,178 @@ registerPluginTool(
 // Run inside `registerProTools()` rather than at module load because the
 // gates read handshakeState which is `pending` until `main()` runs.
 
+const CrossEnvSourceAttachmentSchema = z
+  .object({
+    id: z.number().int().positive().optional(),
+    url: z.string().optional(),
+    path: z.string().optional(),
+    filename: z.string().optional(),
+    mime: z.string().optional(),
+  })
+  .passthrough();
+
+const CrossEnvSourcePayloadSchema = z
+  .object({
+    origin: z.string().describe("Source site origin, e.g. https://source.example."),
+    object_kind: z
+      .enum(["tb_header_layout"])
+      .describe("Source object kind. MVP supports tb_header_layout only."),
+    object_id: z.union([z.number(), z.string()]).optional(),
+    object_title: z.string().optional(),
+    markup: z.string().describe("Sanitized source header layout block markup."),
+    checksum: z
+      .string()
+      .regex(/^(sha256:)?[a-fA-F0-9]{64}$/)
+      .describe("sha256 checksum of source_payload.markup from source export."),
+    attachments: z.array(CrossEnvSourceAttachmentSchema).optional(),
+  })
+  .passthrough();
+
+function normalizeReviewedFingerprint(value: string): string {
+  return value.trim().replace(/^sha256:/i, "").toLowerCase();
+}
+
+function sourceHintsFromPayload(source: SourceLayoutPayload): {
+  source_asset_hints?: string[];
+  source_attachment_ids?: number[];
+} {
+  const hints = new Set<string>();
+  const ids = new Set<number>();
+  for (const attachment of source.attachments ?? []) {
+    if (typeof attachment.id === "number" && Number.isInteger(attachment.id) && attachment.id > 0) {
+      ids.add(attachment.id);
+    }
+    for (const value of [attachment.path, attachment.url, attachment.filename]) {
+      if (typeof value === "string" && value.trim()) hints.add(value.trim());
+    }
+  }
+  return {
+    ...(hints.size > 0 ? { source_asset_hints: [...hints].sort((a, b) => a.localeCompare(b)) } : {}),
+    ...(ids.size > 0 ? { source_attachment_ids: [...ids].sort((a, b) => a - b) } : {}),
+  };
+}
+
 function registerProTools(): void {
+  // diviops_cross_env_header_apply — guarded Pro apply for reviewed header preflight
+  registerProTool(
+    "diviops_cross_env_header_apply",
+    {
+      description:
+        "Apply a reviewed cross-environment Theme Builder header payload into an existing target header layout (Pro tier; requires the cross_env Pro module). This first MVP is intentionally narrow: it requires `confirm_apply: true`, a source export payload with checksum, an existing target `destination_id`, and the reviewed `confirmation_binding.fingerprint` from `diviops-cross-env-preflight`. The server re-exports current target context, reruns the TypeScript preflight engine, refuses fingerprint mismatch, unsafe verdicts, destination checksum drift, missing/ambiguous attachment remaps, missing global-color value evidence, and off-canvas/canvas references, then calls the Pro route with the verified plan. The Pro route re-loads the destination post, verifies the current checksum again, builds content only from source-origin upload URL rewrites and proven attachment-ID remaps, writes with readback/rollback evidence, and runs Divi static-resource cleanup plus explicit _divi_dynamic_assets_cached_feature_used cleanup. No media upload/import, global-color creation/import, new layout creation, off-canvas reconcile, public/store/license change, or live-site smoke is performed by this tool. Returns the standardized envelope { ok, data?, error: { code, message, hint?, data? } }. Error codes include cross_env.confirmation_required, cross_env.fingerprint_mismatch, cross_env.preflight_not_safe, cross_env.destination_checksum_drift, cross_env.source_checksum_mismatch, cross_env.content_write_corruption, invalid_input, not_found, forbidden, and wp_error.",
+      inputSchema: {
+        source_payload: CrossEnvSourcePayloadSchema.describe(
+          "The `data` object returned by diviops_cross_env_source_export_get on the source site.",
+        ),
+        destination_id: z
+          .number()
+          .int()
+          .positive()
+          .describe("Existing target Theme Builder header layout post ID."),
+        destination_kind: z
+          .enum(["tb_header_layout"])
+          .optional()
+          .default("tb_header_layout")
+          .describe("Destination kind. MVP supports tb_header_layout only."),
+        reviewed_fingerprint: z
+          .string()
+          .regex(/^(sha256:)?[a-fA-F0-9]{64}$/)
+          .describe("Reviewed confirmation_binding.fingerprint from the safe preflight report."),
+        confirm_apply: z
+          .boolean()
+          .describe("Must be true. Missing/false refuses before any target mutation."),
+      },
+      annotations: { idempotentHint: false },
+      _meta: { idempotent: "conditional" },
+    },
+    async ({
+      source_payload,
+      destination_id,
+      destination_kind,
+      reviewed_fingerprint,
+      confirm_apply,
+    }: {
+      source_payload: SourceLayoutPayload;
+      destination_id: number;
+      destination_kind?: "tb_header_layout";
+      reviewed_fingerprint: string;
+      confirm_apply: boolean;
+    }) => {
+      const result = await wrapResponse(async () => {
+        if (confirm_apply !== true) {
+          withCode(
+            "cross_env.confirmation_required",
+            "confirm_apply: true is required before a cross-env header apply can mutate content.",
+            "Review the preflight report, then retry with confirm_apply: true.",
+          );
+        }
+
+        const targetBody: Record<string, unknown> = {
+          destination_id,
+          destination_kind: destination_kind ?? "tb_header_layout",
+          ...sourceHintsFromPayload(source_payload),
+        };
+        const targetEnvelope = await wp.requestEnveloped<TargetLayoutContext>(
+          "/cross-env/target-context",
+          { method: "POST", body: targetBody },
+        );
+        if (!targetEnvelope.ok) return targetEnvelope;
+
+        const report = preflightCrossEnvHeaderSync({
+          source: source_payload,
+          target: targetEnvelope.data,
+        });
+        const reviewed = normalizeReviewedFingerprint(reviewed_fingerprint);
+        if (report.confirmation_binding.fingerprint !== reviewed) {
+          withCode(
+            "cross_env.fingerprint_mismatch",
+            "Reviewed confirmation fingerprint does not match the recomputed current preflight report.",
+            "Re-run diviops-cross-env-preflight against the latest target context and confirm the new fingerprint.",
+            {
+              reviewed_fingerprint: reviewed,
+              recomputed_fingerprint: report.confirmation_binding.fingerprint,
+              current_destination_checksum: report.target.destination_checksum ?? null,
+            },
+          );
+        }
+        if (report.verdict !== "safe_dry_run") {
+          withCode(
+            "cross_env.preflight_not_safe",
+            "Recomputed preflight verdict is not safe for this MVP apply path.",
+            "Resolve blockers/operator actions, then re-run and re-confirm preflight.",
+            {
+              verdict: report.verdict,
+              blockers: report.blockers,
+              operator_actions: report.operator_actions,
+            },
+          );
+        }
+
+        return wp.requestEnveloped("/pro/cross-env/header-layout/apply", {
+          method: "POST",
+          body: {
+            confirm_apply: true,
+            destination_id,
+            destination_kind: destination_kind ?? "tb_header_layout",
+            source_payload,
+            source_checksum: source_payload.checksum,
+            destination_checksum: report.target.destination_checksum,
+            reviewed_fingerprint: reviewed,
+            preflight_report: report,
+          },
+        });
+      });
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: serializeEnvelope(result, "diviops_cross_env_header_apply"),
+          },
+        ],
+      };
+    },
+    { target: "cross_env", capabilityKey: "cross_env_header_apply" },
+  );
+
   // diviops_fc_product_list — bridges /diviops/v1/pro/fluentcart/products
   registerProTool(
     "diviops_fc_product_list",
@@ -5457,6 +5897,7 @@ async function main() {
       kind: "ok",
       capabilities: hs.capabilities,
       pluginVersion: hs.plugin_version,
+      proVersion: hs.pro_version,
       proActive: hs.pro_active === true,
       availableTargets: hs.available_targets ?? {},
       activeModules: hs.active_modules ?? {},

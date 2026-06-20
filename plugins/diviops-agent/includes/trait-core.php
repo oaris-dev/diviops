@@ -152,6 +152,262 @@ trait DiviOps_Agent_Core {
 	}
 
 	/**
+	 * Reject obviously unsafe full Divi markup before a content write.
+	 *
+	 * This intentionally stays parser-free: page_update_content() must keep
+	 * accepting serialized markup in standalone smoke tests that do not load
+	 * WordPress' block parser, while still catching the failure class where
+	 * self-closing markers are stripped or block comments are mis-nested.
+	 *
+	 * @param string $content Full block markup after canonical attr normalization.
+	 * @param string $field   Request field name for error payloads.
+	 * @return true|WP_Error
+	 */
+	private static function assert_divi_full_content_safe_for_write( string $content, string $field = 'content' ) {
+		$counts     = self::divi_content_marker_counts( $content );
+		$validation = self::validate_divi_marker_sequence( $content );
+		if ( $counts['container_openers'] !== $counts['closers'] || empty( $validation['ok'] ) ) {
+			return new WP_Error(
+				'invalid_input',
+				'Divi block markup has unbalanced or mis-nested opener/closer markers.',
+				[
+					'status' => 400,
+					'hint'   => 'Check for stripped self-closing markers or missing closing block comments before writing full post_content.',
+					'field'  => $field,
+					'counts' => $counts,
+					'marker' => $validation,
+				]
+			);
+		}
+
+		return true;
+	}
+
+	/**
+	 * Write post_content, immediately read it back, and revert on byte drift.
+	 *
+	 * @param int    $post_id          Target post id.
+	 * @param string $content          Canonical content expected after the write.
+	 * @param string $error_namespace  Namespace for the corruption error code.
+	 * @param string $target_label     Human-readable target for messages/data.
+	 * @param string $previous_content Original content to restore on mismatch.
+	 * @return true|WP_Error
+	 */
+	private static function update_post_content_with_integrity_guard( int $post_id, string $content, string $error_namespace, string $target_label, string $previous_content ) {
+		$preflight = self::assert_divi_full_content_safe_for_write( $content, 'content' );
+		if ( is_wp_error( $preflight ) ) {
+			return $preflight;
+		}
+
+		$result = wp_update_post( [
+			'ID'           => $post_id,
+			'post_content' => wp_slash( $content ),
+		], true );
+
+		if ( is_wp_error( $result ) ) {
+			return $result;
+		}
+
+		$readback = get_post( $post_id );
+		$stored   = $readback && isset( $readback->post_content ) ? (string) $readback->post_content : null;
+		if ( $stored === $content ) {
+			return true;
+		}
+
+		$reverted     = false;
+		$revert_error = null;
+		$revert       = wp_update_post( [
+			'ID'           => $post_id,
+			'post_content' => wp_slash( $previous_content ),
+		], true );
+		if ( is_wp_error( $revert ) ) {
+			$revert_error = [
+				'code'    => $revert->get_error_code(),
+				'message' => $revert->get_error_message(),
+			];
+		} else {
+			$after_revert = get_post( $post_id );
+			$reverted     = $after_revert && isset( $after_revert->post_content ) && (string) $after_revert->post_content === $previous_content;
+		}
+
+		return new WP_Error(
+			$error_namespace . '.content_write_corruption',
+			"Refused {$target_label} content write because WordPress readback did not match the requested content.",
+			[
+				'status' => 500,
+				'hint'   => $reverted
+					? 'The original content was restored. Inspect the corruption diagnostics before retrying this full-content write.'
+					: 'Automatic restore did not verify cleanly. Restore the original content from backup or revision before retrying.',
+				'target' => [
+					'post_id' => $post_id,
+					'label'   => $target_label,
+				],
+				'bytes'  => [
+					'expected' => strlen( $content ),
+					'stored'   => is_string( $stored ) ? strlen( $stored ) : null,
+					'previous' => strlen( $previous_content ),
+				],
+				'issues' => self::diagnose_divi_content_write_drift( $content, is_string( $stored ) ? $stored : '' ),
+				'revert' => [
+					'attempted' => true,
+					'verified'  => $reverted,
+					'error'     => $revert_error,
+				],
+			]
+		);
+	}
+
+	/**
+	 * Marker counts used by the write guard and diagnostics.
+	 *
+	 * @param string $content Full block markup.
+	 * @return array{openers:int,self_closers:int,container_openers:int,closers:int}
+	 */
+	private static function divi_content_marker_counts( string $content ): array {
+		$openers      = preg_match_all( '/<!--\s+wp:divi\//', $content );
+		$self_closers = preg_match_all( '/<!--\s+wp:divi\/(?:(?!-->).)*?\/-->/s', $content );
+		$closers      = preg_match_all( '/<!--\s+\/wp:divi\//', $content );
+
+		return [
+			'openers'           => (int) $openers,
+			'self_closers'      => (int) $self_closers,
+			'container_openers' => max( 0, (int) $openers - (int) $self_closers ),
+			'closers'           => (int) $closers,
+		];
+	}
+
+	/**
+	 * Validate Divi opener/closer order without using parse_blocks().
+	 *
+	 * @param string $content Full block markup.
+	 * @return array<string,mixed>
+	 */
+	private static function validate_divi_marker_sequence( string $content ): array {
+		$matched = preg_match_all(
+			'/<!--\s+(\/)?wp:divi\/([A-Za-z0-9_-]+)(?:(?!-->).)*?(\/)?-->/s',
+			$content,
+			$matches,
+			PREG_SET_ORDER | PREG_OFFSET_CAPTURE
+		);
+		if ( false === $matched ) {
+			return [ 'ok' => false, 'reason' => 'scan_failed' ];
+		}
+
+		$stack = [];
+		foreach ( $matches as $match ) {
+			$token      = $match[0][0];
+			$offset     = $match[0][1];
+			$is_closer  = ! empty( $match[1][0] );
+			$type       = (string) $match[2][0];
+			$self_close = ! $is_closer && ! empty( $match[3][0] );
+
+			if ( $self_close ) {
+				continue;
+			}
+			if ( ! $is_closer ) {
+				$stack[] = [ 'type' => $type, 'offset' => $offset ];
+				continue;
+			}
+			if ( empty( $stack ) ) {
+				return [
+					'ok'      => false,
+					'reason'  => 'unexpected_closer',
+					'actual'  => $type,
+					'offset'  => $offset,
+					'preview' => substr( $token, 0, 120 ),
+				];
+			}
+
+			$expected = array_pop( $stack );
+			if ( $expected['type'] !== $type ) {
+				return [
+					'ok'              => false,
+					'reason'          => 'mismatched_closer',
+					'expected'        => $expected['type'],
+					'expected_offset' => $expected['offset'],
+					'actual'          => $type,
+					'offset'          => $offset,
+					'preview'         => substr( $token, 0, 120 ),
+				];
+			}
+		}
+
+		if ( ! empty( $stack ) ) {
+			$unclosed = end( $stack );
+			return [
+				'ok'     => false,
+				'reason' => 'unclosed_block',
+				'type'   => $unclosed['type'],
+				'offset' => $unclosed['offset'],
+			];
+		}
+
+		return [ 'ok' => true ];
+	}
+
+	/**
+	 * Summarize content drift without echoing large post_content strings.
+	 *
+	 * @param string $expected Expected canonical content.
+	 * @param string $stored   Immediate readback content.
+	 * @return array<int,array<string,mixed>>
+	 */
+	private static function diagnose_divi_content_write_drift( string $expected, string $stored ): array {
+		$issues          = [];
+		$expected_counts = self::divi_content_marker_counts( $expected );
+		$stored_counts   = self::divi_content_marker_counts( $stored );
+
+		if ( strlen( $stored ) > max( strlen( $expected ) * 2, strlen( $expected ) + 65536 ) ) {
+			$issues[] = [
+				'type'           => 'runaway_growth',
+				'expected_bytes' => strlen( $expected ),
+				'stored_bytes'   => strlen( $stored ),
+			];
+		}
+		if ( $expected_counts !== $stored_counts ) {
+			$issues[] = [
+				'type'     => 'marker_count_drift',
+				'expected' => $expected_counts,
+				'stored'   => $stored_counts,
+			];
+		}
+		if ( $stored_counts['container_openers'] !== $stored_counts['closers'] ) {
+			$issues[] = [
+				'type'   => 'opener_closer_imbalance',
+				'stored' => $stored_counts,
+			];
+		}
+		if ( false !== strpos( $expected, '/-->' ) && false === strpos( $stored, '/-->' ) ) {
+			$issues[] = [ 'type' => 'self_closing_marker_stripped' ];
+		}
+		if ( substr_count( $expected, ':{}' ) > substr_count( $stored, ':{}' ) || substr_count( $stored, ':[]' ) > substr_count( $expected, ':[]' ) ) {
+			$issues[] = [
+				'type'              => 'empty_object_drift',
+				'expected_objects'  => substr_count( $expected, ':{}' ),
+				'stored_objects'    => substr_count( $stored, ':{}' ),
+				'expected_arrays'   => substr_count( $expected, ':[]' ),
+				'stored_arrays'     => substr_count( $stored, ':[]' ),
+			];
+		}
+
+		if ( empty( $issues ) ) {
+			$offset = 0;
+			$limit  = min( strlen( $expected ), strlen( $stored ) );
+			while ( $offset < $limit && $expected[ $offset ] === $stored[ $offset ] ) {
+				$offset++;
+			}
+			$issues[] = [
+				'type'                  => 'byte_mismatch',
+				'first_mismatch_offset' => $offset,
+				'expected_bytes'        => strlen( $expected ),
+				'stored_bytes'          => strlen( $stored ),
+			];
+		}
+
+		return $issues;
+	}
+
+	/**
 	 * Mirror core serialize_block_attributes() while keeping tests runnable
 	 * against minimal WordPress stubs.
 	 *
@@ -1022,6 +1278,37 @@ trait DiviOps_Agent_Core {
 	}
 
 	/**
+	 * Adapt content-write guard errors while preserving diagnostics.
+	 *
+	 * @param WP_Error $error
+	 * @return WP_REST_Response
+	 */
+	private static function envelope_from_content_write_error( $error ) {
+		$code        = (string) $error->get_error_code();
+		$message     = (string) $error->get_error_message();
+		$data        = $error->get_error_data();
+		$hint        = is_array( $data ) && isset( $data['hint'] ) ? (string) $data['hint'] : null;
+		$http_status = is_array( $data ) && isset( $data['status'] ) ? (int) $data['status'] : 500;
+
+		if ( is_array( $data ) ) {
+			unset( $data['status'], $data['hint'] );
+			if ( empty( $data ) ) {
+				$data = null;
+			}
+		} else {
+			$data = null;
+		}
+
+		return self::envelope_error(
+			'' !== $code ? $code : 'wp_error',
+			$message,
+			$hint,
+			$http_status,
+			$data
+		);
+	}
+
+	/**
 	 * Resolve the source-of-truth content string for tools that accept either
 	 * an inline `content` string OR a `page_id` to read `post_content` from
 	 * the database.
@@ -1289,9 +1576,10 @@ trait DiviOps_Agent_Core {
 	 * @param string $summary  One-line human-readable description.
 	 * @param array  $changes  Array of { kind, target, before?, after? } entries.
 	 * @param array  $warnings Optional non-fatal advisories the apply path would surface.
-	 * @param array  $extra    Optional sibling keys to merge into `data` (alongside dry_run+plan).
+	 * @param array|object $extra Optional sibling keys to merge into `data` (alongside dry_run+plan).
 	 */
 	private static function dry_run_response( $summary, $changes = [], $warnings = [], $extra = [] ) {
+		$extra = (array) $extra;
 		$plan = [
 			'summary' => (string) $summary,
 			'changes' => array_values( $changes ),

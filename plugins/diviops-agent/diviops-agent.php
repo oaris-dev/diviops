@@ -96,7 +96,7 @@ class DiviOps_Agent {
 		// meta
 		'meta_find_icon', 'meta_flush_cache',
 		// module
-		'module_clone', 'module_lock', 'module_move', 'module_unlock', 'module_update',
+		'module_clone', 'module_get', 'module_lock', 'module_move', 'module_unlock', 'module_update',
 		// page
 		'page_create', 'page_get', 'page_get_layout', 'page_list',
 		'page_trash', 'page_update_content', 'page_update_status',
@@ -110,6 +110,7 @@ class DiviOps_Agent {
 		// section
 		'section_append', 'section_get', 'section_remove', 'section_replace',
 		// theme builder
+		'cross_env_source_export_get', 'cross_env_target_context_get',
 		'tb_layout_block_insert', 'tb_layout_get', 'tb_layout_update', 'tb_template_create', 'tb_template_list',
 		'tb_template_trash',
 		// validate
@@ -681,6 +682,29 @@ class DiviOps_Agent {
 			'permission_callback' => [ __CLASS__, 'check_read_permission' ],
 		] );
 
+		register_rest_route( self::REST_NAMESPACE, '/cross-env/target-context', [
+			'methods'             => 'POST',
+			'callback'            => [ __CLASS__, 'cross_env_target_context_get' ],
+			'permission_callback' => [ __CLASS__, 'check_read_permission' ],
+			'args'                => [
+				'destination_id'        => [ 'required' => false ],
+				'destination_kind'      => [ 'required' => false, 'type' => 'string', 'default' => 'tb_header_layout' ],
+				'source_asset_hints'    => [ 'required' => false ],
+				'source_attachment_ids' => [ 'required' => false ],
+			],
+		] );
+
+		register_rest_route( self::REST_NAMESPACE, '/cross-env/source-export', [
+			'methods'             => 'POST',
+			'callback'            => [ __CLASS__, 'cross_env_source_export_get' ],
+			'permission_callback' => [ __CLASS__, 'check_read_permission' ],
+			'args'                => [
+				'source_id'   => [ 'required' => false ],
+				'source_kind' => [ 'required' => false, 'type' => 'string', 'default' => 'tb_header_layout' ],
+				'dry_run'     => [ 'required' => false, 'type' => 'boolean', 'default' => true ],
+			],
+		] );
+
 		register_rest_route( self::REST_NAMESPACE, '/theme-builder/layout/update/(?P<id>\d+)', [
 			'methods'             => 'PUT',
 			'callback'            => [ __CLASS__, 'tb_layout_update' ],
@@ -944,6 +968,42 @@ class DiviOps_Agent {
 					'required'    => true,
 					'type'        => 'object',
 					'description' => 'Attribute key-value pairs to merge (dot notation)',
+				],
+			],
+		] );
+
+		register_rest_route( self::REST_NAMESPACE, '/module/get/(?P<id>\d+)', [
+			'methods'             => 'GET',
+			'callback'            => [ __CLASS__, 'module_get' ],
+			'permission_callback' => [ __CLASS__, 'check_read_permission' ],
+			'args'                => [
+				'id'         => [ 'required' => true ],
+				'label'      => [
+					'required'    => false,
+					'type'        => 'string',
+					'description' => 'Admin label of the module to retrieve (exact match)',
+				],
+				'match_text' => [
+					'required'    => false,
+					'type'        => 'string',
+					'description' => 'Text content to search for in module attrs/innerContent (case-insensitive substring match, first match wins)',
+				],
+				'auto_index' => [
+					'required'    => false,
+					'type'        => 'string',
+					'description' => 'Auto-index target in "type:N" format (e.g. "text:5", "icon:3").',
+				],
+				'occurrence' => [
+					'default'           => 1,
+					'type'              => 'integer',
+					'description'       => 'Which occurrence to target when multiple modules share the same label (1-based). Only used with label targeting.',
+					'sanitize_callback' => 'absint',
+				],
+				'full'       => [
+					'default'           => false,
+					'type'              => 'boolean',
+					'description'       => 'Include decoded attrs and raw serialized block markup for the matched module only.',
+					'sanitize_callback' => 'rest_sanitize_boolean',
 				],
 			],
 		] );
@@ -1261,9 +1321,12 @@ class DiviOps_Agent {
 			// Admin-only: performs filesystem deletes under wp-content/et-cache/.
 			'permission_callback' => [ __CLASS__, 'check_admin_permission' ],
 			'args'                => [
-				'post_id' => [ 'required' => false, 'type' => 'integer' ],
-				'all'     => [ 'required' => false, 'type' => 'boolean', 'default' => false ],
-				'after'   => [ 'required' => false, 'type' => 'integer' ],
+				'post_id'                => [ 'required' => false, 'type' => 'integer' ],
+				'all'                    => [ 'required' => false, 'type' => 'boolean', 'default' => false ],
+				'after'                  => [ 'required' => false, 'type' => 'integer' ],
+				'cleanup_dynamic_assets' => [ 'required' => false, 'type' => 'boolean', 'default' => false ],
+				'cleanup_canvas_refs'    => [ 'required' => false, 'type' => 'boolean', 'default' => false ],
+				'dry_run'                => [ 'required' => false, 'type' => 'boolean', 'default' => false ],
 			],
 		] );
 	}
