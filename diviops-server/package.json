@@ -1,6 +1,6 @@
 {
   "name": "@diviops/mcp-server",
-  "version": "1.5.29",
+  "version": "1.5.30",
   "description": "MCP server exposing Divi 5 Visual Builder as tools for Claude",
   "type": "module",
   "main": "dist/index.js",
