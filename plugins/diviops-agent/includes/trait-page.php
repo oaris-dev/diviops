@@ -778,15 +778,24 @@ trait DiviOps_Agent_Page {
 		$content    = (string) $post->post_content;
 
 		$match = self::find_block( $content, $label, $match_text, $auto_index, $target['occurrence'] );
+		if ( is_wp_error( $match ) && 'parse_error' === $match->get_error_code() ) {
+			$match = self::find_block_for_read_with_parser( $content, $label, $match_text, $auto_index, $target['occurrence'] );
+		}
 		if ( is_wp_error( $match ) ) {
 			return self::envelope_from_helper_error( $match, 'module', $post_id );
 		}
 
-		$raw_block = substr( $content, (int) $match['start'], (int) $match['end'] - (int) $match['start'] );
-		$attrs     = self::extract_attrs_from_block_markup( $raw_block );
-		if ( is_wp_error( $attrs ) ) {
-			return self::envelope_from_helper_error( $attrs, 'module', $post_id );
+		if ( isset( $match['block'] ) && is_array( $match['block'] ) ) {
+			$raw_block = serialize_block( $match['block'] );
+			$attrs     = isset( $match['attrs'] ) && is_array( $match['attrs'] ) ? $match['attrs'] : [];
+		} else {
+			$raw_block = substr( $content, (int) $match['start'], (int) $match['end'] - (int) $match['start'] );
+			$attrs     = self::extract_attrs_from_block_markup( $raw_block );
+			if ( is_wp_error( $attrs ) ) {
+				return self::envelope_from_helper_error( $attrs, 'module', $post_id );
+			}
 		}
+		$raw_len = strlen( $raw_block );
 
 		$response = [
 			'id'         => $post->ID,
@@ -809,7 +818,7 @@ trait DiviOps_Agent_Page {
 				'bounds'        => [
 					'start'  => (int) $match['start'],
 					'end'    => (int) $match['end'],
-					'length' => (int) $match['end'] - (int) $match['start'],
+					'length' => isset( $match['block'] ) ? $raw_len : (int) $match['end'] - (int) $match['start'],
 				],
 				'attrs_summary' => self::module_attrs_summary( $attrs ),
 			],
@@ -1180,6 +1189,132 @@ trait DiviOps_Agent_Page {
 		}
 
 		return self::envelope_success( $response );
+	}
+
+	/**
+	 * Read-only fallback for `module_get` when the legacy string scanner sees
+	 * malformed closing tags that WordPress's block parser can still parse.
+	 */
+	private static function find_block_for_read_with_parser( $content, $label, $match_text, $auto_index, $occurrence = 1 ) {
+		if ( '' !== $auto_index ) {
+			$mode = 'auto_index';
+		} elseif ( '' !== $label ) {
+			$mode = 'label';
+		} elseif ( '' !== $match_text ) {
+			$mode = 'text';
+		} else {
+			return new WP_Error( 'missing_target', 'One of "label", "match_text", or "auto_index" is required', [ 'status' => 400 ] );
+		}
+
+		$ai_type   = '';
+		$ai_target = 0;
+		if ( 'auto_index' === $mode ) {
+			$parts = explode( ':', $auto_index );
+			if ( 2 !== count( $parts ) || '' === $parts[0] || ! ctype_digit( $parts[1] ) || (int) $parts[1] < 1 ) {
+				return new WP_Error( 'invalid_auto_index', "auto_index must be 'type:N' format with N >= 1", [ 'status' => 400 ] );
+			}
+			$ai_type   = $parts[0];
+			$ai_target = (int) $parts[1];
+		}
+
+		$blocks       = parse_blocks( $content );
+		$type_counts  = [];
+		$flat_modules = [];
+		self::collect_readable_divi_blocks( $blocks, $flat_modules, $type_counts );
+
+		$all_matches = [];
+		$found_match = null;
+		foreach ( $flat_modules as $entry ) {
+			if ( 'auto_index' === $mode ) {
+				if ( $entry['type'] === $ai_type && $entry['auto_index'] === "{$ai_type}:{$ai_target}" ) {
+					$found_match = $entry;
+					break;
+				}
+			} elseif ( 'label' === $mode ) {
+				if ( $entry['admin_label'] === $label ) {
+					$all_matches[] = $entry;
+				}
+			} elseif ( false !== stripos( $entry['search_markup'], $match_text ) ) {
+				$found_match = $entry;
+				break;
+			}
+		}
+
+		if ( 'label' === $mode ) {
+			if ( empty( $all_matches ) ) {
+				return new WP_Error(
+					'block_not_found',
+					"No block found with admin label '{$label}'",
+					[ 'status' => 404, 'target_mode' => 'label', 'target_value' => $label ]
+				);
+			}
+			if ( $occurrence < 1 || $occurrence > count( $all_matches ) ) {
+				return new WP_Error(
+					'invalid_occurrence',
+					"Requested occurrence {$occurrence} but only " . count( $all_matches ) . " block(s) match label '{$label}'",
+					[
+						'status'        => 400,
+						'target_mode'   => 'label',
+						'target_value'  => $label,
+						'received'      => $occurrence,
+						'total_matches' => count( $all_matches ),
+					]
+				);
+			}
+			$found_match = $all_matches[ $occurrence - 1 ];
+			$found_match['total_matches'] = count( $all_matches );
+		}
+
+		if ( ! $found_match ) {
+			$target_desc  = 'auto_index' === $mode ? $auto_index : ( 'label' === $mode ? $label : "text '{$match_text}'" );
+			$target_value = 'auto_index' === $mode ? $auto_index : ( 'label' === $mode ? $label : $match_text );
+			$emit_mode    = 'text' === $mode ? 'match_text' : $mode;
+			return new WP_Error(
+				'block_not_found',
+				"No block found matching {$target_desc}",
+				[ 'status' => 404, 'target_mode' => $emit_mode, 'target_value' => $target_value ]
+			);
+		}
+
+		$target_desc = 'auto_index' === $mode ? $auto_index : ( 'label' === $mode ? $label : "text:{$match_text}" );
+
+		return array_merge( $found_match, [
+			'matched_by'  => $mode,
+			'target_desc' => $target_desc,
+			'start'       => 0,
+			'end'         => strlen( serialize_block( $found_match['block'] ) ),
+		] );
+	}
+
+	private static function collect_readable_divi_blocks( array $blocks, array &$flat_modules, array &$type_counts ) {
+		foreach ( $blocks as $block ) {
+			$name = isset( $block['blockName'] ) ? (string) $block['blockName'] : '';
+			if ( 0 === strpos( $name, 'divi/' ) ) {
+				$type = substr( $name, 5 );
+				if ( ! isset( $type_counts[ $type ] ) ) {
+					$type_counts[ $type ] = 0;
+				}
+				$type_counts[ $type ]++;
+
+				$attrs   = isset( $block['attrs'] ) && is_array( $block['attrs'] ) ? $block['attrs'] : [];
+				$shallow = $block;
+				$shallow['innerBlocks']  = [];
+				$shallow['innerContent'] = [];
+
+				$flat_modules[] = [
+					'block'         => $block,
+					'attrs'         => $attrs,
+					'type'          => $type,
+					'auto_index'    => $type . ':' . $type_counts[ $type ],
+					'admin_label'   => self::module_admin_label_from_attrs( $attrs ),
+					'search_markup' => serialize_block( $shallow ),
+				];
+			}
+
+			if ( isset( $block['innerBlocks'] ) && is_array( $block['innerBlocks'] ) && ! empty( $block['innerBlocks'] ) ) {
+				self::collect_readable_divi_blocks( $block['innerBlocks'], $flat_modules, $type_counts );
+			}
+		}
 	}
 
 	/**
