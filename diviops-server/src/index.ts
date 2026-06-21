@@ -5126,9 +5126,10 @@ function registerProTools(): void {
   //
   // Store-deployment helper surface. This intentionally complements
   // FluentCart's native MCP by focusing on DiviOps-specific launch
-  // readiness: metadata-only download rows, attaching an already-present
-  // server-side ZIP, and the FCP Pro updater changelog field. No binary
-  // upload and no signed buyer URLs.
+  // readiness: metadata-only download rows, validating an already-present
+  // server-side ZIP, copying it into FluentCart-managed download storage,
+  // and the FCP Pro updater changelog field. No MCP-client binary upload and
+  // no signed buyer URLs.
 
   // diviops_fc_download_list — POST /diviops/v1/pro/fluentcart/products/{id}/downloads
   registerProTool(
@@ -5170,7 +5171,7 @@ function registerProTools(): void {
     "diviops_fc_download_attach",
     {
       description:
-        "Attach an already-present server-side ZIP as a FluentCart downloadable-file row (Pro tier; V3.4; requires FluentCart Pro installed + activated). This is NOT a binary upload tool: `file_path` must resolve to a readable .zip on the WordPress server under ABSPATH or the uploads directory. The response never exposes file paths, file URLs, download identifiers, signed URLs, or buyer URLs. Required: product_id, file_path. Optional: file_name (defaults to basename(file_path), must end in .zip), title (defaults to filename without .zip), variation_ids (must belong to this product; empty means all variants), expected_sha1, expected_size, allow_duplicate (default false), dry_run. Duplicate detection rejects an existing row with the same file_name or title unless allow_duplicate:true is passed. Expected hash/size let operators verify the server-side file matches the locally built artifact before creating the row. Apply-mode success payload is { product_id, created: DownloadRow, downloads: DownloadRow[] } with DownloadRow metadata only. This tool only creates the download row and enables manage_downloadable; it does NOT set license_settings.global_update_file — follow with diviops_fc_license_settings_update using the created row ID. Error codes: invalid_input (400), not_found (404), fluentcart.download_duplicate (409), fluentcart.module_inactive (412), fluentcart.command_failed (500). Idempotency: false; repeat calls are rejected by duplicate detection unless allow_duplicate:true." +
+        "Attach an already-present server-side ZIP as a FluentCart downloadable-file row (Pro tier; V3.4; requires FluentCart Pro installed + activated). This is NOT a binary upload tool: `file_path` must resolve to a readable .zip on the WordPress server under ABSPATH or the uploads directory. Apply mode copies the validated file into FluentCart's managed `wp-content/uploads/fluent-cart/*__fluent-cart__*.zip` storage before creating the row, because FluentCart's signed package endpoint serves that managed filename shape. The response never exposes file paths, file URLs, download identifiers, signed URLs, or buyer URLs. Required: product_id, file_path. Optional: file_name (defaults to basename(file_path), must end in .zip), title (defaults to filename without .zip), variation_ids (must belong to this product; empty means all variants), expected_sha1, expected_size, allow_duplicate (default false), dry_run. Duplicate detection rejects an existing row with the same file_name or title unless allow_duplicate:true is passed. Expected hash/size let operators verify the server-side file matches the locally built artifact before creating the row. Apply-mode success payload is { product_id, created: DownloadRow, downloads: DownloadRow[] } with DownloadRow metadata only. This tool only creates the download row and enables manage_downloadable; it does NOT set license_settings.global_update_file — follow with diviops_fc_license_settings_update using the created row ID. Error codes: invalid_input (400), not_found (404), fluentcart.download_duplicate (409), fluentcart.module_inactive (412), fluentcart.command_failed (500). Idempotency: false; repeat calls are rejected by duplicate detection unless allow_duplicate:true." +
         DRY_RUN_DESC_SUFFIX,
       inputSchema: {
         product_id: z
