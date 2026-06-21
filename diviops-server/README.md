@@ -188,6 +188,13 @@ markup, export metadata, and best-effort attachment inventory from upload URLs
 and attachment IDs. It strips query strings, fragments, credentials, nonces,
 cookies, signed URL material, admin URLs, and local filesystem paths.
 
+The MCP server also writes the same source payload to a bounded local artifact
+under `.diviops-tmp/cross-env-source-payloads/` and returns
+`data.source_payload_ref`. Use that reference for large real headers when
+calling the Pro `diviops_cross_env_header_apply` tool; it avoids asking an LLM
+to re-emit large markup byte-for-byte. The reference is a server-created handle
+plus checksum, not an arbitrary filesystem path.
+
 To collect the target JSON from the target WordPress site, call the Free/core
 read-only MCP tool `diviops_cross_env_target_context_get` against the target
 server and save the returned `data` object as `target.json`. Optional
@@ -210,9 +217,11 @@ Workflow:
 3. Run `diviops-cross-env-preflight --source source.json --target target.json --dry-run`.
 
 `--apply` is intentionally refused. To mutate a target, use the separate
-Pro-gated `diviops_cross_env_header_apply` tool with the reviewed fingerprint.
-That MVP still refuses media upload/import, global color creation/import,
-off-canvas reconcile, and new target layout creation.
+Pro-gated `diviops_cross_env_header_apply` tool with the reviewed fingerprint
+and either inline `source_payload` for small/disposable tests or
+`source_payload_ref` for large real headers. That MVP still refuses media
+upload/import, global color creation/import, off-canvas reconcile, and new
+target layout creation.
 
 ## Response contract
 

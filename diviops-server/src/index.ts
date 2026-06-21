@@ -29,6 +29,11 @@ import {
   type SourceLayoutPayload,
   type TargetLayoutContext,
 } from "./cross-env-preflight/header-preflight.js";
+import {
+  createSourcePayloadRef,
+  loadSourcePayloadRef,
+  type SourcePayloadRef,
+} from "./cross-env-preflight/source-payload-ref.js";
 import { optimizeSchema } from "./schema-optimizer.js";
 import { schemaModuleRoute } from "./schema-route.js";
 import { createWpCli } from "./wp-cli.js";
@@ -2364,7 +2369,7 @@ registerPluginTool(
   "diviops_cross_env_source_export_get",
   {
     description:
-      "Export read-only, secret-free source-site payload for the offline cross-environment Theme Builder header preflight. Produces JSON suitable for `diviops-cross-env-preflight --source`: source origin, `tb_header_layout` metadata, sanitized markup, bare sha256 checksum of that exported markup, export timestamp, DiviOps plugin version, and best-effort attachment inventory from markup media URLs and attachment IDs. This Free/core tool does not write layouts, upload media, create global colors, reconcile references, expose cookies, nonces, app passwords, signed URLs, query strings, fragments, admin URLs, or local filesystem paths. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }; unsupported source_kind returns invalid_input, and missing/non-header source layouts return not_found.",
+      "Export read-only, secret-free source-site payload for the offline cross-environment Theme Builder header preflight. Produces JSON suitable for `diviops-cross-env-preflight --source`: source origin, `tb_header_layout` metadata, sanitized markup, bare sha256 checksum of that exported markup, export timestamp, DiviOps plugin version, and best-effort attachment inventory from markup media URLs and attachment IDs. The MCP server also writes the exported payload to a bounded local artifact under `.diviops-tmp/cross-env-source-payloads/` and returns `source_payload_ref` so large real headers can be applied later without inlining full markup through the model. This Free/core tool does not write WordPress layouts, upload media, create global colors, reconcile references, expose cookies, nonces, app passwords, signed URLs, query strings, fragments, admin URLs, or arbitrary local filesystem paths. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }; unsupported source_kind returns invalid_input, and missing/non-header source layouts return not_found.",
     inputSchema: {
       source_id: z
         .number()
@@ -2386,19 +2391,33 @@ registerPluginTool(
     _meta: { idempotent: "true" },
   },
   async ({ source_id, source_kind }) => {
-    const body: Record<string, unknown> = {
-      source_id,
-      source_kind: source_kind ?? "tb_header_layout",
-    };
-    const result = await wp.requestEnveloped("/cross-env/source-export", {
-      method: "POST",
-      body,
+    const withRef = await wrapResponse(async () => {
+      const body: Record<string, unknown> = {
+        source_id,
+        source_kind: source_kind ?? "tb_header_layout",
+      };
+      const result = await wp.requestEnveloped<SourceLayoutPayload>("/cross-env/source-export", {
+        method: "POST",
+        body,
+      });
+      return envelopeMap(result, (data) => ({
+        ...data,
+        source_payload_ref: createSourcePayloadRef(data),
+        _meta: {
+          ...(typeof (data as { _meta?: unknown })._meta === "object" &&
+          (data as { _meta?: unknown })._meta !== null
+            ? ((data as { _meta?: Record<string, unknown> })._meta ?? {})
+            : {}),
+          source_payload_ref:
+            "server-local artifact handle for diviops_cross_env_header_apply; stores the same source payload under .diviops-tmp/cross-env-source-payloads and is bounded by handle + checksum + TTL",
+        },
+      }));
     });
     return {
       content: [
         {
           type: "text" as const,
-          text: serializeEnvelope(result, "diviops_cross_env_source_export_get"),
+          text: serializeEnvelope(withRef, "diviops_cross_env_source_export_get"),
         },
       ],
     };
@@ -4133,6 +4152,22 @@ const CrossEnvSourcePayloadSchema = z
   })
   .passthrough();
 
+const CrossEnvSourcePayloadRefSchema = z
+  .object({
+    handle: z
+      .string()
+      .regex(/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/)
+      .describe("Server-created source payload artifact handle returned by diviops_cross_env_source_export_get."),
+    checksum: z
+      .string()
+      .regex(/^(sha256:)?[a-fA-F0-9]{64}$/)
+      .describe("sha256 checksum of the referenced source payload markup."),
+    algorithm: z.literal("sha256").optional(),
+    storage: z.literal("server_local_artifact").optional(),
+    expires_at: z.string().optional(),
+  })
+  .passthrough();
+
 function normalizeReviewedFingerprint(value: string): string {
   return value.trim().replace(/^sha256:/i, "").toLowerCase();
 }
@@ -4163,10 +4198,13 @@ function registerProTools(): void {
     "diviops_cross_env_header_apply",
     {
       description:
-        "Apply a reviewed cross-environment Theme Builder header payload into an existing target header layout (Pro tier; requires the cross_env Pro module). This first MVP is intentionally narrow: it requires `confirm_apply: true`, a source export payload with checksum, an existing target `destination_id`, and the reviewed `confirmation_binding.fingerprint` from `diviops-cross-env-preflight`. The server re-exports current target context, reruns the TypeScript preflight engine, refuses fingerprint mismatch, unsafe verdicts, destination checksum drift, missing/ambiguous attachment remaps, missing global-color value evidence, and off-canvas/canvas references, then calls the Pro route with the verified plan. The Pro route re-loads the destination post, verifies the current checksum again, builds content only from source-origin upload URL rewrites and proven attachment-ID remaps, writes with readback/rollback evidence, and runs Divi static-resource cleanup plus explicit _divi_dynamic_assets_cached_feature_used cleanup. No media upload/import, global-color creation/import, new layout creation, off-canvas reconcile, public/store/license change, or live-site smoke is performed by this tool. Returns the standardized envelope { ok, data?, error: { code, message, hint?, data? } }. Error codes include cross_env.confirmation_required, cross_env.fingerprint_mismatch, cross_env.preflight_not_safe, cross_env.destination_checksum_drift, cross_env.source_checksum_mismatch, cross_env.content_write_corruption, invalid_input, not_found, forbidden, and wp_error.",
+        "Apply a reviewed cross-environment Theme Builder header payload into an existing target header layout (Pro tier; requires the cross_env Pro module). This first MVP is intentionally narrow: it requires `confirm_apply: true`, either an inline source export payload or a bounded `source_payload_ref` returned by diviops_cross_env_source_export_get, an existing target `destination_id`, and the reviewed `confirmation_binding.fingerprint` from `diviops-cross-env-preflight`. Large real headers should use `source_payload_ref`; inline `source_payload` remains supported for small/disposable tests. The server loads referenced payload bytes from its own `.diviops-tmp/cross-env-source-payloads/` artifact store, verifies checksum, re-exports current target context, reruns the TypeScript preflight engine, refuses fingerprint mismatch, unsafe verdicts, destination checksum drift, missing/ambiguous attachment remaps, missing global-color value evidence, and off-canvas/canvas references, then calls the Pro route with the verified plan. The Pro route re-loads the destination post, verifies the current checksum again, builds content only from source-origin upload URL rewrites and proven attachment-ID remaps, writes with readback/rollback evidence, and runs Divi static-resource cleanup plus explicit _divi_dynamic_assets_cached_feature_used cleanup. No media upload/import, global-color creation/import, new layout creation, off-canvas reconcile, public/store/license change, or live-site smoke is performed by this tool. Returns the standardized envelope { ok, data?, error: { code, message, hint?, data? } }. Error codes include cross_env.confirmation_required, cross_env.source_payload_ref_invalid, cross_env.fingerprint_mismatch, cross_env.preflight_not_safe, cross_env.destination_checksum_drift, cross_env.source_checksum_mismatch, cross_env.content_write_corruption, invalid_input, not_found, forbidden, and wp_error.",
       inputSchema: {
-        source_payload: CrossEnvSourcePayloadSchema.describe(
-          "The `data` object returned by diviops_cross_env_source_export_get on the source site.",
+        source_payload: CrossEnvSourcePayloadSchema.optional().describe(
+          "The `data` object returned by diviops_cross_env_source_export_get on the source site. Use source_payload_ref instead for large real headers.",
+        ),
+        source_payload_ref: CrossEnvSourcePayloadRefSchema.optional().describe(
+          "Bounded server-local artifact reference returned as data.source_payload_ref by diviops_cross_env_source_export_get. Preferred for large real headers because it avoids inlining full markup through the model.",
         ),
         destination_id: z
           .number()
@@ -4191,12 +4229,14 @@ function registerProTools(): void {
     },
     async ({
       source_payload,
+      source_payload_ref,
       destination_id,
       destination_kind,
       reviewed_fingerprint,
       confirm_apply,
     }: {
-      source_payload: SourceLayoutPayload;
+      source_payload?: SourceLayoutPayload;
+      source_payload_ref?: SourcePayloadRef;
       destination_id: number;
       destination_kind?: "tb_header_layout";
       reviewed_fingerprint: string;
@@ -4210,11 +4250,42 @@ function registerProTools(): void {
             "Review the preflight report, then retry with confirm_apply: true.",
           );
         }
+        if (source_payload && source_payload_ref) {
+          withCode(
+            "invalid_input",
+            "Provide either source_payload or source_payload_ref, not both.",
+            "Use source_payload_ref for large real headers and inline source_payload only for small/disposable tests.",
+            { fields: ["source_payload", "source_payload_ref"] },
+          );
+        }
+        if (!source_payload && !source_payload_ref) {
+          withCode(
+            "invalid_input",
+            "Either source_payload or source_payload_ref is required.",
+            "Run diviops_cross_env_source_export_get and pass its data.source_payload_ref for large real headers.",
+            { fields: ["source_payload", "source_payload_ref"] },
+          );
+        }
+        let resolvedSourcePayload: SourceLayoutPayload;
+        if (source_payload) {
+          resolvedSourcePayload = source_payload;
+        } else {
+          try {
+            resolvedSourcePayload = loadSourcePayloadRef(source_payload_ref);
+          } catch (err) {
+            withCode(
+              "cross_env.source_payload_ref_invalid",
+              err instanceof Error ? err.message : String(err),
+              "Re-run diviops_cross_env_source_export_get and pass the fresh data.source_payload_ref.",
+              { source_payload_ref },
+            );
+          }
+        }
 
         const targetBody: Record<string, unknown> = {
           destination_id,
           destination_kind: destination_kind ?? "tb_header_layout",
-          ...sourceHintsFromPayload(source_payload),
+          ...sourceHintsFromPayload(resolvedSourcePayload),
         };
         const targetEnvelope = await wp.requestEnveloped<TargetLayoutContext>(
           "/cross-env/target-context",
@@ -4223,7 +4294,7 @@ function registerProTools(): void {
         if (!targetEnvelope.ok) return targetEnvelope;
 
         const report = preflightCrossEnvHeaderSync({
-          source: source_payload,
+          source: resolvedSourcePayload,
           target: targetEnvelope.data,
         });
         const reviewed = normalizeReviewedFingerprint(reviewed_fingerprint);
@@ -4258,8 +4329,8 @@ function registerProTools(): void {
             confirm_apply: true,
             destination_id,
             destination_kind: destination_kind ?? "tb_header_layout",
-            source_payload,
-            source_checksum: source_payload.checksum,
+            source_payload: resolvedSourcePayload,
+            source_checksum: resolvedSourcePayload.checksum,
             destination_checksum: report.target.destination_checksum,
             reviewed_fingerprint: reviewed,
             preflight_report: report,
