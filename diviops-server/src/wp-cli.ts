@@ -9,7 +9,7 @@
 import { execFile } from 'child_process';
 import { readdirSync, readFileSync, existsSync } from 'fs';
 import { homedir } from 'os';
-import { join } from 'path';
+import { dirname, isAbsolute, join, resolve, sep } from 'path';
 import {
   resolveSafeFsRoot,
   fsValidationDisabled,
@@ -219,12 +219,16 @@ function parseCommand(command: string): string[] {
 
   for (let i = 0; i < command.length; i++) {
     const ch = command[i];
+    const next = command[i + 1];
 
-    if (ch === "'" && !inDouble) {
+    if (ch === '\\' && !inSingle && next !== undefined) {
+      current += next;
+      i++;
+    } else if (ch === "'" && !inDouble) {
       inSingle = !inSingle;
     } else if (ch === '"' && !inSingle) {
       inDouble = !inDouble;
-    } else if (ch === ' ' && !inSingle && !inDouble) {
+    } else if (/\s/.test(ch) && !inSingle && !inDouble) {
       if (current.length > 0) {
         args.push(current);
         current = '';
@@ -240,6 +244,129 @@ function parseCommand(command: string): string[] {
 
   return args;
 }
+
+function isWithinWpPath(candidate: string, wpPath: string): boolean {
+  const absolute = resolve(candidate);
+  const root = resolve(wpPath);
+  return absolute === root || absolute.startsWith(root + sep);
+}
+
+function normalizePathValue(value: string, wpPath: string): string {
+  return isAbsolute(value) ? value : resolve(wpPath, value);
+}
+
+function coalesceSplitPathValue(
+  args: string[],
+  startIndex: number,
+  wpPath: string,
+): { value: string; nextIndex: number } {
+  const first = args[startIndex];
+  if (first === undefined) {
+    return { value: '', nextIndex: startIndex };
+  }
+
+  const normalizedFirst = normalizePathValue(first, wpPath);
+  if (!isAbsolute(first)) {
+    if (existsSync(normalizedFirst)) {
+      return { value: normalizedFirst, nextIndex: startIndex + 1 };
+    }
+  } else {
+    const root = resolve(wpPath);
+    if (isWithinWpPath(normalizedFirst, root) && existsSync(normalizedFirst)) {
+      return { value: normalizedFirst, nextIndex: startIndex + 1 };
+    }
+
+    const couldBeWpPathSplit = root.startsWith(resolve(first) + ' ');
+    if (!couldBeWpPathSplit && !isWithinWpPath(normalizedFirst, root)) {
+      return { value: normalizedFirst, nextIndex: startIndex + 1 };
+    }
+  }
+
+  let bestParentMatch: { value: string; nextIndex: number } | null = null;
+  for (let endIndex = startIndex + 1; endIndex < args.length; endIndex++) {
+    if (args[endIndex]?.startsWith('--')) break;
+    const joined = args.slice(startIndex, endIndex + 1).join(' ');
+    const normalized = normalizePathValue(joined, wpPath);
+    if (!isWithinWpPath(normalized, wpPath)) {
+      continue;
+    }
+    if (existsSync(normalized)) {
+      return { value: normalized, nextIndex: endIndex + 1 };
+    }
+    if (existsSync(dirname(normalized))) {
+      bestParentMatch = { value: normalized, nextIndex: endIndex + 1 };
+    }
+  }
+
+  return bestParentMatch ?? { value: normalizedFirst, nextIndex: startIndex + 1 };
+}
+
+function normalizePositionalPathArg(
+  args: string[],
+  pathIndex: number,
+  wpPath: string,
+): string[] {
+  if (args[pathIndex] === undefined || args[pathIndex]?.startsWith('--')) {
+    return args;
+  }
+  const before = args.slice(0, pathIndex);
+  const { value, nextIndex } = coalesceSplitPathValue(args, pathIndex, wpPath);
+  return [...before, value, ...args.slice(nextIndex)];
+}
+
+function normalizeDirFlagArgs(args: string[], wpPath: string): string[] {
+  const normalized: string[] = [];
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    if (arg === '--dir' && args[i + 1] !== undefined) {
+      const { value, nextIndex } = coalesceSplitPathValue(args, i + 1, wpPath);
+      normalized.push(arg, value);
+      i = nextIndex - 1;
+    } else if (arg?.startsWith('--dir=')) {
+      const rawValue = arg.slice('--dir='.length);
+      const synthetic = [rawValue, ...args.slice(i + 1)];
+      const { value, nextIndex } = coalesceSplitPathValue(synthetic, 0, wpPath);
+      normalized.push(`--dir=${value}`);
+      i += nextIndex - 1;
+    } else {
+      normalized.push(arg);
+    }
+  }
+  return normalized;
+}
+
+function normalizeWpCliPathArgs(args: string[], wpPath: string): string[] {
+  const threeWord = args.slice(0, 3).join(' ');
+  const twoWord = args.slice(0, 2).join(' ');
+  const oneWord = args[0];
+
+  if (oneWord === 'eval-file' || oneWord === 'import') {
+    return normalizePositionalPathArg(args, 1, wpPath);
+  }
+
+  if (twoWord === 'acf export' || twoWord === 'acf import') {
+    return normalizePositionalPathArg(args, 2, wpPath);
+  }
+
+  if (threeWord === 'scf json import' || threeWord === 'acf json import') {
+    return normalizePositionalPathArg(args, 3, wpPath);
+  }
+
+  if (
+    oneWord === 'export' ||
+    threeWord === 'scf json export' ||
+    threeWord === 'acf json export'
+  ) {
+    return normalizeDirFlagArgs(args, wpPath);
+  }
+
+  return args;
+}
+
+export const __wpCliTesting = {
+  parseCommand,
+  normalizeWpCliPathArgs,
+};
 
 /**
  * Find the latest installed version of a Local lightning-service.
@@ -582,7 +709,7 @@ export function createWpCli(config: WpCliConfig) {
       exitCode: number | null;
       failureKind?: 'rejected' | 'spawn_failed' | 'killed' | 'exited';
     }> {
-      return runArgv(parseCommand(command));
+      return runArgv(normalizeWpCliPathArgs(parseCommand(command), config.wpPath));
     },
 
     /**

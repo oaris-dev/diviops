@@ -1,0 +1,23 @@
+# DiviOps Agent Changelog
+
+This file is the extended plugin-local changelog for `diviops-agent`.
+
+Policy:
+
+- Keep the current public release entry in `readme.txt` for WordPress.org.
+- Use this file for longer plugin-local history as the Free WordPress.org channel matures.
+- Keep entries customer-facing. Avoid internal issue numbers unless they are needed to explain a user-visible change.
+- Do not include secrets, credentials, customer data, or environment-specific URLs.
+
+## 1.5.5
+
+- Adds preflight metadata used by the MCP server's `diviops_meta_info` surface, including richer plugin version records for connected-suite checks.
+- Keeps the capability handshake additive and backwards-compatible for existing MCP clients.
+
+## 1.5.4
+
+- Current Free plugin release line for the DiviOps Agent REST bridge.
+- Provides authenticated `/diviops/v1/*` endpoints and capability handshake support for the DiviOps MCP server.
+- Establishes WordPress.org readiness metadata with explicit `Stable tag: 1.5.4`, `Tested up to: 7.0`, GPLv2-or-later license metadata, external-service/authentication disclosure, and Free/Pro boundary language.
+
+Historical release details before this plugin-local changelog remain in the GitHub release history until they are intentionally backfilled.

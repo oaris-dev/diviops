@@ -337,6 +337,18 @@ trait DiviOps_Agent_Meta {
 			}
 
 			if ( $use_native ) {
+				$wpfs = null;
+				if ( $pre['existed'] ) {
+					$wpfs = self::init_wp_filesystem();
+				}
+				if ( $pre['existed'] && ! $wpfs ) {
+					return self::envelope_error(
+						'meta_flush_cache.fs_init_failed',
+						'Failed to initialize WP_Filesystem for targeted cache clear. The native backend requires it to delete et-cache files on hosts where Divi writes via FTP/SSH credentials.',
+						'On managed hosts, define FS_METHOD / saved FTP credentials in wp-config.php so WP_Filesystem can authenticate.',
+						500
+					);
+				}
 				// preserve_vb_files=true mirrors Divi's own preset / global-data
 				// / VB update call sites (GlobalPreset.php, GlobalData.php,
 				// OffCanvasHooks.php) — keeps `-vb-*` runtime CSS so an open
@@ -346,14 +358,24 @@ trait DiviOps_Agent_Meta {
 				\ET_Core_PageResource::remove_static_resources(
 					$post_id, 'all', false, 'all', true, true
 				);
+				$post_dir_sweep = $wpfs
+					? self::sweep_post_et_cache_dir_with_wpfs( $cache_root, $post_id, $wpfs, true )
+					: [
+						'existed'            => false,
+						'files'              => 0,
+						'bytes'              => 0,
+						'preserved_vb_files' => 0,
+						'dir_removed'        => false,
+					];
 				$response = [
-					'mode'        => 'post_id',
-					'backend'     => 'divi_native',
-					'cache_root'  => $cache_root,
-					'flushed'     => [ $post_id ],
-					'files_freed' => $pre['files'],
-					'bytes_freed' => $pre['bytes'],
-					'scope_note'  => 'Divi native clearer also removed matching Theme Builder CSS across other post dirs and purged object/module/post/dynamic-assets caches. Visual Builder (-vb-*) runtime CSS preserved to avoid unstyling an open VB session. files_freed / bytes_freed reflect the pre-delete snapshot of et-cache/' . $post_id . '/ only — they are a lower bound; the clearer may have freed more outside this dir.',
+					'mode'           => 'post_id',
+					'backend'        => 'divi_native',
+					'cache_root'     => $cache_root,
+					'flushed'        => [ $post_id ],
+					'files_freed'    => $pre['files'],
+					'bytes_freed'    => $pre['bytes'],
+					'post_dir_sweep' => $post_dir_sweep,
+					'scope_note'     => 'Divi native clearer also removed matching Theme Builder CSS across other post dirs and purged object/module/post/dynamic-assets caches. After the native call, DiviOps also performs a targeted WP_Filesystem sweep of et-cache/' . $post_id . '/ to physically remove stale compiled files the native clearer can leave behind; Visual Builder (-vb-*) runtime CSS is preserved to avoid unstyling an open VB session. files_freed / bytes_freed reflect the pre-delete snapshot of et-cache/' . $post_id . '/ only — they are a lower bound; the clearer may have freed more outside this dir.',
 				];
 				if ( $cleanup_dynamic_assets ) {
 					$response['dynamic_assets_cleanup'] = self::dynamic_assets_postmeta_cleanup_report( [ $post_id ], $cleanup_canvas_refs, false );
@@ -1377,6 +1399,62 @@ trait DiviOps_Agent_Meta {
 	}
 
 	/**
+	 * Physically sweep one numeric et-cache/{post_id}/ directory through
+	 * WP_Filesystem. Used as a targeted reinforcement after Divi's native
+	 * post clear because real dogfooding found remove_static_resources()
+	 * can leave the layout dir on disk even though cache invalidations run.
+	 *
+	 * @param string              $cache_root
+	 * @param int                 $post_id
+	 * @param \WP_Filesystem_Base $wpfs
+	 * @param bool                $preserve_vb_files Preserve `-vb-` runtime CSS for open Visual Builder sessions.
+	 * @return array{existed: bool, files: int, bytes: int, preserved_vb_files: int, dir_removed: bool}
+	 */
+	private static function sweep_post_et_cache_dir_with_wpfs( $cache_root, $post_id, $wpfs, $preserve_vb_files = true ) {
+		$dir = $cache_root . '/' . intval( $post_id );
+		$result = [
+			'existed'            => false,
+			'files'              => 0,
+			'bytes'              => 0,
+			'preserved_vb_files' => 0,
+			'dir_removed'        => false,
+		];
+		if ( ! is_dir( $dir ) ) {
+			return $result;
+		}
+		$result['existed'] = true;
+		try {
+			$it = new \RecursiveIteratorIterator(
+				new \RecursiveDirectoryIterator( $dir, \RecursiveDirectoryIterator::SKIP_DOTS ),
+				\RecursiveIteratorIterator::CHILD_FIRST
+			);
+		} catch ( \Throwable $e ) {
+			return $result;
+		}
+		foreach ( $it as $info ) {
+			$path = $info->getPathname();
+			if ( $info->isFile() ) {
+				if ( $preserve_vb_files && false !== strpos( $info->getFilename(), '-vb-' ) ) {
+					$result['preserved_vb_files']++;
+					continue;
+				}
+				$size = filesize( $path );
+				if ( $wpfs->delete( $path ) ) {
+					$result['files']++;
+					if ( false !== $size ) {
+						$result['bytes'] += $size;
+					}
+				}
+			} elseif ( $info->isDir() ) {
+				$wpfs->rmdir( $path, false );
+			}
+		}
+		$wpfs->rmdir( $dir, false );
+		$result['dir_removed'] = ! is_dir( $dir );
+		return $result;
+	}
+
+	/**
 	 * Is this basename a Divi-naming-convention CSS file? Mirrors Divi's
 	 * ET_Core_PageResource::_is_valid_divi_css_file filter.
 	 *
@@ -1597,6 +1675,7 @@ trait DiviOps_Agent_Meta {
 				'pro_version',
 				'available_targets',
 				'active_modules',
+				'plugins',
 			];
 			foreach ( $allowed_extension_keys as $key ) {
 				if ( array_key_exists( $key, $extensions ) ) {
@@ -1626,6 +1705,9 @@ trait DiviOps_Agent_Meta {
 		}
 		if ( isset( $response['active_modules'] ) && is_array( $response['active_modules'] ) ) {
 			$response['active_modules'] = (object) $response['active_modules'];
+		}
+		if ( isset( $response['plugins'] ) && is_array( $response['plugins'] ) ) {
+			$response['plugins'] = (object) $response['plugins'];
 		}
 
 		return rest_ensure_response( $response );

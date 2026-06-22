@@ -454,6 +454,13 @@ export class WPClient {
     ) {
       result.active_modules = {};
     }
+    if (
+      result.plugins === null ||
+      typeof result.plugins !== 'object' ||
+      Array.isArray(result.plugins)
+    ) {
+      result.plugins = {};
+    }
 
     return result;
   }

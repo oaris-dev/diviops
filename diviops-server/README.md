@@ -83,7 +83,7 @@ The skill enforces the Divi block format, the design system, and the response co
 
 ## Tools at a glance
 
-The server exposes **77 always-on tools** across the categories below. Each category links to representative tools; the full table lives in [server-reference.md](../docs/server-reference.md).
+The server exposes **78 always-on tools** across the categories below. Each category links to representative tools; the full table lives in [server-reference.md](../docs/server-reference.md).
 
 | Category | Use case | Tool prefixes |
 |----------|----------|---------------|
@@ -96,6 +96,8 @@ The server exposes **77 always-on tools** across the categories below. Each cate
 | Render + validate | Preview HTML, validate block markup | `render_preview`, `validate_blocks` |
 | WP-CLI passthrough | Escape hatch for site ops | `meta_wp_cli` |
 | Cache + meta | Connection probe, identity, icons, cache flush | `meta_*` |
+
+Use `diviops_meta_info` as the S0 preflight before dogfooding or product work. It returns `server_version`, a numeric `tool_count`, a `tools` catalog summary (`registered_total`, always-on count, Pro possible/registered counts by target), `plugins` version records for `diviops-agent`, `diviops-agent-pro`, FluentCart, and FluentCart Pro when available, plus the existing handshake and slice state.
 
 Additional **conditionally-registered Pro tools** appear only on sites that have the Pro plugin (`diviops-agent-pro`) active alongside the target coverage plugin:
 
@@ -172,11 +174,13 @@ The MVP supports `tb_header_layout` source payloads preflighted against an
 existing `tb_header_layout` target context. It reports source-domain upload URL
 rewrites, attachment remap status, `gcid-*` target resolution including Divi
 built-in customizer colors, resolved target global-color value evidence,
-off-canvas/canvas refusal, and the required cache cleanup plan. Each report also
-emits a deterministic `confirmation_binding` fingerprint over the reviewed
-source identity/checksum, target identity/current target checksum, rewrite plan,
-cache plan, blocker/operator-action codes, reference-resolution summaries, and
-the per-`gcid` value evidence for target colors referenced by the source layout.
+referenced `modulePreset` target-presence status, off-canvas/canvas refusal, and
+the required cache cleanup plan. Each report also emits a deterministic
+`confirmation_binding` fingerprint over the reviewed source identity/checksum,
+target identity/current target checksum, rewrite plan, cache plan,
+blocker/operator-action codes, reference-resolution summaries, target module
+preset resolution, and the per-`gcid` value evidence for target colors
+referenced by the source layout.
 The fingerprint is reviewed-plan evidence for the Pro-gated
 `diviops_cross_env_header_apply` tool. The CLI itself still has no apply path.
 
@@ -185,8 +189,10 @@ read-only MCP tool `diviops_cross_env_source_export_get` and save the returned
 `data` object as `source.json`. The export includes the source origin, header
 layout metadata, sanitized markup, a bare SHA-256 checksum of the exported
 markup, export metadata, and best-effort attachment inventory from upload URLs
-and attachment IDs. It strips query strings, fragments, credentials, nonces,
-cookies, signed URL material, admin URLs, and local filesystem paths.
+and attachment IDs. It also inventories referenced `attrs.modulePreset` IDs
+without exporting preset definitions. It strips query strings, fragments,
+credentials, nonces, cookies, signed URL material, admin URLs, and local
+filesystem paths.
 
 The MCP server also writes the same source payload to a bounded local artifact
 under `.diviops-tmp/cross-env-source-payloads/` and returns
@@ -207,6 +213,9 @@ to the target state without exposing the raw target content. It also includes
 `global_color_value_evidence`, a deterministic SHA-256 digest map for resolved
 user global colors and WP Customizer-backed built-ins; preflight binds only the
 entries that are referenced by source markup.
+It also includes target D5 module preset IDs, without preset definitions, so the
+preflight can fail closed when source markup references a module preset the
+target site does not have.
 
 Workflow:
 
@@ -308,7 +317,7 @@ Common quick fixes — full reference in [troubleshooting.md](../docs/troublesho
 - **`npx` fails with "could not determine executable to run"** — use `npx -y --package @diviops/mcp-server diviops-mcp`; this explicitly selects the MCP server bin.
 - **"Connection failed"** — verify the plugin is active by visiting `{WP_URL}/wp-json/diviops/v1/schema/settings`; test the credentials with `curl -u "user:pass" …`.
 - **"This tool requires plugin capability"** — the plugin doesn't advertise the capability this tool needs. Update the plugin to the latest release.
-- **Preset edits not visible on the frontend** — Divi serves frontend CSS from `wp-content/et-cache/{post_id}/`, which `wp cache flush` doesn't touch. Use `diviops_meta_flush_cache` after preset writes.
+- **Preset edits not visible on the frontend** — Divi serves frontend CSS from `wp-content/et-cache/{post_id}/`, which `wp cache flush` doesn't touch. Use `diviops_meta_flush_cache` after preset writes; `post_id` mode also sweeps that exact directory and reports `post_dir_sweep` evidence.
 
 ## Learn more
 

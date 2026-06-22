@@ -8,7 +8,7 @@ The WordPress companion plugin for `@diviops/mcp-server`. Pairs with the MCP ser
 
 ## Requirements
 
-- WordPress 6.0+
+- WordPress 6.5+
 - Divi 5 theme (5.1.0+)
 - PHP 7.4+
 - Application Passwords enabled (default since WP 5.6)
@@ -31,6 +31,34 @@ The MCP server updates through npm. The Free WordPress plugin does not yet recei
 4. Choose **Replace current with uploaded** when WordPress asks.
 
 Your Application Password and MCP client config stay unchanged. Purchased Pro users activate update access separately in **DiviOps → Pro License**.
+
+## WordPress.org readiness metadata
+
+The plugin includes a WordPress.org-format `readme.txt` and a plugin-local `changelog.txt`. The readme keeps the current public release entry; longer plugin-local history belongs in `changelog.txt` as the WordPress.org channel matures.
+
+Current metadata policy:
+
+- `Stable tag` matches the plugin header `Version` (`1.5.5`).
+- `Requires at least` and `Requires PHP` mirror the main plugin header.
+- `Tested up to` is evidence-based for this repo/substrate and should not be raised until the Free plugin is actually tested on that WordPress version.
+- External-service/authentication disclosure must mention the separately distributed npm MCP server, WordPress Application Passwords, and the rule that secrets do not belong in issues, examples, screenshots, or repo files.
+- Free/Pro copy must keep the Free plugin useful while making clear that Pro is the paid workflow-leverage layer and that not every MCP tool is Free-backed.
+
+Before a WordPress.org submission, validate the readme and plugin package:
+
+```bash
+git diff --check
+php -l wp-content/plugins/diviops-agent/diviops-agent.php
+```
+
+Then run the official WordPress.org readme validator against `wp-content/plugins/diviops-agent/readme.txt` and run Plugin Check on the packaged plugin. If WP-CLI is available in the target environment, the Plugin Check command shape is:
+
+```bash
+wp plugin install plugin-check --activate
+wp plugin check diviops-agent --checks=plugin_repo
+```
+
+The current GitHub/manual beta ZIP path is unchanged until a later WordPress.org SVN submission is explicitly authorized.
 
 ## Pairing with the MCP server
 

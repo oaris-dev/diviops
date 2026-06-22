@@ -87,6 +87,16 @@ export interface HandshakeTarget {
 }
 
 /**
+ * Advisory plugin version/presence record contributed by extension plugins.
+ * This is a diagnostics/preflight surface only; capability gates continue to
+ * use the explicit capability map and target/module flags.
+ */
+export interface HandshakePluginInfo {
+  active: boolean;
+  version?: string | null;
+}
+
+/**
  * Shape returned by `POST /diviops/v1/handshake`.
  *
  * `capabilities` is a per-tool map keyed by post-rename tool slug
@@ -118,6 +128,8 @@ export interface HandshakeResult {
   available_targets?: Record<string, HandshakeTarget>;
   /** ADR-003 — per-target admin-controlled activation toggle. */
   active_modules?: Record<string, boolean>;
+  /** Advisory installed-plugin versions for S0 preflight reports. */
+  plugins?: Record<string, HandshakePluginInfo>;
 }
 
 export function proToolGatesSatisfied(

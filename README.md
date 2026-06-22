@@ -53,6 +53,8 @@ Verify: visit `http://your-site.local/wp-json/diviops/v1/schema/settings` — yo
 
 **Purchased Pro:** upload and activate **`diviops-agent-pro.zip`** after the Free plugin, then open **DiviOps → Pro License** and activate your license key. Pro runtime coverage requires the Pro plugin; license activation gates updates and support.
 
+**WordPress.org metadata during beta:** `diviops-agent.zip` includes the plugin-local `readme.txt`, `changelog.txt`, and asset-plan notes so the Free plugin stays WordPress.org-ready at the metadata level. This does not change the active distribution path: GitHub Releases and manual ZIP uploads remain the Free beta update channel until a later WordPress.org SVN submission is authorized. A future submission still needs SVN trunk/tags state plus final production banner, icon, and screenshot assets.
+
 ### 2. Create an Application Password
 
 In **WP Admin → Users → Your Profile → Application Passwords**:

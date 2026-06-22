@@ -278,6 +278,7 @@ trait DiviOps_Agent_ThemeBuilder {
 			'global_colors'                => (object) self::cross_env_global_colors(),
 			'global_color_value_evidence'  => (object) self::cross_env_global_color_value_evidence(),
 			'builtin_customizer_color_ids' => self::cross_env_builtin_customizer_color_ids(),
+			'module_preset_ids'            => self::cross_env_target_module_preset_ids(),
 			'attachments'                  => $attachments,
 			'attachment_remaps'            => (object) $remaps,
 			'cache_scope'                  => 'theme_builder_global',
@@ -285,6 +286,7 @@ trait DiviOps_Agent_ThemeBuilder {
 				'read_only'                   => true,
 				'destination_checksum'        => 'sha256 hex of current target layout post_content; raw post_content is not exported',
 				'global_color_value_evidence' => 'sha256 hex of resolved target color values for user global colors and WP Customizer-backed built-ins; raw values are not exported here',
+				'module_preset_inventory'     => 'target D5 module preset IDs only; preset definitions are not exported',
 				'attachment_matching'         => 'basename_or_upload_path_exact',
 				'attachment_remap_rule'       => 'A remap is emitted only when exactly one target attachment candidate is found and exactly one source attachment ID was supplied.',
 				'write_apply_media_import'    => false,
@@ -349,6 +351,7 @@ trait DiviOps_Agent_ThemeBuilder {
 		}
 
 		$markup = self::cross_env_sanitize_markup_for_export( (string) $post->post_content );
+		$module_preset_ids = self::cross_env_module_preset_ids_from_markup( $markup );
 
 		return self::envelope_success( [
 			'origin'          => self::cross_env_site_origin(),
@@ -358,6 +361,7 @@ trait DiviOps_Agent_ThemeBuilder {
 			'markup'          => $markup,
 			'checksum'        => hash( 'sha256', $markup ),
 			'attachments'     => self::cross_env_source_attachments_from_markup( $markup ),
+			'module_preset_ids' => $module_preset_ids,
 			'exported_at'     => gmdate( 'c' ),
 			'diviops_version' => self::VERSION,
 			'_meta'           => [
@@ -365,6 +369,7 @@ trait DiviOps_Agent_ThemeBuilder {
 				'checksum'                   => 'sha256 hex of markup, without a sha256: prefix',
 				'markup_sanitization'        => 'absolute URL credentials, query strings, fragments, and admin URLs are redacted before checksum',
 				'attachment_inventory'       => 'best_effort_markup_upload_urls_and_attachment_ids',
+				'module_preset_inventory'    => 'referenced attrs.modulePreset IDs from source markup only; preset definitions are not exported',
 				'write_apply_media_import'   => false,
 				'global_color_import_create' => false,
 				'free_pro_placement'         => 'free_core',
@@ -389,6 +394,66 @@ trait DiviOps_Agent_ThemeBuilder {
 			: [];
 
 		return array_filter( $colors, 'is_array' );
+	}
+
+	private static function cross_env_target_module_preset_ids(): array {
+		$ids     = [];
+		$presets = self::get_d5_presets();
+		if ( ! is_array( $presets ) ) {
+			return [];
+		}
+		foreach ( self::collect_d5_preset_audit_entries( $presets ) as $row ) {
+			if ( 'module' !== ( $row['bucket'] ?? '' ) ) {
+				continue;
+			}
+			$id = isset( $row['id'] ) ? (string) $row['id'] : '';
+			if ( self::cross_env_is_safe_preset_id( $id ) ) {
+				$ids[ $id ] = $id;
+			}
+		}
+		ksort( $ids, SORT_STRING );
+		return array_values( $ids );
+	}
+
+	private static function cross_env_module_preset_ids_from_markup( string $markup ): array {
+		$ids = [];
+		if ( false === strpos( $markup, '"modulePreset"' ) ) {
+			return [];
+		}
+		if ( ! preg_match_all( '/<!--\s+(\/)?wp:([A-Za-z0-9_-]+\/[A-Za-z0-9_-]+)(.*?)(\/)?-->/s', $markup, $matches, PREG_SET_ORDER ) ) {
+			return [];
+		}
+
+		foreach ( $matches as $match ) {
+			$block_name = (string) ( $match[2] ?? '' );
+			if ( 0 !== strpos( $block_name, 'divi/' ) ) {
+				continue;
+			}
+			$tail  = (string) ( $match[3] ?? '' );
+			$start = strpos( $tail, '{' );
+			$end   = strrpos( $tail, '}' );
+			if ( false === $start || false === $end || $end < $start ) {
+				continue;
+			}
+			$attrs = json_decode( substr( $tail, $start, $end - $start + 1 ), true );
+			if ( ! is_array( $attrs ) || ! array_key_exists( 'modulePreset', $attrs ) ) {
+				continue;
+			}
+			$values = is_array( $attrs['modulePreset'] ) ? $attrs['modulePreset'] : [ $attrs['modulePreset'] ];
+			foreach ( $values as $id ) {
+				$id = is_string( $id ) ? $id : '';
+				if ( self::cross_env_is_safe_preset_id( $id ) ) {
+					$ids[ $id ] = $id;
+				}
+			}
+		}
+
+		ksort( $ids, SORT_STRING );
+		return array_values( $ids );
+	}
+
+	private static function cross_env_is_safe_preset_id( string $id ): bool {
+		return '' !== $id && 'default' !== $id && 1 === preg_match( '/^[A-Za-z0-9_-]+$/', $id );
 	}
 
 	private static function cross_env_global_color_value_evidence(): array {

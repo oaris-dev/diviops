@@ -261,7 +261,7 @@ Key points:
 - Layout content is standard Divi block markup — same format as pages
 - **Critical**: `_et_pb_use_divi_5: on` required on all layout posts (handled by `initialize_divi_page_meta`)
 - **Footer bottom crop/tightness** *(verified 2026-05-28)*: first adjust the root footer Section's native bottom padding (`module.decoration.spacing.{desktop,tablet,phone}.value.padding.bottom`) via VB path `Theme Builder > Global Footer > Section: Global Footer > Design > Spacing > Padding > Bottom` (operator mapping, not stamped VB-verified here). Do not use broad `.et-l--footer` CSS for native spacing issues.
-- **Header mobile nav hiding** *(VB-verified 2026-05-28)*: use native visibility (`module.decoration.disabledOn.phone.value = "on"`) via VB path `Theme Builder > Global Header + Footer > Global Header > Nav Links group > Advanced > Visibility > Disable On > Phone`. `module.decoration.layout.phone.value.display = "none"` can be present without hiding the group.
+- **Header responsive nav split** *(VB-verified 2026-05-28 + nav reliability contract)*: use native visibility for sibling desktop/mobile nav units. Desktop nav disables tablet/phone; mobile drawer disables desktop. For Theme Builder header groups, `module.decoration.disabledOn.phone.value = "on"` is the verified hide mechanism via VB path `Theme Builder > Global Header + Footer > Global Header > Nav Links group > Advanced > Visibility > Disable On > Phone`. `module.decoration.layout.phone.value.display = "none"` can be present without hiding the group.
 
 ## Design Patterns
 
@@ -287,6 +287,6 @@ Key points:
 
 - `$variable()` for global colors works for rendering but may not show in VB color picker
 - Button hover has hardcoded CSS: `.et_pb_button:hover { padding: .3em 2em .3em .7em }` — use CSS override
-- `divi/link` module has rendering issues — use `divi/text` with `elementType: "li"` for nav items instead
+- Navigation links: use `divi/link` for real anchors, wrapped with `htmlBefore: "<li>"` / `htmlAfter: "</li>"`. Do not set `divi/link` itself to `elementType: "li"`; use `divi/text` with `elementType: "button"` only for leaf dropdown triggers.
 - Icon module: `icon.decoration.border` and `icon.decoration.background` render correctly but are not editable in VB settings panel — use `module.decoration.border` and `module.decoration.background` instead
 - Large pages (50+ modules) need slim layout mode — `diviops_page_get_layout` returns targeting metadata only by default

@@ -1430,7 +1430,22 @@ trait DiviOps_Agent_Page {
 
 				// If closing tag was never found, the content is malformed.
 				if ( $depth > 0 ) {
-					return new WP_Error( 'parse_error', "Malformed content: no closing tag found for {$type} block", [ 'status' => 500 ] );
+					return new WP_Error(
+						'parse_error',
+						"Malformed content: no closing tag found for {$type} block",
+						[
+							'status'              => 500,
+							'reason'              => 'missing_closing_tag',
+							'block_type'          => $type,
+							'auto_index'          => $type . ':' . $type_counters[ $type ],
+							'opening_start'       => $pos,
+							'opening_end'         => $comment_end,
+							'scan_offset'         => $scan,
+							'target_mode'         => 'text' === $mode ? 'match_text' : $mode,
+							'target_value'        => 'auto_index' === $mode ? $auto_index : ( 'label' === $mode ? $label : $match_text ),
+							'parser_fallbackable' => true,
+						]
+					);
 				}
 			}
 

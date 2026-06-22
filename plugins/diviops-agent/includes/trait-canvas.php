@@ -431,6 +431,604 @@ trait DiviOps_Agent_Canvas {
 	}
 
 	/**
+	 * Read-only audit for off-canvas posts and their reference evidence.
+	 *
+	 * This intentionally does not delete, cleanup, remap, or mutate cache state.
+	 * Ambiguous evidence returns `unknown` so callers do not over-trust cleanup
+	 * candidates.
+	 */
+	public static function canvas_orphan_audit( $request ) {
+		$parent_page_id = $request->get_param( 'parent_page_id' );
+		$parent_page_id = null !== $parent_page_id ? absint( $parent_page_id ) : null;
+		$per_page        = max( 1, min( 100, absint( $request->get_param( 'per_page' ) ?? 100 ) ) );
+		$status_param    = $request->get_param( 'status' );
+		$status          = sanitize_key( is_scalar( $status_param ) ? (string) $status_param : 'any' );
+		$include_global  = self::canvas_audit_request_bool( $request, 'include_global', true );
+		$include_context = self::canvas_audit_request_bool( $request, 'include_context', true );
+
+		$allowed_statuses = [ 'any', 'publish', 'draft', 'pending', 'private', 'future', 'trash' ];
+		if ( ! in_array( $status, $allowed_statuses, true ) ) {
+			return self::envelope_error(
+				'invalid_input',
+				'status must be one of: any, publish, draft, pending, private, future, trash.',
+				null,
+				400
+			);
+		}
+
+		$query_args = [
+			'post_type'      => 'et_pb_canvas',
+			'post_status'    => $status,
+			'posts_per_page' => $per_page,
+			'orderby'        => 'date',
+			'order'          => 'DESC',
+			'no_found_rows'  => true,
+		];
+
+		if ( $parent_page_id ) {
+			$query_args['meta_query'] = [ [
+				'key'   => '_divi_canvas_parent_post_id',
+				'value' => (int) $parent_page_id,
+				'type'  => 'NUMERIC',
+			] ];
+		}
+
+		$query                = new WP_Query( $query_args );
+		$canvas_ids           = self::canvas_audit_collect_canvas_ids( $query->posts );
+		$canvas_post_ids      = self::canvas_audit_collect_post_ids( $query->posts );
+		$candidate_result     = self::canvas_audit_reference_candidates( $canvas_ids, $canvas_post_ids );
+		$candidates           = $candidate_result['posts'];
+		$candidates_truncated = (bool) $candidate_result['truncated'];
+		$candidates_meta      = self::canvas_audit_prefetch_candidate_meta( $candidates );
+		self::canvas_audit_prime_parent_post_cache( $query->posts );
+		$canvases   = [];
+		$references = [];
+		$unknowns   = [];
+		$summary    = [
+			'total'         => 0,
+			'referenced'    => 0,
+			'likely_orphan' => 0,
+			'unknown'       => 0,
+		];
+
+		foreach ( $query->posts as $post ) {
+			$row = self::canvas_audit_row( $post, $candidates, $candidates_meta, $include_context, $candidates_truncated );
+			if ( ! $include_global && empty( $row['parent_page_id'] ) && empty( $row['parent_context'] ) && empty( $row['append_to_main'] ) ) {
+				continue;
+			}
+
+			$summary['total']++;
+			$summary[ $row['verdict'] ]++;
+
+			foreach ( $row['references'] as $reference ) {
+				$references[] = array_merge(
+					[
+						'canvas_post_id' => $row['canvas_post_id'],
+						'canvas_id'      => $row['canvas_id'],
+					],
+					$reference
+				);
+			}
+			foreach ( $row['unknowns'] as $unknown ) {
+				$unknowns[] = array_merge(
+					[
+						'canvas_post_id' => $row['canvas_post_id'],
+						'canvas_id'      => $row['canvas_id'],
+					],
+					$unknown
+				);
+			}
+
+			$canvases[] = $row;
+		}
+
+		return self::envelope_success( [
+			'canvases'   => $canvases,
+			'references' => $references,
+			'unknowns'   => $unknowns,
+			'summary'    => $summary,
+			'query'      => [
+				'parent_page_id'  => $parent_page_id ?: null,
+				'include_global'  => $include_global,
+				'include_context' => $include_context,
+				'status'          => $status,
+				'per_page'        => $per_page,
+				'candidate_scan_truncated' => $candidates_truncated,
+			],
+		] );
+	}
+
+	private static function canvas_audit_request_bool( $request, $key, $default ) {
+		$value = $request->get_param( $key );
+		if ( null === $value ) {
+			return (bool) $default;
+		}
+		if ( ! is_scalar( $value ) && ! is_bool( $value ) ) {
+			return (bool) $default;
+		}
+		if ( function_exists( 'rest_sanitize_boolean' ) ) {
+			return rest_sanitize_boolean( $value );
+		}
+		return is_bool( $value ) ? $value : in_array( strtolower( (string) $value ), [ '1', 'true', 'yes', 'on' ], true );
+	}
+
+	private static function canvas_audit_collect_canvas_ids( array $canvas_posts ) {
+		$canvas_ids = [];
+		foreach ( $canvas_posts as $post ) {
+			$post_id = (int) ( $post->ID ?? 0 );
+			if ( $post_id <= 0 ) {
+				continue;
+			}
+			$canvas_id_meta = get_post_meta( $post_id, '_divi_canvas_id', true );
+			$canvas_id      = is_scalar( $canvas_id_meta ) ? trim( (string) $canvas_id_meta ) : '';
+			if ( '' !== $canvas_id && preg_match( '/^[A-Za-z0-9-]+$/', $canvas_id ) ) {
+				$canvas_ids[] = $canvas_id;
+			}
+		}
+		return array_values( array_unique( $canvas_ids ) );
+	}
+
+	private static function canvas_audit_collect_post_ids( array $posts ) {
+		$post_ids = [];
+		foreach ( $posts as $post ) {
+			$post_id = (int) ( $post->ID ?? 0 );
+			if ( $post_id > 0 ) {
+				$post_ids[] = $post_id;
+			}
+		}
+		return array_values( array_unique( $post_ids ) );
+	}
+
+	private static function canvas_audit_reference_candidates( array $canvas_ids, array $canvas_post_ids = [] ) {
+		if ( empty( $canvas_ids ) ) {
+			return [
+				'posts'     => [],
+				'truncated' => false,
+			];
+		}
+
+		$post_types = [ 'post', 'page' ];
+		if ( function_exists( 'get_post_types' ) ) {
+			$public_post_types = get_post_types( [ 'public' => true ], 'names' );
+			if ( is_array( $public_post_types ) ) {
+				$post_types = array_values( $public_post_types );
+			}
+		}
+		$post_types = array_values( array_unique( array_merge(
+			$post_types,
+			[ 'et_header_layout', 'et_body_layout', 'et_footer_layout', 'et_pb_layout', 'et_template', 'et_pb_canvas' ]
+		) ) );
+
+		global $wpdb;
+		if ( $wpdb && isset( $wpdb->posts, $wpdb->postmeta ) && method_exists( $wpdb, 'prepare' ) && method_exists( $wpdb, 'get_col' ) ) {
+			$batch_size            = min( 100, max( 1, (int) apply_filters( 'diviops_canvas_audit_candidate_query_batch_size', 50 ) ) );
+			$post_type_placeholders = implode( ', ', array_fill( 0, count( $post_types ), '%s' ) );
+			$meta_keys             = [ '_divi_off_canvas_data', '_divi_dynamic_assets_canvases_used' ];
+			$meta_key_placeholders = implode( ', ', array_fill( 0, count( $meta_keys ), '%s' ) );
+			$excluded_ids          = array_values( array_unique( array_filter( array_map( 'intval', $canvas_post_ids ) ) ) );
+			$exclude_clause        = '';
+			$exclude_args          = [];
+			if ( ! empty( $excluded_ids ) ) {
+				$exclude_clause = ' AND p.ID NOT IN (' . implode( ', ', array_fill( 0, count( $excluded_ids ), '%d' ) ) . ')';
+				$exclude_args   = $excluded_ids;
+			}
+
+			$max_candidates = max( 1, (int) apply_filters( 'diviops_canvas_audit_max_candidates', 500 ) );
+			$ids            = [];
+			foreach ( array_chunk( $canvas_ids, $batch_size ) as $batch ) {
+				$likes = [];
+				foreach ( $batch as $canvas_id ) {
+					$escaped = method_exists( $wpdb, 'esc_like' )
+						? $wpdb->esc_like( $canvas_id )
+						: addcslashes( $canvas_id, '_%\\' );
+					$likes[] = '%' . $escaped . '%';
+				}
+				if ( empty( $likes ) ) {
+					continue;
+				}
+				$content_conditions = implode( ' OR ', array_fill( 0, count( $likes ), 'p.post_content LIKE %s' ) );
+				$meta_conditions    = implode( ' OR ', array_fill( 0, count( $likes ), 'pm.meta_value LIKE %s' ) );
+				$sql = "
+					SELECT p.ID
+					FROM {$wpdb->posts} p
+					WHERE p.post_type IN ({$post_type_placeholders})
+						AND p.post_status <> 'auto-draft'
+						{$exclude_clause}
+						AND (
+							{$content_conditions}
+							OR EXISTS (
+								SELECT 1
+								FROM {$wpdb->postmeta} pm
+								WHERE pm.post_id = p.ID
+									AND pm.meta_key IN ({$meta_key_placeholders})
+									AND ({$meta_conditions})
+							)
+					)
+					ORDER BY p.post_modified DESC
+					LIMIT %d
+				";
+				$args = array_merge( $post_types, $exclude_args, $likes, $meta_keys, $likes, [ $max_candidates + 1 ] );
+				$ids  = array_merge( $ids, array_map( 'intval', (array) $wpdb->get_col( $wpdb->prepare( $sql, $args ) ) ) );
+				$ids  = array_values( array_unique( $ids ) );
+				if ( count( $ids ) > $max_candidates ) {
+					break;
+				}
+			}
+			$truncated = count( $ids ) > $max_candidates;
+			if ( $truncated ) {
+				$ids = array_slice( $ids, 0, $max_candidates );
+			}
+			if ( ! empty( $ids ) && function_exists( '_prime_post_caches' ) ) {
+				_prime_post_caches( $ids, false, true );
+			}
+			$posts = [];
+			foreach ( $ids as $id ) {
+				$post = get_post( $id );
+				if ( $post ) {
+					$posts[] = $post;
+				}
+			}
+			return [
+				'posts'     => $posts,
+				'truncated' => $truncated,
+			];
+		}
+
+		$max_candidates = max( 1, (int) apply_filters( 'diviops_canvas_audit_max_candidates', 500 ) );
+		$query = new WP_Query( [
+			'post_type'      => $post_types,
+			'post_status'    => 'any',
+			'posts_per_page' => $max_candidates + 1,
+			'orderby'        => 'modified',
+			'order'          => 'DESC',
+			'no_found_rows'  => true,
+		] );
+		$posts     = is_array( $query->posts ) ? $query->posts : [];
+		$truncated = count( $posts ) > $max_candidates;
+		if ( $truncated ) {
+			$posts = array_slice( $posts, 0, $max_candidates );
+		}
+		return [
+			'posts'     => $posts,
+			'truncated' => $truncated,
+		];
+	}
+
+	private static function canvas_audit_prefetch_candidate_meta( array $candidates ) {
+		$meta = [];
+		$post_ids = [];
+		foreach ( $candidates as $candidate ) {
+			$post_id = (int) ( $candidate->ID ?? 0 );
+			if ( $post_id > 0 ) {
+				$post_ids[] = $post_id;
+			}
+		}
+		if ( ! empty( $post_ids ) && function_exists( 'update_meta_cache' ) ) {
+			update_meta_cache( 'post', array_values( array_unique( $post_ids ) ) );
+		}
+
+		foreach ( $candidates as $candidate ) {
+			$post_id = (int) ( $candidate->ID ?? 0 );
+			if ( $post_id <= 0 ) {
+				continue;
+			}
+			$off_canvas_data = get_post_meta( $post_id, '_divi_off_canvas_data', true );
+			$off_canvas_decoded = null;
+			$off_canvas_json_valid = null;
+			if ( is_string( $off_canvas_data ) && '' !== trim( $off_canvas_data ) ) {
+				$off_canvas_decoded = json_decode( $off_canvas_data, true );
+				$off_canvas_json_valid = JSON_ERROR_NONE === json_last_error();
+				if ( ! $off_canvas_json_valid ) {
+					$off_canvas_decoded = null;
+				}
+			}
+			$meta[ $post_id ] = [
+				'off_canvas_data'       => $off_canvas_data,
+				'off_canvas_decoded'    => $off_canvas_decoded,
+				'off_canvas_json_valid' => $off_canvas_json_valid,
+				'dynamic_assets'        => get_post_meta( $post_id, '_divi_dynamic_assets_canvases_used', true ),
+			];
+		}
+		return $meta;
+	}
+
+	private static function canvas_audit_prime_parent_post_cache( array $canvas_posts ) {
+		$parent_post_ids = [];
+		foreach ( $canvas_posts as $post ) {
+			$post_id = (int) ( $post->ID ?? 0 );
+			if ( $post_id <= 0 ) {
+				continue;
+			}
+			$parent_id = (int) get_post_meta( $post_id, '_divi_canvas_parent_post_id', true );
+			if ( $parent_id > 0 ) {
+				$parent_post_ids[] = $parent_id;
+			}
+		}
+		if ( ! empty( $parent_post_ids ) && function_exists( '_prime_post_caches' ) ) {
+			_prime_post_caches( array_values( array_unique( $parent_post_ids ) ), false, true );
+		}
+	}
+
+	private static function canvas_audit_row( $post, array $candidates, array $candidates_meta, $include_context, $candidate_scan_truncated = false ) {
+		$canvas_post_id = (int) $post->ID;
+		$canvas_id_meta = get_post_meta( $canvas_post_id, '_divi_canvas_id', true );
+		$canvas_id      = is_scalar( $canvas_id_meta ) ? trim( (string) $canvas_id_meta ) : '';
+		$parent_id_meta = get_post_meta( $canvas_post_id, '_divi_canvas_parent_post_id', true );
+		$parent_page_id = is_scalar( $parent_id_meta ) ? (int) $parent_id_meta : 0;
+		$context_meta   = get_post_meta( $canvas_post_id, '_divi_canvas_parent_context', true );
+		$parent_context = is_scalar( $context_meta ) ? trim( (string) $context_meta ) : '';
+		$append_meta    = get_post_meta( $canvas_post_id, '_divi_canvas_append_to_main', true );
+		$append_to_main = is_scalar( $append_meta ) ? trim( (string) $append_meta ) : '';
+		$z_index        = get_post_meta( $canvas_post_id, '_divi_canvas_z_index', true );
+		$content        = (string) ( $post->post_content ?? '' );
+		$references     = [];
+		$unknowns       = [];
+		$reasons        = [];
+
+		if ( '' === $canvas_id ) {
+			$unknowns[] = [
+				'kind'   => 'missing_canvas_id',
+				'reason' => '_divi_canvas_id is empty.',
+			];
+			$reasons[] = 'missing_canvas_id';
+		} elseif ( ! preg_match( '/^[A-Za-z0-9-]+$/', $canvas_id ) ) {
+			$unknowns[] = [
+				'kind'   => 'malformed_canvas_id',
+				'value'  => $canvas_id,
+				'reason' => '_divi_canvas_id contains unsupported characters.',
+			];
+			$reasons[] = 'malformed_canvas_id';
+		}
+
+		if ( $parent_page_id > 0 ) {
+			$parent = get_post( $parent_page_id );
+			if ( $parent ) {
+				$references[] = [
+					'kind'           => 'parent_post_meta',
+					'strength'       => 'authoritative',
+					'source_post_id' => $parent_page_id,
+					'source_type'    => $parent->post_type ?? null,
+					'evidence'       => '_divi_canvas_parent_post_id',
+				];
+				$reasons[] = 'parent_post_meta';
+			} else {
+				$unknowns[] = [
+					'kind'           => 'stale_parent_post_id',
+					'source_post_id' => $parent_page_id,
+					'evidence'       => '_divi_canvas_parent_post_id',
+					'reason'         => 'Canvas points at a parent post that is not readable.',
+				];
+				$reasons[] = 'stale_parent_post_id';
+			}
+		}
+
+		if ( '' !== $parent_context ) {
+			if ( $include_context ) {
+				$references[] = [
+					'kind'     => 'parent_context_meta',
+					'strength' => 'authoritative',
+					'context'  => $parent_context,
+					'evidence' => '_divi_canvas_parent_context',
+				];
+				$reasons[] = 'parent_context_meta';
+			} else {
+				$unknowns[] = [
+					'kind'    => 'context_skipped',
+					'context' => $parent_context,
+					'reason'  => 'include_context=false; context meta was not used for the verdict.',
+				];
+				$reasons[] = 'context_skipped';
+			}
+		}
+
+		if ( '' !== $append_to_main ) {
+			if ( in_array( $append_to_main, [ 'above', 'below' ], true ) ) {
+				$references[] = [
+					'kind'     => 'append_to_main_meta',
+					'strength' => 'authoritative',
+					'value'    => $append_to_main,
+					'evidence' => '_divi_canvas_append_to_main',
+				];
+				$reasons[] = 'append_to_main_meta';
+			} else {
+				$unknowns[] = [
+					'kind'     => 'malformed_append_to_main',
+					'value'    => $append_to_main,
+					'evidence' => '_divi_canvas_append_to_main',
+					'reason'   => 'append_to_main must be above or below.',
+				];
+				$reasons[] = 'malformed_append_to_main';
+			}
+		}
+
+		if ( '' !== $canvas_id && preg_match( '/^[A-Za-z0-9-]+$/', $canvas_id ) ) {
+			self::canvas_audit_scan_candidates( $canvas_id, $canvas_post_id, $candidates, $candidates_meta, $references, $unknowns, $reasons );
+			if ( false !== strpos( $content, 'canvasId' ) || false !== strpos( $content, 'canvas-portal' ) ) {
+				$unknowns[] = [
+					'kind'   => 'nested_canvas_reference',
+					'reason' => 'Canvas content appears to contain another canvas reference; nested canvas ownership is ambiguous.',
+				];
+				$reasons[] = 'nested_canvas_reference';
+			}
+		}
+
+		$has_authoritative = false;
+		$has_advisory      = false;
+		foreach ( $references as $reference ) {
+			if ( 'authoritative' === ( $reference['strength'] ?? null ) ) {
+				$has_authoritative = true;
+			} else {
+				$has_advisory = true;
+			}
+		}
+
+		if ( ! empty( $unknowns ) ) {
+			$verdict    = 'unknown';
+			$confidence = 0;
+		} elseif ( $has_authoritative ) {
+			$verdict    = 'referenced';
+			$confidence = 100;
+		} elseif ( $has_advisory ) {
+			$verdict     = 'unknown';
+			$confidence  = 50;
+			$reasons[]   = 'only_advisory_references';
+			$unknowns[]  = [
+				'kind'   => 'only_advisory_references',
+				'reason' => 'Only cache-derived or weak references were found.',
+			];
+		} else {
+			if ( $candidate_scan_truncated ) {
+				$verdict    = 'unknown';
+				$confidence = 0;
+				$reasons[]  = 'candidate_scan_truncated';
+				$unknowns[] = [
+					'kind'   => 'candidate_scan_truncated',
+					'reason' => 'Reference candidate scan reached the configured cap; this canvas cannot be safely classified as orphan.',
+				];
+			} else {
+				$verdict    = 'likely_orphan';
+				$confidence = 80;
+				$reasons[]  = 'no_reference_evidence';
+			}
+		}
+
+		return [
+			'canvas_post_id'   => $canvas_post_id,
+			'canvas_id'        => $canvas_id ?: null,
+			'title'            => (string) ( $post->post_title ?? '' ),
+			'status'           => (string) ( $post->post_status ?? '' ),
+			'modified'         => (string) ( $post->post_modified ?? '' ),
+			'parent_page_id'   => $parent_page_id ?: null,
+			'parent_context'   => $parent_context ?: null,
+			'append_to_main'   => $append_to_main ?: null,
+			'z_index'          => is_scalar( $z_index ) && '' !== (string) $z_index ? (int) $z_index : null,
+			'content_checksum' => hash( 'sha256', $content ),
+			'verdict'          => $verdict,
+			'confidence'       => $confidence,
+			'reasons'          => array_values( array_unique( $reasons ) ),
+			'references'       => $references,
+			'unknowns'         => $unknowns,
+		];
+	}
+
+	private static function canvas_audit_scan_candidates( $canvas_id, $canvas_post_id, array $candidates, array $candidates_meta, array &$references, array &$unknowns, array &$reasons ) {
+		foreach ( $candidates as $candidate ) {
+			$source_post_id = (int) ( $candidate->ID ?? 0 );
+			if ( $source_post_id <= 0 || $source_post_id === $canvas_post_id ) {
+				continue;
+			}
+			$source_type = (string) ( $candidate->post_type ?? '' );
+			$content     = (string) ( $candidate->post_content ?? '' );
+
+			if ( self::canvas_audit_content_contains_id( $content, $canvas_id ) ) {
+				if ( 'et_pb_canvas' === $source_type ) {
+					if ( $source_post_id !== $canvas_post_id ) {
+						$unknowns[] = [
+							'kind'           => 'nested_canvas_reference',
+							'source_post_id' => $source_post_id,
+							'source_type'    => $source_type,
+							'reason'         => 'Another canvas content references this canvas; nested canvas ownership is ambiguous.',
+						];
+						$reasons[] = 'nested_canvas_reference';
+					}
+					continue;
+				}
+
+				$is_strong = false !== strpos( $content, 'divi/canvas-portal' )
+					|| false !== strpos( $content, 'canvasId' )
+					|| false !== strpos( $content, 'canvas_id' );
+				$references[] = [
+					'kind'           => $is_strong ? 'stored_canvas_reference' : 'stored_content_uuid_mention',
+					'strength'       => $is_strong ? 'authoritative' : 'advisory',
+					'source_post_id' => $source_post_id,
+					'source_type'    => $source_type,
+					'evidence'       => $is_strong ? 'post_content_canvas_reference' : 'post_content_uuid_mention',
+				];
+				$reasons[] = $is_strong ? 'stored_canvas_reference' : 'stored_content_uuid_mention';
+			}
+
+			$meta_entry = $candidates_meta[ $source_post_id ] ?? [];
+			if ( self::canvas_audit_off_canvas_data_contains( $meta_entry, $canvas_id ) ) {
+				if ( false === ( $meta_entry['off_canvas_json_valid'] ?? null ) ) {
+					$unknowns[] = [
+						'kind'           => 'malformed_off_canvas_data',
+						'source_post_id' => $source_post_id,
+						'source_type'    => $source_type,
+						'evidence'       => '_divi_off_canvas_data',
+						'reason'         => '_divi_off_canvas_data mentions this canvas but is not valid JSON.',
+					];
+					$reasons[] = 'malformed_off_canvas_data';
+				} else {
+					$references[] = [
+						'kind'           => 'off_canvas_data_meta',
+						'strength'       => 'authoritative',
+						'source_post_id' => $source_post_id,
+						'source_type'    => $source_type,
+						'evidence'       => '_divi_off_canvas_data',
+					];
+					$reasons[] = 'off_canvas_data_meta';
+				}
+			}
+
+				$dynamic_assets_canvases = $meta_entry['dynamic_assets'] ?? '';
+			if ( self::canvas_audit_value_contains( $dynamic_assets_canvases, $canvas_id, true ) ) {
+				$references[] = [
+					'kind'           => 'dynamic_assets_canvases_used',
+					'strength'       => 'advisory',
+					'source_post_id' => $source_post_id,
+					'source_type'    => $source_type,
+					'evidence'       => '_divi_dynamic_assets_canvases_used',
+				];
+				$reasons[] = 'dynamic_assets_canvases_used';
+			}
+		}
+	}
+
+	private static function canvas_audit_content_contains_id( $content, $canvas_id ) {
+		if ( '' === $canvas_id ) {
+			return false;
+		}
+		$content = (string) $content;
+		$canvas_id = (string) $canvas_id;
+		if ( false === strpos( $content, $canvas_id ) ) {
+			return false;
+		}
+		return 1 === preg_match( '/(?<![A-Za-z0-9-])' . preg_quote( $canvas_id, '/' ) . '(?![A-Za-z0-9-])/', $content );
+	}
+
+	private static function canvas_audit_off_canvas_data_contains( array $meta_entry, $needle ) {
+		if ( '' === $needle ) {
+			return false;
+		}
+		$value = $meta_entry['off_canvas_data'] ?? '';
+		if ( is_string( $value ) && '' !== trim( $value ) ) {
+			if ( true === ( $meta_entry['off_canvas_json_valid'] ?? null ) ) {
+				return self::canvas_audit_value_contains( $meta_entry['off_canvas_decoded'] ?? null, $needle, true );
+			}
+			return self::canvas_audit_content_contains_id( $value, $needle );
+		}
+		return self::canvas_audit_value_contains( $value, $needle, true );
+	}
+
+	private static function canvas_audit_value_contains( $value, $needle, $exact = false ) {
+		if ( '' === $needle ) {
+			return false;
+		}
+		if ( is_array( $value ) || is_object( $value ) ) {
+			foreach ( (array) $value as $child ) {
+				if ( self::canvas_audit_value_contains( $child, $needle, $exact ) ) {
+					return true;
+				}
+			}
+			return false;
+		}
+		if ( $exact ) {
+			return ! is_bool( $value ) && (string) $value === (string) $needle;
+		}
+		return ! is_bool( $value ) && false !== strpos( (string) $value, (string) $needle );
+	}
+
+	/**
 	 * Get a canvas's content and metadata.
 	 */
 	public static function canvas_get( $request ) {
