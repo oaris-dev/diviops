@@ -44,6 +44,9 @@ const DEFAULT_COMMANDS: readonly string[] = [
   'post meta list',
   'post meta set',
   'post meta update',
+  // Taxonomy assignments (read-only). Assignment writes (`post term add/set/remove`)
+  // stay unsupported until a concrete workflow justifies a typed or extended path.
+  'post term list',
   // Post types (read-only)
   'post-type list',
   'post-type get',
@@ -364,6 +367,7 @@ function normalizeWpCliPathArgs(args: string[], wpPath: string): string[] {
 }
 
 export const __wpCliTesting = {
+  isCommandAllowed,
   parseCommand,
   normalizeWpCliPathArgs,
 };

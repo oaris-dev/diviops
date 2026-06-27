@@ -12,4 +12,4 @@ WordPress.org SVN `/assets` directory, not in this installed plugin runtime
 - `screenshot-2.png`: Example AI client MCP configuration with all secrets redacted.
 - `screenshot-3.png`: Example successful capability/connection check with no private site data.
 
-Do not include Application Passwords, license keys, customer site URLs, cookies, or other credentials in screenshots. Keep screenshots focused on the Free plugin and avoid implying that Pro-only MCP tools are included in the Free WordPress.org plugin.
+Do not include Application Passwords, license keys, customer site URLs, cookies, or other credentials in screenshots. Keep screenshots focused on the Free plugin and avoid implying that Pro-only MCP tools are included in the Free WordPress.org plugin. Do not imply affiliation with Elegant Themes; Divi is a registered trademark of Elegant Themes, Inc., and DiviOps Agent is not affiliated with or endorsed by Elegant Themes.

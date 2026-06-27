@@ -9,6 +9,12 @@ Policy:
 - Keep entries customer-facing. Avoid internal issue numbers unless they are needed to explain a user-visible change.
 - Do not include secrets, credentials, customer data, or environment-specific URLs.
 
+## 1.5.6
+
+- Adds typed WordPress menu tools for listing menus, reading normalized menu trees, creating menus, appending page/custom-link items, and assigning registered theme locations.
+- Adds safer FluentCart 1.5 Advanced Variations read enrichment while preserving refusal for unsupported write shapes.
+- Adds sanctioned read-only post taxonomy term inspection through the WP-CLI fallback path.
+
 ## 1.5.5
 
 - Adds preflight metadata used by the MCP server's `diviops_meta_info` surface, including richer plugin version records for connected-suite checks.

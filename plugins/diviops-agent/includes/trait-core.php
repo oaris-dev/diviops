@@ -1151,7 +1151,12 @@ trait DiviOps_Agent_Core {
 			if ( is_array( $files ) ) {
 				foreach ( $files as $file ) {
 					if ( is_file( $file ) ) {
-						unlink( $file );
+						if ( function_exists( 'wp_delete_file' ) ) {
+							wp_delete_file( $file );
+						} else {
+							// phpcs:ignore WordPress.WP.AlternativeFunctions.unlink_unlink -- Minimal standalone/bootstrap fallback when WordPress file helpers are unavailable.
+							@unlink( $file );
+						}
 					}
 				}
 			}
@@ -1246,6 +1251,139 @@ trait DiviOps_Agent_Core {
 			$http_status
 		);
 		return $response;
+	}
+
+	/**
+	 * True when the current REST user may inspect a post-backed object.
+	 *
+	 * Free read routes keep their coarse route-level `edit_posts` gate, but raw
+	 * or parsed object content needs the same row-level boundary as writes.
+	 *
+	 * @param mixed $post_or_id WP_Post-like object or post id.
+	 * @return bool
+	 */
+	private static function post_object_id( $post_or_id ): int {
+		if ( is_object( $post_or_id ) ) {
+			return isset( $post_or_id->ID ) ? (int) $post_or_id->ID : 0;
+		}
+
+		return absint( $post_or_id );
+	}
+
+	private static function can_inspect_post_object( $post_or_id ): bool {
+		$post_id      = self::post_object_id( $post_or_id );
+		$check_target = is_object( $post_or_id ) ? $post_or_id : $post_id;
+
+		return $post_id > 0 && current_user_can( 'edit_post', $check_target );
+	}
+
+	private static function get_request_page( $request ): int {
+		return max( 1, absint( $request->get_param( 'page' ) ?? 1 ) );
+	}
+
+	private static function prime_inspectable_post_caches( array $post_ids ): void {
+		if ( ! empty( $post_ids ) && function_exists( '_prime_post_caches' ) ) {
+			_prime_post_caches( $post_ids, false, false );
+		}
+	}
+
+	private static function filter_inspectable_post_objects( array $posts ): array {
+		$ids = [];
+		foreach ( $posts as $post_or_id ) {
+			if ( is_object( $post_or_id ) ) {
+				$post = $post_or_id;
+			} else {
+				$post = get_post( $post_or_id );
+			}
+			if ( $post && self::can_inspect_post_object( $post ) ) {
+				$ids[] = (int) $post->ID;
+			}
+		}
+		return $ids;
+	}
+
+	/**
+	 * Query matching post IDs, apply exact object-inspection permissions, then paginate.
+	 *
+	 * Core's query-level capability filters are too coarse for these REST
+	 * inventories: the contract is the same row-level `edit_post` check used by
+	 * raw object reads, and pagination metadata must describe the filtered set.
+	 *
+	 * @param array $query_args WP_Query args for the candidate set.
+	 * @param int   $per_page   Page size.
+	 * @param int   $page_num   1-based page number.
+	 * @return array{ids:array,total:int,total_pages:int,truncated:bool,scanned:int}
+	 */
+	private static function query_inspectable_post_ids(
+		array $query_args,
+		int $per_page,
+		int $page_num = 1
+	): array {
+		$per_page = max( 1, $per_page );
+		$page_num = max( 1, $page_num );
+		// Use WP's editable query filter as a coarse prefilter, then still
+		// enforce the exact per-object edit_post check below.
+		unset( $query_args['paged'], $query_args['perm'], $query_args['offset'], $query_args['nopaging'] );
+		$query_args['fields'] = 'ids';
+		$query_args['perm']   = 'editable';
+
+		$scan_per_page  = 500;
+		$max_candidates = 5000;
+		$scan_page      = 1;
+		$scanned        = 0;
+		$truncated      = false;
+		$ids            = [];
+
+		$query_args['posts_per_page'] = $scan_per_page;
+		$query_args['no_found_rows']  = true;
+
+		do {
+			$query_args['paged'] = $scan_page++;
+			$query               = new WP_Query( $query_args );
+			$posts               = (array) $query->posts;
+
+			if ( empty( $posts ) ) {
+				break;
+			}
+			$scanned += count( $posts );
+			self::prime_inspectable_post_caches( $posts );
+			$ids = array_merge( $ids, self::filter_inspectable_post_objects( $posts ) );
+			if ( $scanned >= $max_candidates && count( $posts ) === $scan_per_page ) {
+				$truncated = true;
+				break;
+			}
+		} while ( count( $posts ) === $scan_per_page );
+
+		$total  = count( $ids );
+		$offset = ( $page_num - 1 ) * $per_page;
+
+		return [
+			'ids'         => array_slice( $ids, $offset, $per_page ),
+			'total'       => $total,
+			'total_pages' => (int) ceil( $total / $per_page ),
+			'truncated'   => $truncated,
+			'scanned'     => $scanned,
+		];
+	}
+
+	/**
+	 * Canonical row-level read denial for post-backed Free read surfaces.
+	 *
+	 * @param int    $post_id     Target post id.
+	 * @param string $target_kind Human/machine target kind, e.g. page, module.
+	 * @return WP_REST_Response
+	 */
+	private static function envelope_object_read_forbidden( int $post_id, string $target_kind = 'post' ) {
+		return self::envelope_error(
+			'forbidden',
+			sprintf( 'Cannot inspect %s #%d.', $target_kind, $post_id ),
+			'Authenticate as a user with edit_post capability for this object.',
+			403,
+			[
+				'target_kind' => $target_kind,
+				'post_id'     => $post_id,
+			]
+		);
 	}
 
 	/**
@@ -1431,6 +1569,10 @@ trait DiviOps_Agent_Core {
 		$target_value  = is_array( $data ) && array_key_exists( 'target_value', $data ) ? $data['target_value'] : null;
 		$received      = is_array( $data ) && array_key_exists( 'received', $data )      ? $data['received']      : null;
 		$total_matches = is_array( $data ) && array_key_exists( 'total_matches', $data ) ? $data['total_matches'] : null;
+		$fields_provided = null;
+		if ( is_array( $data ) && isset( $data['fields_provided'] ) && is_array( $data['fields_provided'] ) ) {
+			$fields_provided = $data['fields_provided'];
+		}
 
 		// Search-miss family — collapse onto canonical not_found with discriminator.
 		// Q1 contract: { target_kind, target_mode, target_value, page_id, context? }.
@@ -1464,6 +1606,9 @@ trait DiviOps_Agent_Core {
 			$err_data = [ 'reason' => $code ];
 			if ( '' !== $context ) {
 				$err_data['context'] = $context;
+			}
+			if ( null !== $fields_provided ) {
+				$err_data['fields_provided'] = array_values( $fields_provided );
 			}
 			if ( 'invalid_occurrence' === $code ) {
 				$err_data['field']         = 'occurrence';

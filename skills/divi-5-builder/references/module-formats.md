@@ -342,7 +342,7 @@ Upgrade to Pro: https://diviops.com
 
 > Generated mechanically by `diviops-server/scripts/regen-module-formats.mjs` from `diviops_schema_get_module` dump-all output. Each module block lives between `BEGIN GENERATED:module:divi/<slug>` / `END GENERATED:module:divi/<slug>` HTML-comment sentinels (see `diviops-server/CONTRIBUTING.md` for the full convention). Do **not** edit between sentinels — edits are clobbered on regen.
 
-> Generated against Divi `5.7.4`, schema `af7c9d795e77…`.
+> Generated against Divi `5.8.0`, schema `af7c9d795e77…`.
 
 Per CLAUDE.md "Suite architecture coherence": schema dump is the canonical index; VB-verified prose above is the canonical interpretation. The two sections are complementary, not competing — prose explains surprises, this index enumerates paths exhaustively. On conflicts, the prose above wins (per `feedback_vb_first_verification`).
 
@@ -681,6 +681,16 @@ Per CLAUDE.md "Suite architecture coherence": schema dump is the canonical index
 - **title** — `title.decoration.font` _(+innerContent)_
 
 <!-- END GENERATED:module:divi/toggle -->
+
+<!-- BEGIN GENERATED:module:divi/tooltip -->
+
+<!-- TIER: free -->
+#### `divi/tooltip`
+
+- **content** — `content.decoration.bodyFont` _(+innerContent)_
+- **module** — `module.decoration.animation`, `module.decoration.attributes`, `module.decoration.background`, `module.decoration.border`, `module.decoration.boxShadow`, `module.decoration.conditions`, `module.decoration.disabledOn`, `module.decoration.filters`, `module.decoration.interactions`, `module.decoration.layout`, `module.decoration.order`, `module.decoration.overflow`, `module.decoration.scroll`, `module.decoration.sizing`, `module.decoration.spacing`, `module.decoration.sticky`, `module.decoration.transform`, `module.decoration.transition`, `module.decoration.zIndex` _(+advanced)_
+
+<!-- END GENERATED:module:divi/tooltip -->
 
 <!-- BEGIN GENERATED:module:divi/video -->
 

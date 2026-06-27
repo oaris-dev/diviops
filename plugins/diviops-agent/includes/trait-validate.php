@@ -70,7 +70,7 @@ trait DiviOps_Agent_Validate {
 	/**
 	 * Recursively validate a block tree.
 	 */
-	private static function validate_block_tree( $blocks, $registry, $container_types, &$errors, &$warnings, &$index, &$nav_refs = null ) {
+	private static function validate_block_tree( $blocks, $registry, $container_types, &$errors, &$warnings, &$index, &$nav_refs = null, $responsive_parent = null ) {
 		$owns_nav_refs = false;
 		if ( null === $nav_refs ) {
 			$nav_refs      = [
@@ -147,6 +147,12 @@ trait DiviOps_Agent_Validate {
 						}
 					}
 				}
+			}
+
+			// ── Responsive flex-card checks (warnings) ──────────────
+
+			if ( $is_divi_block && is_array( $responsive_parent ) ) {
+				self::validate_responsive_flex_child( $name, $attrs, $index, $responsive_parent, $warnings );
 			}
 
 			// ── Navigation reliability checks (errors + warnings) ───
@@ -561,13 +567,168 @@ trait DiviOps_Agent_Validate {
 			// ── Recurse into inner blocks ───────────────────────────
 
 			if ( ! empty( $block['innerBlocks'] ) ) {
-				self::validate_block_tree( $block['innerBlocks'], $registry, $container_types, $errors, $warnings, $index, $nav_refs );
+				$child_responsive_parent = self::build_responsive_flex_parent_context( $name, $attrs, $index, $container_types );
+				self::validate_block_tree( $block['innerBlocks'], $registry, $container_types, $errors, $warnings, $index, $nav_refs, $child_responsive_parent );
 			}
 		}
 
 		if ( $owns_nav_refs ) {
 			self::validate_nav_aria_references( $nav_refs, $warnings );
 		}
+	}
+
+	private static function build_responsive_flex_parent_context( string $name, array $attrs, int $index, array $container_types ): ?array {
+		if ( ! in_array( $name, $container_types, true ) ) {
+			return null;
+		}
+
+		$has_flex_signal   = false;
+		$stack_breakpoints = [];
+
+		foreach ( [ 'desktop', 'tablet', 'phone' ] as $breakpoint ) {
+			$layout = self::get_nested_array_value( $attrs, [ 'module', 'decoration', 'layout', $breakpoint, 'value' ], [] );
+			$layout = is_array( $layout ) ? $layout : [];
+			if ( self::layout_has_flex_signal( $layout ) ) {
+				$has_flex_signal = true;
+			}
+		}
+
+		if ( ! $has_flex_signal ) {
+			return null;
+		}
+
+		foreach ( [ 'tablet', 'phone' ] as $breakpoint ) {
+			$display = self::get_inherited_responsive_value( $attrs, [ 'module', 'decoration', 'layout' ], $breakpoint, 'display' );
+			if ( in_array( $display, [ 'block', 'grid' ], true ) ) {
+				continue;
+			}
+
+			$flex_direction = self::get_inherited_responsive_value( $attrs, [ 'module', 'decoration', 'layout' ], $breakpoint, 'flexDirection', 'row' );
+			if ( in_array( $flex_direction, [ 'column', 'column-reverse' ], true ) ) {
+				$stack_breakpoints[] = $breakpoint;
+			}
+		}
+
+		if ( empty( $stack_breakpoints ) ) {
+			return null;
+		}
+
+		return [
+			'block'             => $name,
+			'index'             => $index,
+			'stack_breakpoints' => $stack_breakpoints,
+		];
+	}
+
+	private static function layout_has_flex_signal( array $layout ): bool {
+		if ( 'flex' === ( $layout['display'] ?? null ) ) {
+			return true;
+		}
+
+		foreach ( [ 'flexDirection', 'flexWrap', 'justifyContent', 'alignItems', 'alignContent', 'gap', 'rowGap', 'columnGap' ] as $key ) {
+			if ( isset( $layout[ $key ] ) ) {
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	private static function get_inherited_responsive_value( array $attrs, array $path_prefix, string $breakpoint, string $key, $default = null ) {
+		$breakpoints = [ 'desktop' ];
+		if ( 'tablet' === $breakpoint ) {
+			$breakpoints = [ 'tablet', 'desktop' ];
+		} elseif ( 'phone' === $breakpoint ) {
+			$breakpoints = [ 'phone', 'tablet', 'desktop' ];
+		}
+
+		foreach ( $breakpoints as $candidate ) {
+			$value = self::get_nested_array_value( $attrs, array_merge( $path_prefix, [ $candidate, 'value', $key ] ) );
+			if ( null !== $value ) {
+				return $value;
+			}
+		}
+
+		return $default;
+	}
+
+	private static function validate_responsive_flex_child( string $name, array $attrs, int $index, array $parent, array &$warnings ): void {
+		$desktop_flex_type = self::get_nested_array_value( $attrs, [ 'module', 'decoration', 'sizing', 'desktop', 'value', 'flexType' ] );
+		if ( ! self::is_fractional_flex_type( $desktop_flex_type ) ) {
+			return;
+		}
+
+		foreach ( $parent['stack_breakpoints'] ?? [] as $breakpoint ) {
+			if ( self::has_full_width_flex_protection( $attrs, (string) $breakpoint ) ) {
+				continue;
+			}
+
+			$warnings[] = [
+				'block'        => $name,
+				'index'        => $index,
+				'code'         => 'responsive_flex_child_missing_full_width',
+				'message'      => sprintf(
+					'%s at index %d uses desktop flexType "%s", but parent %s at index %d stacks at %s without a matching child full-width override. Add module.decoration.sizing.%s.value.flexType = "24_24", or width/maxWidth = "100%%" at the same breakpoint.',
+					$name,
+					$index,
+					(string) $desktop_flex_type,
+					(string) ( $parent['block'] ?? '(parent)' ),
+					(int) ( $parent['index'] ?? 0 ),
+					(string) $breakpoint,
+					(string) $breakpoint
+				),
+				'path'         => sprintf( 'module.decoration.sizing.%s.value', (string) $breakpoint ),
+				'breakpoint'   => (string) $breakpoint,
+				'parent_block' => (string) ( $parent['block'] ?? '' ),
+				'parent_index' => (int) ( $parent['index'] ?? 0 ),
+			];
+		}
+	}
+
+	private static function is_fractional_flex_type( $value ): bool {
+		if ( ! is_string( $value ) || ! preg_match( '/^([0-9]+)_24$/', $value, $matches ) ) {
+			return false;
+		}
+
+		$units = (int) $matches[1];
+		return $units > 0 && $units < 24;
+	}
+
+	private static function has_full_width_flex_protection( array $attrs, string $breakpoint ): bool {
+		$flex_type = self::get_inherited_responsive_value( $attrs, [ 'module', 'decoration', 'sizing' ], $breakpoint, 'flexType' );
+		if ( '24_24' === $flex_type ) {
+			return true;
+		}
+
+		$width     = self::get_inherited_responsive_value( $attrs, [ 'module', 'decoration', 'sizing' ], $breakpoint, 'width' );
+		$max_width = self::get_inherited_responsive_value( $attrs, [ 'module', 'decoration', 'sizing' ], $breakpoint, 'maxWidth' );
+
+		if ( ! self::is_full_width_css_value( $width ) ) {
+			return false;
+		}
+
+		return self::is_unconstrained_max_width_value( $max_width )
+			|| self::is_full_width_css_value( $max_width );
+	}
+
+	private static function is_full_width_css_value( $value ): bool {
+		if ( ! is_string( $value ) ) {
+			return false;
+		}
+
+		return '100%' === trim( (string) preg_replace( '/\s*!\s*important/i', '', $value ) );
+	}
+
+	private static function is_unconstrained_max_width_value( $value ): bool {
+		if ( null === $value ) {
+			return true;
+		}
+
+		if ( ! is_string( $value ) ) {
+			return false;
+		}
+
+		return in_array( strtolower( trim( $value ) ), [ '', 'auto', 'none' ], true );
 	}
 
 	/**

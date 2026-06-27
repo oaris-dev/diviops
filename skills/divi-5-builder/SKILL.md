@@ -108,7 +108,7 @@ Most first-time runs hit step 3 and that's fine — output is still polished, an
 
 ### About the `oa` convention (optional)
 
-The `oa` design system uses universal token names (`gcid-oa-primary-500`, `gvid-oa-size-h1`) and preset names (`oa Heading H1`, `oa Button Primary`) across all projects. What differs per site is the **values** behind tokens and the **UUIDs** Divi assigns to presets.
+The `oa` design system uses universal token labels/roles (`oa Primary 500`, `oa Heading H1`) and preset names (`oa Heading H1`, `oa Button Primary`) across all projects. New bootstrap runs can create explicit token IDs such as `gcid-oa-primary-500` / `gvid-oa-size-h1`, but existing Divi-created tokens may have UUID-style IDs while keeping the `oa-*` meaning only in their `label`. What differs per site is the **values** behind tokens and the **UUIDs** Divi assigns to presets.
 
 If you prefer different names or no prefix, skip bootstrap entirely — inline styling doesn't need `oa` or any other convention.
 
@@ -138,8 +138,8 @@ Run this only when you want the full token + preset setup for a site. **Not requ
 This is a real commitment: ~72 API calls for tokens alone, plus ~24 `diviops_preset_create` calls to seed the oa preset catalog. Bootstrap once you're sure you want design-system consistency across many pages on this site.
 
 **Step 1 — Audit existing site:**
-1. `diviops_variable_list` with `prefix: "gcid-oa-"` — check for oa color tokens
-2. `diviops_variable_list` with `prefix: "gvid-oa-"` — check for oa number tokens
+1. `diviops_variable_list` with `type: "colors"` — check returned `label` values for `oa-*` / `oa ` color tokens. Do not rely on `prefix: "gcid-oa-"` unless the site was bootstrapped with explicit `gcid-oa-*` IDs; `prefix` filters IDs, not labels.
+2. `diviops_variable_list` with `type: "numbers"` — check returned `label` values for `oa-*` / `oa ` number tokens. Do not rely on `prefix: "gvid-oa-"` unless explicit `gvid-oa-*` IDs exist.
 3. `diviops_preset_audit` — check for oa-prefixed presets
 
 **Step 2 — Create tokens (if missing):**
@@ -178,7 +178,7 @@ Write `.claude/instructions/design-system.md` with brand-specific guidance: aest
 
 ## Module Gotchas (Silent Failures)
 
-Full attribute paths in [module-formats.md](references/module-formats.md) Tier 3 (Pro). **Copy-paste minimum-valid snippets** for each content module: [minimal-snippets.md](references/minimal-snippets.md). Run [`diviops_validate_blocks`](references/tools.md) to catch the top 8 silent-failure patterns before write — each one below maps to a validator rule.
+Full attribute paths in [module-formats.md](references/module-formats.md) Tier 3 (Pro). **Copy-paste minimum-valid snippets** for each content module: [minimal-snippets.md](references/minimal-snippets.md). Run [`diviops_validate_blocks`](references/tools.md) to catch known silent-failure patterns before write — each one below maps to a validator rule.
 
 **Content-shape traps** (block renders but with wrong/missing content):
 
@@ -188,7 +188,7 @@ Full attribute paths in [module-formats.md](references/module-formats.md) Tier 3
 - **Blurb title**: `title.innerContent.desktop.value` is an **object** `{text}`, NOT a plain string. Plain string → title silently absent from rendered HTML. Validator: `blurb_title_string` (error).
 - **Blurb icon**: when `imageIcon.innerContent.desktop.value.icon` is set, `useIcon: "on"` is required — without it the `.et-pb-icon` span renders empty. Validator: `blurb_icon_missing_use_icon` (error).
 - **Body font path**: `content.decoration.bodyFont.body.font.*` (Font Family A, triple-nested). Writing `bodyFont.bodyFont.*` is a silent failure — no renderer consumer, values fall through to defaults (often black text on a dark background → invisible). Validator: `body_font_double_nested` (error).
-- **flexType lives at `sizing`, not `layout` — and parent must be `display: flex`**: canonical path is `module.decoration.sizing.desktop.value.flexType` (per `Packages/Module/Options/Sizing/SizingPresetAttrsMap.php:124-128` — `flexType` is a `Sizing` subName; `Layout` registers no `flexType` subName, so `decoration.layout.flexType` is byte-stored but semantically dropped). It's a 24-unit grid attribute for flex *children* — Group/column-inner siblings inside a flex container, or `divi/column`/`divi/column-inner` inside a `divi/row` whose `module.decoration.layout.desktop.value.display = "flex"`. On non-flex rows (the default `display: block`), Divi falls back to the legacy shortcode-era `et_pb_column_N_M` class system based on column count and ignores `flexType` entirely — three "8_24" columns then render full-width-stacked, not side-by-side (visually verified Divi 5.4.1, 2026-05-09). On modules with no flex parent (text, blurb, image, etc.) it's silently dropped. For flex children inside a group use `module.decoration.sizing.desktop.value.flexType` with the row/group flex display set on the parent; for non-flex contexts use `module.decoration.sizing.desktop.value.width` with per-breakpoint values. Validators: `flextype_on_non_column` (warn), `flextype_wrong_path` (warn — flags `decoration.layout.flexType`).
+- **flexType lives at `sizing`, not `layout` — and parent must be `display: flex`**: canonical path is `module.decoration.sizing.desktop.value.flexType` (per `Packages/Module/Options/Sizing/SizingPresetAttrsMap.php:124-128` — `flexType` is a `Sizing` subName; `Layout` registers no `flexType` subName, so `decoration.layout.flexType` is byte-stored but semantically dropped). It's a 24-unit grid attribute for flex *children* — Group/column-inner siblings inside a flex container, or `divi/column`/`divi/column-inner` inside a `divi/row` whose `module.decoration.layout.desktop.value.display = "flex"`. On non-flex rows (the default `display: block`), Divi falls back to the legacy shortcode-era `et_pb_column_N_M` class system based on column count and ignores `flexType` entirely — three "8_24" columns then render full-width-stacked, not side-by-side (visually verified Divi 5.4.1, 2026-05-09). On modules with no flex parent (text, blurb, image, etc.) it's silently dropped. For flex children inside a group use `module.decoration.sizing.desktop.value.flexType` with the row/group flex display set on the parent; when the parent flips via `module.decoration.layout.<bp>.value.flexDirection` to `"column"` or `"column-reverse"` at `tablet` or `phone`, each fractional child (`6_24`, `8_24`, `12_24`, etc.) needs matching full-width protection at that same breakpoint (`flexType:"24_24"` or `width:"100%"` + `maxWidth:"100%"`). For non-flex contexts use `module.decoration.sizing.desktop.value.width` with per-breakpoint values. Validators: `flextype_on_non_column` (warn), `flextype_wrong_path` (warn — flags `decoration.layout.flexType`), `responsive_flex_child_missing_full_width` (warn).
 - **ContactField `fieldItem` label must be a string**: `fieldItem.innerContent.desktop.value` is a **plain string** (the label text, e.g. `"Your Name"`). Writing it as an object (bundling `fieldId`/`fieldType`/`required`/etc. under one value) is NOT a silent failure — it throws `UnexpectedValueException` in Divi's `MultiViewUtils::populate_data_content` and **crashes the entire post render** (white-screen critical error). Field config lives individually at `fieldItem.advanced.{id, type, required, allowedSymbols, minLength, maxLength, radioOptions, checkboxOptions, selectOptions}.desktop.value`. See [module-formats.md → Contact Field](references/module-formats.md#contact-field) for the full attr split. Validator: `field_item_content_object` (error).
 
 **Attribute-path traps** (module renders but styling lands on the wrong element):
@@ -201,6 +201,12 @@ Full attribute paths in [module-formats.md](references/module-formats.md) Tier 3
 - **Contact Form**: all fonts use double `font.font` nesting; field labels use `fieldItem.innerContent` (NOT `title.innerContent`).
 - **CSS classes**: via `module.decoration.attributes.desktop.value.attributes[]` array.
 - **freeForm CSS**: top-level `css.desktop.value.freeForm` — sibling of `module`, NOT inside it.
+
+**Runtime-specific traps** (valid markup that currently renders with upstream Divi quirks):
+
+- **PostSlider / FullwidthPostSlider responsive text shadow** *(verified 2026-06-24, Divi 5.8.0)*: if `module.advanced.text.text.<breakpoint>.value.color = "light"` is set at phone/tablet while `module.advanced.text.textShadow` exists only on `desktop`, Divi emits a responsive `text-shadow: unset` rule and removes the inherited desktop shadow on small screens. When a slider needs text shadow plus responsive text color, set the matching `textShadow` value explicitly at every breakpoint where text color is set, or avoid the responsive text-color override.
+- **Tooltip arrow color fallback** *(verified 2026-06-24, Divi 5.8.0)*: do not write `module.advanced.tooltip.desktop.value.arrowColor: ""`. An empty string emits an empty `--et-tooltip-arrow-color` custom property and the arrow falls back to Divi's default translucent black instead of the tooltip background. Omit `arrowColor` or set an explicit color matching the tooltip background.
+- **Nested Tooltip hover binding** *(verified 2026-06-24, Divi 5.8.0)*: `divi/tooltip` can save/render when nested under modules such as `divi/button` or `divi/contact-field`, but local frontend runtime rendered the nested tooltip DOM offscreen and did not open it on hover/click. Until upstream behavior changes, avoid relying on nested hover/click Tooltip surfaces for production UI; use a standalone tooltip trigger mode that is runtime-verified for the target, or use explicit helper text.
 
 ## VB-Safe Rules
 
@@ -286,7 +292,7 @@ Key points:
 ## Known Limitations
 
 - `$variable()` for global colors works for rendering but may not show in VB color picker
-- Button hover has hardcoded CSS: `.et_pb_button:hover { padding: .3em 2em .3em .7em }` — use CSS override
+- Button group-preset hover-padding workaround remains tracked in the roadmap. A clean custom group-preset Divi 5.8.0 retest passed, but the bucket-default closure gate still needs an unpatched clean target before retiring the single-corner bypass guidance.
 - Navigation links: use `divi/link` for real anchors, wrapped with `htmlBefore: "<li>"` / `htmlAfter: "</li>"`. Do not set `divi/link` itself to `elementType: "li"`; use `divi/text` with `elementType: "button"` only for leaf dropdown triggers.
 - Icon module: `icon.decoration.border` and `icon.decoration.background` render correctly but are not editable in VB settings panel — use `module.decoration.border` and `module.decoration.background` instead
 - Large pages (50+ modules) need slim layout mode — `diviops_page_get_layout` returns targeting metadata only by default

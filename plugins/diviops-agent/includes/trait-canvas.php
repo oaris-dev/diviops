@@ -391,6 +391,7 @@ trait DiviOps_Agent_Canvas {
 		$parent_page_id = $request->get_param( 'parent_page_id' );
 		$parent_page_id = null !== $parent_page_id ? absint( $parent_page_id ) : null;
 		$per_page       = max( 1, min( 100, absint( $request->get_param( 'per_page' ) ?? 50 ) ) );
+		$page_num       = self::get_request_page( $request );
 
 		$query_args = [
 			'post_type'      => 'et_pb_canvas',
@@ -408,11 +409,19 @@ trait DiviOps_Agent_Canvas {
 			] ];
 		}
 
-		$query    = new WP_Query( $query_args );
-		$canvases = [];
+		$page     = self::query_inspectable_post_ids( $query_args, $per_page, $page_num );
+		$page_ids = $page['ids'];
+		if ( ! empty( $page_ids ) ) {
+			update_meta_cache( 'post', $page_ids );
+		}
+		$canvas_rows = [];
 
-		foreach ( $query->posts as $post ) {
-			$canvases[] = [
+		foreach ( $page_ids as $post_id ) {
+			$post = get_post( $post_id );
+			if ( ! $post ) {
+				continue;
+			}
+			$canvas_rows[] = [
 				'canvas_post_id' => $post->ID,
 				'title'          => $post->post_title,
 				'canvas_id'      => get_post_meta( $post->ID, '_divi_canvas_id', true ),
@@ -425,8 +434,11 @@ trait DiviOps_Agent_Canvas {
 		}
 
 		return self::envelope_success( [
-			'canvases' => $canvases,
-			'total'    => $query->found_posts,
+			'canvases'    => $canvas_rows,
+			'total'       => $page['total'],
+			'total_pages' => $page['total_pages'],
+			'truncated'   => $page['truncated'],
+			'scanned'     => $page['scanned'],
 		] );
 	}
 
@@ -441,6 +453,7 @@ trait DiviOps_Agent_Canvas {
 		$parent_page_id = $request->get_param( 'parent_page_id' );
 		$parent_page_id = null !== $parent_page_id ? absint( $parent_page_id ) : null;
 		$per_page        = max( 1, min( 100, absint( $request->get_param( 'per_page' ) ?? 100 ) ) );
+		$page_num        = self::get_request_page( $request );
 		$status_param    = $request->get_param( 'status' );
 		$status          = sanitize_key( is_scalar( $status_param ) ? (string) $status_param : 'any' );
 		$include_global  = self::canvas_audit_request_bool( $request, 'include_global', true );
@@ -473,14 +486,25 @@ trait DiviOps_Agent_Canvas {
 			] ];
 		}
 
-		$query                = new WP_Query( $query_args );
-		$canvas_ids           = self::canvas_audit_collect_canvas_ids( $query->posts );
-		$canvas_post_ids      = self::canvas_audit_collect_post_ids( $query->posts );
+		$page                 = self::query_inspectable_post_ids( $query_args, $per_page, $page_num );
+		if ( ! empty( $page['ids'] ) ) {
+			update_meta_cache( 'post', $page['ids'] );
+		}
+		$auditable_posts      = array_values(
+			array_filter( array_map( 'get_post', $page['ids'] ) )
+		);
+		$canvas_ids           = self::canvas_audit_collect_canvas_ids( $auditable_posts );
+		$canvas_post_ids      = self::canvas_audit_collect_post_ids( $auditable_posts );
 		$candidate_result     = self::canvas_audit_reference_candidates( $canvas_ids, $canvas_post_ids );
-		$candidates           = $candidate_result['posts'];
+		$candidates           = array_values( array_filter(
+			$candidate_result['posts'],
+			static function ( $post ) {
+				return self::can_inspect_post_object( $post );
+			}
+		) );
 		$candidates_truncated = (bool) $candidate_result['truncated'];
 		$candidates_meta      = self::canvas_audit_prefetch_candidate_meta( $candidates );
-		self::canvas_audit_prime_parent_post_cache( $query->posts );
+		self::canvas_audit_prime_parent_post_cache( $auditable_posts );
 		$canvases   = [];
 		$references = [];
 		$unknowns   = [];
@@ -491,7 +515,7 @@ trait DiviOps_Agent_Canvas {
 			'unknown'       => 0,
 		];
 
-		foreach ( $query->posts as $post ) {
+		foreach ( $auditable_posts as $post ) {
 			$row = self::canvas_audit_row( $post, $candidates, $candidates_meta, $include_context, $candidates_truncated );
 			if ( ! $include_global && empty( $row['parent_page_id'] ) && empty( $row['parent_context'] ) && empty( $row['append_to_main'] ) ) {
 				continue;
@@ -533,6 +557,8 @@ trait DiviOps_Agent_Canvas {
 				'include_context' => $include_context,
 				'status'          => $status,
 				'per_page'        => $per_page,
+				'post_scan_truncated' => $page['truncated'],
+				'post_scan_scanned'   => $page['scanned'],
 				'candidate_scan_truncated' => $candidates_truncated,
 			],
 		] );
@@ -628,6 +654,7 @@ trait DiviOps_Agent_Canvas {
 				}
 				$content_conditions = implode( ' OR ', array_fill( 0, count( $likes ), 'p.post_content LIKE %s' ) );
 				$meta_conditions    = implode( ' OR ', array_fill( 0, count( $likes ), 'pm.meta_value LIKE %s' ) );
+				// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Table names and dynamic IN/LIKE placeholder lists are assembled from fixed plugin-owned arrays and prepared immediately below.
 				$sql = "
 					SELECT p.ID
 					FROM {$wpdb->posts} p
@@ -647,8 +674,12 @@ trait DiviOps_Agent_Canvas {
 					ORDER BY p.post_modified DESC
 					LIMIT %d
 				";
+				// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 				$args = array_merge( $post_types, $exclude_args, $likes, $meta_keys, $likes, [ $max_candidates + 1 ] );
-				$ids  = array_merge( $ids, array_map( 'intval', (array) $wpdb->get_col( $wpdb->prepare( $sql, $args ) ) ) );
+				// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- Query text is assembled above from trusted table names and placeholder fragments, then prepared with the matching values here.
+				$prepared_sql = $wpdb->prepare( $sql, $args );
+				// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared, WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, PluginCheck.Security.DirectDB.UnescapedDBParameter -- Prepared on the previous line; direct bounded query is needed to audit serialized canvas references across posts and postmeta.
+				$ids          = array_merge( $ids, array_map( 'intval', (array) $wpdb->get_col( $prepared_sql ) ) );
 				$ids  = array_values( array_unique( $ids ) );
 				if ( count( $ids ) > $max_candidates ) {
 					break;
@@ -782,7 +813,7 @@ trait DiviOps_Agent_Canvas {
 
 		if ( $parent_page_id > 0 ) {
 			$parent = get_post( $parent_page_id );
-			if ( $parent ) {
+			if ( $parent && self::can_inspect_post_object( $parent ) ) {
 				$references[] = [
 					'kind'           => 'parent_post_meta',
 					'strength'       => 'authoritative',
@@ -1042,6 +1073,9 @@ trait DiviOps_Agent_Canvas {
 				'Run diviops_canvas_list to discover valid canvas_post_id values.',
 				404
 			);
+		}
+		if ( ! self::can_inspect_post_object( $post ) ) {
+			return self::envelope_object_read_forbidden( $post_id, 'canvas' );
 		}
 
 		return self::envelope_success( [

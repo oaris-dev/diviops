@@ -6,7 +6,9 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Divi 5](https://img.shields.io/badge/Divi-5.1.0%2B-7E3DD3.svg)](https://www.elegantthemes.com/gallery/divi/)
 
-DiviOps gives Claude Code, Codex, Claude Desktop, and other MCP clients a typed control layer over WordPress site state. It pairs an MCP server, a WordPress agent plugin, and skill knowledge so AI agents can author Divi pages, inspect schemas, manage design tokens, work with SCF/CPT data models, run safe WP-CLI operations, and extend into target plugin coverage slices.
+DiviOps gives Claude Code, Codex, Claude Desktop, and other MCP clients a typed control layer over WordPress site state. It pairs an MCP server, the DiviOps Agent WordPress plugin, and skill knowledge so AI agents can author Divi pages, inspect schemas, manage design tokens, work with SCF/CPT data models, run safe WP-CLI operations, and extend into target plugin coverage slices.
+
+Divi is a registered trademark of Elegant Themes, Inc. DiviOps Agent is not affiliated with or endorsed by Elegant Themes.
 
 ```
 Claude Code ◄──► MCP Server (stdio) ◄──► WordPress REST API ◄──► DiviOps Agent plugin
@@ -22,7 +24,7 @@ Claude Code ◄──► MCP Server (stdio) ◄──► WordPress REST API ◄�
 
 | Component | What it is | Where it lives |
 |---|---|---|
-| **`diviops-agent`** WordPress plugin | REST API endpoints for Divi page data, section targeting, block validation, preset management. The contract layer between WordPress + Divi and the MCP server. | `diviops-agent.zip` at repo root |
+| **DiviOps Agent** WordPress plugin | REST API endpoints for Divi page data, section targeting, block validation, preset management. The contract layer between WordPress + Divi and the MCP server. | `diviops-agent.zip` at repo root |
 | **`diviops-agent-pro`** WordPress plugin | Pro add-on for paid coverage slices, Pro license activation, and update gating. Requires `diviops-agent`. | `diviops-agent-pro.zip` at repo root in the Pro distribution |
 | **`@diviops/mcp-server`** | Node.js MCP server that bridges MCP clients to WordPress. Distributed via npm — no clone, no build. | `npx -y --package @diviops/mcp-server diviops-mcp` |
 | **`divi-5-builder`** skill | Block format rules, verified attribute paths, design patterns. Without it, agents guess attr formats and produce broken pages. | `skills/divi-5-builder/` (Claude: `claude plugin install oaris-dev/diviops`; Codex: copy `skills/*` into `~/.codex/skills`) |
@@ -49,11 +51,11 @@ Upload **`diviops-agent.zip`** (at the root of this repo) via **WP Admin → Plu
 
 Verify: visit `http://your-site.local/wp-json/diviops/v1/schema/settings` — you should get a 401 (auth required).
 
-**Free beta updates:** the npm MCP server updates through npm, but the Free WordPress plugin is updated manually until the WordPress.org channel is live. Download the latest `diviops-agent.zip` from the [Free GitHub release](https://github.com/oaris-dev/diviops/releases/latest), upload it via **Plugins → Add New → Upload Plugin**, and choose **Replace current with uploaded**. Your Application Password and MCP config stay unchanged.
+**Free plugin updates:** the npm MCP server updates through npm. Once the Free WordPress plugin is published on WordPress.org, WordPress delivers plugin updates through the normal **Dashboard → Updates** and **Plugins** screens. For pre-listing test packages or a manual fallback install, replace `diviops-agent.zip` through **Plugins → Add New → Upload Plugin** and choose **Replace current with uploaded**. Your Application Password and MCP config stay unchanged.
 
 **Purchased Pro:** upload and activate **`diviops-agent-pro.zip`** after the Free plugin, then open **DiviOps → Pro License** and activate your license key. Pro runtime coverage requires the Pro plugin; license activation gates updates and support.
 
-**WordPress.org metadata during beta:** `diviops-agent.zip` includes the plugin-local `readme.txt`, `changelog.txt`, and asset-plan notes so the Free plugin stays WordPress.org-ready at the metadata level. This does not change the active distribution path: GitHub Releases and manual ZIP uploads remain the Free beta update channel until a later WordPress.org SVN submission is authorized. A future submission still needs SVN trunk/tags state plus final production banner, icon, and screenshot assets.
+**WordPress.org metadata:** `diviops-agent.zip` includes the plugin-local `readme.txt`, `changelog.txt`, and asset-plan notes so the Free plugin stays WordPress.org-ready at the metadata level. WordPress.org-distributed installs use the standard WordPress.org plugin update flow; upload-based replacement remains a fallback for pre-listing test packages and environments that intentionally install from the public dist repo. A future submission still needs SVN trunk/tags state plus final production banner, icon, and screenshot assets.
 
 ### 2. Create an Application Password
 

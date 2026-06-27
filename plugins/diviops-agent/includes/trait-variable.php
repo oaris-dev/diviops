@@ -225,6 +225,7 @@ trait DiviOps_Agent_Variable {
 		$needle       = '%' . $wpdb->esc_like( $id ) . '%';
 
 		// Content scan.
+		// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Dynamic post-type placeholders are derived from the fixed SCANNABLE_POST_TYPES list and prepared with matching values.
 		$sql = $wpdb->prepare(
 			"SELECT 1 FROM {$wpdb->posts}
 				WHERE post_status IN ('publish','draft','private')
@@ -233,6 +234,8 @@ trait DiviOps_Agent_Variable {
 				LIMIT 1",
 			array_merge( self::SCANNABLE_POST_TYPES, [ $needle ] )
 		);
+		// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared, WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Prepared above with dynamic post-type placeholders; this is a bounded existence probe before the full structured scan.
 		if ( (bool) $wpdb->get_var( $sql ) ) {
 			return true;
 		}
@@ -652,14 +655,44 @@ trait DiviOps_Agent_Variable {
 	 * inputs; rem values are converted to px internally using the caller-
 	 * declared root_font_size_px before the slope math runs.
 	 */
+	private static function plain_exception_value( $value ) {
+		if ( ! is_scalar( $value ) ) {
+			if ( is_array( $value ) ) {
+				return 'array';
+			}
+			if ( is_object( $value ) ) {
+				return method_exists( $value, '__toString' ) ? self::plain_exception_value( (string) $value ) : get_class( $value );
+			}
+			return gettype( $value );
+		}
+		$text = (string) $value;
+		$text = str_replace(
+			[ "\r", "\n", "\t" ],
+			[ '\\r', '\\n', '\\t' ],
+			$text
+		);
+		$text = preg_replace( '/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/', '', $text );
+		return trim( null === $text ? '' : $text );
+	}
+
 	private static function generate_fluid_clamp_from_minmax( $min_str, $max_str, $output_unit = 'px', $root_font_size_px = 16.0 ) {
 		$min_p = self::parse_size_with_unit( $min_str );
 		$max_p = self::parse_size_with_unit( $max_str );
 		if ( null === $min_p ) {
-			throw new \DiviOps_Variable_Input_Exception( "Invalid min: '$min_str' — expected e.g. '20px' or '1.25rem'." );
+			// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception messages are plain text; dynamic fragments are normalized for log/API readability before interpolation.
+			throw new \DiviOps_Variable_Input_Exception( sprintf(
+				"Invalid min: '%s' — expected e.g. '20px' or '1.25rem'.",
+				self::plain_exception_value( $min_str )
+			) );
+			// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 		}
 		if ( null === $max_p ) {
-			throw new \DiviOps_Variable_Input_Exception( "Invalid max: '$max_str' — expected e.g. '60px' or '3.75rem'." );
+			// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception messages are plain text; dynamic fragments are normalized for log/API readability before interpolation.
+			throw new \DiviOps_Variable_Input_Exception( sprintf(
+				"Invalid max: '%s' — expected e.g. '60px' or '3.75rem'.",
+				self::plain_exception_value( $max_str )
+			) );
+			// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 		}
 		$min_px = ( 'rem' === $min_p['unit'] ) ? $min_p['num'] * $root_font_size_px : $min_p['num'];
 		$max_px = ( 'rem' === $max_p['unit'] ) ? $max_p['num'] * $root_font_size_px : $max_p['num'];
@@ -680,11 +713,21 @@ trait DiviOps_Agent_Variable {
 		foreach ( $targets as $viewport => $value_str ) {
 			$w_px = self::parse_fluid_viewport( (string) $viewport );
 			if ( null === $w_px ) {
-				throw new \DiviOps_Variable_Input_Exception( "Invalid viewport key '$viewport' — expected px (e.g. '320px')." );
+				// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception messages are plain text; dynamic fragments are normalized for log/API readability before interpolation.
+				throw new \DiviOps_Variable_Input_Exception( sprintf(
+					"Invalid viewport key '%s' — expected px (e.g. '320px').",
+					self::plain_exception_value( $viewport )
+				) );
+				// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 			}
 			$v = self::parse_size_with_unit( (string) $value_str );
 			if ( null === $v ) {
-				throw new \DiviOps_Variable_Input_Exception( "Invalid target value '$value_str' — expected e.g. '20px' or '1.25rem'." );
+				// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception messages are plain text; dynamic fragments are normalized for log/API readability before interpolation.
+				throw new \DiviOps_Variable_Input_Exception( sprintf(
+					"Invalid target value '%s' — expected e.g. '20px' or '1.25rem'.",
+					self::plain_exception_value( $value_str )
+				) );
+				// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 			}
 			$v_px = ( 'rem' === $v['unit'] ) ? $v['num'] * $root_font_size_px : $v['num'];
 			$points[] = [ 'w' => $w_px, 'v' => $v_px ];
@@ -1217,15 +1260,22 @@ trait DiviOps_Agent_Variable {
 			return $default;
 		}
 		if ( ! is_string( $input ) ) {
-			throw new \DiviOps_Variable_Input_Exception( "$field_name must be a string." );
+			// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception messages are plain text; dynamic fragments are normalized for log/API readability before interpolation.
+			throw new \DiviOps_Variable_Input_Exception( sprintf(
+				'%s must be a string.',
+				self::plain_exception_value( $field_name )
+			) );
+			// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 		}
 		$lower = strtolower( $input );
 		if ( ! preg_match( '/^[a-z0-9_-]+$/', $lower ) ) {
+			// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception messages are plain text; dynamic fragments are normalized for log/API readability before interpolation.
 			throw new \DiviOps_Variable_Input_Exception( sprintf(
 				"%s '%s' contains characters outside [a-z0-9-_]. Divi's \$variable() resolver strips disallowed chars silently, so the generated IDs would be created in the registry but fail to resolve at render time. Use only [a-z0-9-_].",
-				$field_name,
-				$input
+				self::plain_exception_value( $field_name ),
+				self::plain_exception_value( $input )
 			) );
+			// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 		}
 		return $lower;
 	}
@@ -1274,7 +1324,12 @@ trait DiviOps_Agent_Variable {
 				}
 				return [ $min_vp, $max_vp ];
 			default:
-				throw new \DiviOps_Variable_Input_Exception( "Unknown profile '$profile' — expected 'divi-default', 'wide', or 'custom'." );
+				// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception messages are plain text; dynamic fragments are normalized for log/API readability before interpolation.
+				throw new \DiviOps_Variable_Input_Exception( sprintf(
+					"Unknown profile '%s' — expected 'divi-default', 'wide', or 'custom'.",
+					self::plain_exception_value( $profile )
+				) );
+				// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 		}
 	}
 
@@ -1356,7 +1411,12 @@ trait DiviOps_Agent_Variable {
 			if ( null !== $resolved ) {
 				return $resolved;
 			}
-			throw new \DiviOps_Variable_Input_Exception( "Unknown modular ratio name '$ratio_input'. Pass a number or one of: minor-second, major-second, minor-third, major-third, perfect-fourth, augmented-fourth, perfect-fifth, golden." );
+			// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception messages are plain text; dynamic fragments are normalized for log/API readability before interpolation.
+			throw new \DiviOps_Variable_Input_Exception( sprintf(
+				"Unknown modular ratio name '%s'. Pass a number or one of: minor-second, major-second, minor-third, major-third, perfect-fourth, augmented-fourth, perfect-fifth, golden.",
+				self::plain_exception_value( $ratio_input )
+			) );
+			// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 		}
 		throw new \DiviOps_Variable_Input_Exception( 'Modular ratio must be a number or a named scale.' );
 	}
@@ -1392,22 +1452,54 @@ trait DiviOps_Agent_Variable {
 		);
 
 		if ( $min_px < 0 || $max_px <= 0 ) {
-			throw new \DiviOps_Variable_Input_Exception( "$bucket.min_px must be ≥ 0 and $bucket.max_px must be > 0." );
+			// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception messages are plain text; dynamic fragments are normalized for log/API readability before interpolation.
+			throw new \DiviOps_Variable_Input_Exception( sprintf(
+				'%s.min_px must be ≥ 0 and %s.max_px must be > 0.',
+				self::plain_exception_value( $bucket ),
+				self::plain_exception_value( $bucket )
+			) );
+			// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 		}
 		if ( $max_px < $min_px ) {
-			throw new \DiviOps_Variable_Input_Exception( "$bucket.max_px must be ≥ $bucket.min_px." );
+			// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception messages are plain text; dynamic fragments are normalized for log/API readability before interpolation.
+			throw new \DiviOps_Variable_Input_Exception( sprintf(
+				'%s.max_px must be ≥ %s.min_px.',
+				self::plain_exception_value( $bucket ),
+				self::plain_exception_value( $bucket )
+			) );
+			// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 		}
 		if ( $steps < 1 || $steps > 30 ) {
-			throw new \DiviOps_Variable_Input_Exception( "$bucket.steps must be between 1 and 30." );
+			// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception messages are plain text; dynamic fragments are normalized for log/API readability before interpolation.
+			throw new \DiviOps_Variable_Input_Exception( sprintf(
+				'%s.steps must be between 1 and 30.',
+				self::plain_exception_value( $bucket )
+			) );
+			// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 		}
 		if ( ! in_array( $scale, [ 'linear', 'geometric' ], true ) ) {
-			throw new \DiviOps_Variable_Input_Exception( "$bucket.scale must be 'linear' or 'geometric'." );
+			// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception messages are plain text; dynamic fragments are normalized for log/API readability before interpolation.
+			throw new \DiviOps_Variable_Input_Exception( sprintf(
+				"%s.scale must be 'linear' or 'geometric'.",
+				self::plain_exception_value( $bucket )
+			) );
+			// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 		}
 		if ( 'geometric' === $scale && $min_px <= 0 ) {
-			throw new \DiviOps_Variable_Input_Exception( "$bucket.scale='geometric' requires min_px > 0 (geometric step from 0 is undefined)." );
+			// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception messages are plain text; dynamic fragments are normalized for log/API readability before interpolation.
+			throw new \DiviOps_Variable_Input_Exception( sprintf(
+				"%s.scale='geometric' requires min_px > 0 (geometric step from 0 is undefined).",
+				self::plain_exception_value( $bucket )
+			) );
+			// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 		}
 		if ( $fluid_growth <= 0 ) {
-			throw new \DiviOps_Variable_Input_Exception( "$bucket.fluid_growth must be a positive number (1.0 = discrete, > 1 = fluid)." );
+			// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception messages are plain text; dynamic fragments are normalized for log/API readability before interpolation.
+			throw new \DiviOps_Variable_Input_Exception( sprintf(
+				'%s.fluid_growth must be a positive number (1.0 = discrete, > 1 = fluid).',
+				self::plain_exception_value( $bucket )
+			) );
+			// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 		}
 
 		[ $min_vp, $max_vp ] = $anchors;
@@ -1450,12 +1542,15 @@ trait DiviOps_Agent_Variable {
 	 * wide (320/1920) matches the diviops convention, custom takes explicit
 	 * anchors. Each category is independent and optional.
 	 *
-	 * Response shape (consistent across dry_run and persist modes):
+	 * Apply-mode response shape:
 	 *   - `created`: entries that would be (or were) written. With overwrite=false,
 	 *     this contains only NEW entries; existing IDs land in `skipped` instead.
 	 *     With overwrite=true, every plan entry lands here (`overwrote` flag
 	 *     distinguishes update vs create).
 	 *   - `skipped`: existing IDs not written this call (overwrite=false only).
+	 *
+	 * Dry-run mode returns the standard `data.plan` envelope and keeps the
+	 * same `created` / `skipped` diagnostics as sibling metadata.
 	 *
 	 * To audit the FULL computed plan (every entry regardless of existing IDs),
 	 * call with overwrite=true + dry_run=true — that returns each generated
@@ -1634,9 +1729,10 @@ trait DiviOps_Agent_Variable {
 			$vars['numbers'] = [];
 		}
 
-		$created      = [];
-		$skipped      = [];
-		$max_order    = 0;
+		$created         = [];
+		$skipped         = [];
+		$dry_run_changes = [];
+		$max_order       = 0;
 		if ( ! empty( $vars['numbers'] ) ) {
 			$orders = array_column( $vars['numbers'], 'order' );
 			if ( ! empty( $orders ) ) {
@@ -1644,24 +1740,27 @@ trait DiviOps_Agent_Variable {
 			}
 		}
 
+		$number_entries = (array) $vars['numbers'];
 		foreach ( $plan as $entry ) {
 			$id    = $entry['id'];
 			$value = $entry['value'];
 			$label = $entry['label'];
 
-			$exists = isset( $vars['numbers'][ $id ] );
+			$exists = isset( $number_entries[ $id ] );
+			$existing_entry = $exists ? (array) $number_entries[ $id ] : null;
 			if ( $exists && ! $overwrite ) {
 				$skipped[] = [
 					'id'     => $id,
 					'reason' => 'exists',
-					'value'  => $vars['numbers'][ $id ]['value'] ?? null,
+					'value'  => $existing_entry['value'] ?? null,
 				];
 				continue;
 			}
 
 			// Preserve order on overwrite; assign a fresh order on create.
+			$before_entry = $dry_run && $exists ? (object) $existing_entry : null;
 			$order = $exists
-				? (int) ( $vars['numbers'][ $id ]['order'] ?? ++$max_order )
+				? (int) ( $existing_entry['order'] ?? ++$max_order )
 				: ++$max_order;
 
 			$vars['numbers'][ $id ] = [
@@ -1674,14 +1773,58 @@ trait DiviOps_Agent_Variable {
 				'type'        => 'numbers',
 			];
 			$created[] = [
-				'id'         => $id,
-				'value'      => $value,
-				'label'      => $label,
-				'overwrote'  => $exists,
+				'id'        => $id,
+				'value'     => $value,
+				'label'     => $label,
+				'overwrote' => $exists,
 			];
+			$number_entries[ $id ] = $vars['numbers'][ $id ];
+			if ( $dry_run ) {
+				$dry_run_changes[] = [
+					'kind'   => $exists ? 'variable.update' : 'variable.create',
+					'target' => "variable/numbers/{$id}",
+					'before' => $before_entry,
+					'after'  => [
+						'id'     => $id,
+						'label'  => $label,
+						'value'  => $value,
+						'order'  => $order,
+						'status' => 'active',
+						'type'   => 'numbers',
+					],
+				];
+			}
 		}
 
-		if ( ! $dry_run && ! empty( $created ) ) {
+		if ( $dry_run ) {
+			$warnings = [];
+			if ( ! empty( $skipped ) ) {
+				$warnings[] = count( $skipped ) . ' existing variable ID(s) would be skipped because overwrite=false.';
+			}
+
+			return self::dry_run_response(
+				sprintf(
+					'Would generate %d fluid variable(s): %d create/update candidate(s), %d skipped existing ID(s).',
+					count( $plan ),
+					count( $created ),
+					count( $skipped )
+				),
+				$dry_run_changes,
+				$warnings,
+				[
+					'success'       => true,
+					'profile'       => $profile,
+					'anchors'       => [ 'min_viewport_px' => $anchors[0], 'max_viewport_px' => $anchors[1] ],
+					'output_unit'   => $effective_output_unit,
+					'created'       => $created,
+					'skipped'       => $skipped,
+					'created_count' => count( $created ),
+					'skipped_count' => count( $skipped ),
+				]
+			);
+		}
+
+		if ( ! empty( $created ) ) {
 			update_option( 'et_divi_global_variables', $vars );
 		}
 
@@ -1969,6 +2112,9 @@ trait DiviOps_Agent_Variable {
 				404
 			);
 		}
+		if ( ! self::can_inspect_post_object( $post ) ) {
+			return self::envelope_object_read_forbidden( $post_id, 'page' );
+		}
 
 		if ( ! class_exists( '\\ET\\Builder\\FrontEnd\\Assets\\DetectFeature' ) ) {
 			return self::envelope_error(
@@ -2015,9 +2161,12 @@ trait DiviOps_Agent_Variable {
 				if ( $layout_id <= 0 ) {
 					continue;
 				}
-				$tb_template_ids[] = $layout_id;
-				$tb_post           = get_post( $layout_id );
+				$tb_post = get_post( $layout_id );
 				if ( $tb_post instanceof WP_Post && ! empty( $tb_post->post_content ) ) {
+					if ( ! self::can_inspect_post_object( $tb_post ) ) {
+						continue;
+					}
+					$tb_template_ids[] = $layout_id;
 					$content_stack .= ' ' . $tb_post->post_content;
 					$combined_main .= ' ' . $tb_post->post_content;
 				}

@@ -3,7 +3,7 @@
  * Plugin Name: DiviOps Agent
  * Plugin URI: https://github.com/oaris-dev/diviops
  * Description: REST API bridge for DiviOps — connects Claude Code to your Divi 5 site for AI-powered page building and design management.
- * Version: 1.5.5
+ * Version: 1.5.6
  * Author: oaris.de
  * Author URI: https://oaris.de
  * Text Domain: diviops-agent
@@ -28,6 +28,7 @@ require_once __DIR__ . '/includes/trait-global-font.php';
 require_once __DIR__ . '/includes/trait-library.php';
 require_once __DIR__ . '/includes/trait-meta.php';
 require_once __DIR__ . '/includes/trait-module-schema.php';
+require_once __DIR__ . '/includes/trait-menu.php';
 require_once __DIR__ . '/includes/trait-page.php';
 require_once __DIR__ . '/includes/trait-preset.php';
 require_once __DIR__ . '/includes/trait-render.php';
@@ -48,6 +49,7 @@ class DiviOps_Agent {
 	use DiviOps_Agent_GlobalFont;
 	use DiviOps_Agent_Library;
 	use DiviOps_Agent_Meta;
+	use DiviOps_Agent_Menu;
 	use DiviOps_Agent_ModuleSchema;
 	use DiviOps_Agent_Page;
 	use DiviOps_Agent_Preset;
@@ -60,7 +62,7 @@ class DiviOps_Agent {
 	 * Plugin version — surfaced in /handshake for self-diagnosis only;
 	 * server no longer gates on it (capability map is the gate).
 	 */
-	const VERSION = '1.5.5';
+	const VERSION = '1.5.6';
 
 	/**
 	 * Minimum MCP server version this plugin is compatible with.
@@ -95,11 +97,13 @@ class DiviOps_Agent {
 		'library_get', 'library_list', 'library_save',
 		// meta
 		'meta_find_icon', 'meta_flush_cache',
+		// menu
+		'menu_create', 'menu_get', 'menu_item_add_custom', 'menu_item_add_page', 'menu_list', 'menu_location_assign',
 		// module
 		'module_clone', 'module_get', 'module_lock', 'module_move', 'module_unlock', 'module_update',
 		// page
 		'page_create', 'page_get', 'page_get_layout', 'page_list',
-		'page_trash', 'page_update_content', 'page_update_status',
+		'page_trash', 'page_update_content', 'page_update_meta', 'page_update_status',
 		// preset
 		'preset_audit', 'preset_audit_storage', 'preset_cleanup', 'preset_create', 'preset_delete',
 		'preset_reassign', 'preset_scan_orphans', 'preset_set_default', 'preset_update',
@@ -181,7 +185,67 @@ class DiviOps_Agent {
 	public static function init() {
 		add_action( 'rest_api_init', [ __CLASS__, 'register_routes' ] );
 		add_filter( 'rest_pre_dispatch', [ __CLASS__, 'check_rate_limit' ], 10, 3 );
+		add_filter( 'rest_post_dispatch', [ __CLASS__, 'wrap_rest_framework_validation_errors' ], 10, 3 );
 		add_action( 'admin_menu', [ __CLASS__, 'register_admin_page' ] );
+	}
+
+	/**
+	 * Wrap WordPress REST schema-validation errors in the DiviOps envelope.
+	 *
+	 * Route arg validation runs before endpoint callbacks, so typed args and
+	 * enums can otherwise leak raw WP REST errors on `/diviops/v1/*` routes.
+	 * Keep route schemas intact and normalize only framework validation errors.
+	 *
+	 * @param WP_REST_Response $response REST response after dispatch.
+	 * @param WP_REST_Server   $server   REST server instance.
+	 * @param WP_REST_Request  $request  Current request.
+	 * @return WP_REST_Response
+	 */
+	public static function wrap_rest_framework_validation_errors( $response, $server, $request ) {
+		if ( ! is_object( $request ) || ! method_exists( $request, 'get_route' ) ) {
+			return $response;
+		}
+
+		$route            = (string) $request->get_route();
+		$namespace_prefix = '/' . self::REST_NAMESPACE;
+		if ( $route !== $namespace_prefix && strpos( $route, $namespace_prefix . '/' ) !== 0 ) {
+			return $response;
+		}
+
+		if ( ! is_object( $response ) || ! method_exists( $response, 'get_data' ) ) {
+			return $response;
+		}
+
+		$body = $response->get_data();
+		if ( ! is_array( $body ) || ! isset( $body['code'] ) || ! isset( $body['message'] ) ) {
+			return $response;
+		}
+
+		$wp_error_code = (string) $body['code'];
+		if ( ! in_array( $wp_error_code, [ 'rest_invalid_param', 'rest_missing_callback_param' ], true ) ) {
+			return $response;
+		}
+
+		$wp_error_data = isset( $body['data'] ) && is_array( $body['data'] ) ? $body['data'] : [];
+		$http_status   = isset( $wp_error_data['status'] ) ? (int) $wp_error_data['status'] : 400;
+		$error_data    = [
+			'wp_error_code' => $wp_error_code,
+		];
+
+		foreach ( $wp_error_data as $key => $value ) {
+			if ( in_array( $key, [ 'status', 'hint' ], true ) ) {
+				continue;
+			}
+			$error_data[ $key ] = $value;
+		}
+
+		return self::envelope_error(
+			'invalid_input',
+			(string) $body['message'],
+			'Fix the request parameters named in error.data, then retry.',
+			$http_status,
+			$error_data
+		);
 	}
 
 	/**
@@ -299,6 +363,10 @@ class DiviOps_Agent {
 
 	public static function check_admin_permission() {
 		return current_user_can( 'manage_options' );
+	}
+
+	public static function check_menu_permission() {
+		return current_user_can( 'edit_theme_options' );
 	}
 
 	public static function register_routes() {
@@ -643,6 +711,7 @@ class DiviOps_Agent {
 				'layout_type' => [ 'required' => false, 'type' => 'string', 'default' => '' ],
 				'scope'       => [ 'required' => false, 'type' => 'string', 'default' => '' ],
 				'per_page'    => [ 'required' => false, 'type' => 'integer', 'default' => 50 ],
+				'page'        => [ 'required' => false, 'type' => 'integer', 'default' => 1 ],
 			],
 		] );
 
@@ -771,7 +840,70 @@ class DiviOps_Agent {
 			],
 		] );
 
+		register_rest_route( self::REST_NAMESPACE, '/menu/list', [
+			'methods'             => 'GET',
+			'callback'            => [ __CLASS__, 'menu_list' ],
+			'permission_callback' => [ __CLASS__, 'check_menu_permission' ],
+		] );
+
+		register_rest_route( self::REST_NAMESPACE, '/menu/get/(?P<id>\d+)', [
+			'methods'             => 'GET',
+			'callback'            => [ __CLASS__, 'menu_get' ],
+			'permission_callback' => [ __CLASS__, 'check_menu_permission' ],
+			'args'                => [
+				'id' => [ 'required' => true, 'type' => 'integer' ],
+			],
+		] );
+
 		// ── Write Operations ─────────────────────────────────────────
+
+		register_rest_route( self::REST_NAMESPACE, '/menu/create', [
+			'methods'             => 'POST',
+			'callback'            => [ __CLASS__, 'menu_create' ],
+			'permission_callback' => [ __CLASS__, 'check_menu_permission' ],
+			'args'                => [
+				'name'    => [ 'required' => true, 'type' => 'string' ],
+				'slug'    => [ 'required' => false, 'type' => 'string' ],
+				'dry_run' => [ 'required' => false, 'type' => 'boolean', 'default' => false ],
+			],
+		] );
+
+		register_rest_route( self::REST_NAMESPACE, '/menu/item/add-page', [
+			'methods'             => 'POST',
+			'callback'            => [ __CLASS__, 'menu_item_add_page' ],
+			'permission_callback' => [ __CLASS__, 'check_menu_permission' ],
+			'args'                => [
+				'menu_id'        => [ 'required' => true, 'type' => 'integer' ],
+				'page_id'        => [ 'required' => true, 'type' => 'integer' ],
+				'label'          => [ 'required' => false, 'type' => 'string' ],
+				'parent_item_id' => [ 'required' => false, 'type' => 'integer', 'default' => 0 ],
+				'dry_run'        => [ 'required' => false, 'type' => 'boolean', 'default' => false ],
+			],
+		] );
+
+		register_rest_route( self::REST_NAMESPACE, '/menu/item/add-custom', [
+			'methods'             => 'POST',
+			'callback'            => [ __CLASS__, 'menu_item_add_custom' ],
+			'permission_callback' => [ __CLASS__, 'check_menu_permission' ],
+			'args'                => [
+				'menu_id'        => [ 'required' => true, 'type' => 'integer' ],
+				'label'          => [ 'required' => true, 'type' => 'string' ],
+				'url'            => [ 'required' => true, 'type' => 'string' ],
+				'parent_item_id' => [ 'required' => false, 'type' => 'integer', 'default' => 0 ],
+				'dry_run'        => [ 'required' => false, 'type' => 'boolean', 'default' => false ],
+			],
+		] );
+
+		register_rest_route( self::REST_NAMESPACE, '/menu/location/assign', [
+			'methods'             => 'POST',
+			'callback'            => [ __CLASS__, 'menu_location_assign' ],
+			'permission_callback' => [ __CLASS__, 'check_menu_permission' ],
+			'args'                => [
+				'menu_id'  => [ 'required' => true, 'type' => 'integer' ],
+				'location' => [ 'required' => true, 'type' => 'string' ],
+				'dry_run'  => [ 'required' => false, 'type' => 'boolean', 'default' => false ],
+			],
+		] );
 
 		register_rest_route( self::REST_NAMESPACE, '/page/update-content/(?P<id>\d+)', [
 			'methods'             => 'POST',
@@ -782,6 +914,34 @@ class DiviOps_Agent {
 				'content' => [
 					'required' => true,
 					'type'     => 'string',
+				],
+			],
+		] );
+
+		register_rest_route( self::REST_NAMESPACE, '/page/update-meta/(?P<id>\d+)', [
+			'methods'             => 'POST',
+			'callback'            => [ __CLASS__, 'page_update_meta' ],
+			'permission_callback' => [ __CLASS__, 'check_write_permission' ],
+			'args'                => [
+				'id'                => [ 'required' => true ],
+				'title'             => [ 'required' => false, 'type' => 'string' ],
+				'post_title'        => [ 'required' => false, 'type' => 'string' ],
+				'slug'              => [ 'required' => false, 'type' => 'string' ],
+				'post_name'         => [ 'required' => false, 'type' => 'string' ],
+				'parent'            => [ 'required' => false, 'type' => 'integer' ],
+				'post_parent'       => [ 'required' => false, 'type' => 'integer' ],
+				'menu_order'        => [ 'required' => false, 'type' => 'integer' ],
+				'preserve_old_slug' => [
+					'required'    => false,
+					'type'        => 'boolean',
+					'default'     => true,
+					'description' => 'When true, record the previous slug in _wp_old_slug for published posts when slug changes.',
+				],
+				'dry_run'           => [
+					'required'    => false,
+					'type'        => 'boolean',
+					'default'     => false,
+					'description' => 'When true, return the change plan without mutating state.',
 				],
 			],
 		] );
@@ -951,7 +1111,7 @@ class DiviOps_Agent {
 				'match_text'  => [
 					'required'    => false,
 					'type'        => 'string',
-					'description' => 'Text content to search for in innerContent (case-insensitive substring match, first match wins)',
+					'description' => 'Text content to search for in innerContent (case-insensitive substring match, first match wins). Prefer auto_index for generic or repeated text; content-slot mismatches are rejected instead of silently storing never-rendered attrs.',
 				],
 				'auto_index'  => [
 					'required'    => false,
@@ -1199,6 +1359,7 @@ class DiviOps_Agent {
 			'args'                => [
 				'parent_page_id' => [ 'required' => false, 'type' => 'integer' ],
 				'per_page'       => [ 'required' => false, 'type' => 'integer', 'default' => 50 ],
+				'page'           => [ 'required' => false, 'type' => 'integer', 'default' => 1 ],
 			],
 		] );
 
@@ -1212,6 +1373,7 @@ class DiviOps_Agent {
 				'include_context' => [ 'required' => false, 'type' => 'boolean', 'default' => true ],
 				'status'          => [ 'required' => false, 'type' => 'string', 'default' => 'any' ],
 				'per_page'        => [ 'required' => false, 'type' => 'integer', 'default' => 100 ],
+				'page'            => [ 'required' => false, 'type' => 'integer', 'default' => 1 ],
 			],
 		] );
 
@@ -1397,16 +1559,16 @@ class DiviOps_Agent {
 		$pro_version = $pro_active && defined( 'DiviOps_Agent_Pro::VERSION' ) ? constant( 'DiviOps_Agent_Pro::VERSION' ) : null;
 		$pro_url     = add_query_arg( [ 'page' => 'diviops-pro-license' ], admin_url( 'admin.php' ) );
 
-		$free_release_url = 'https://github.com/oaris-dev/diviops/releases/latest';
-		$docs_url         = 'https://diviops.com/docs/';
+		$docs_url = 'https://diviops.com/docs/';
 		$brand_logo_url   = plugins_url( 'assets/diviops-wordmark.svg', __FILE__ );
 
 		?>
 		<div class="wrap">
-			<h1 class="screen-reader-text"><?php esc_html_e( 'DiviOps', 'diviops-agent' ); ?></h1>
+			<h1 class="screen-reader-text"><?php esc_html_e( 'DiviOps Agent', 'diviops-agent' ); ?></h1>
 			<div style="clear:both;margin:20px 0 24px;max-width:1120px;">
 				<img src="<?php echo esc_url( $brand_logo_url ); ?>" alt="<?php esc_attr_e( 'DiviOps', 'diviops-agent' ); ?>" width="166" height="42" style="display:block;width:166px;max-width:100%;height:auto;" />
 				<p style="margin:12px 0 0;max-width:760px;"><?php esc_html_e( 'AI agent bridge for Divi 5 — connects Claude Code, Codex, and other MCP clients to your WordPress site.', 'diviops-agent' ); ?></p>
+				<p class="description" style="margin:8px 0 0;max-width:760px;"><?php esc_html_e( 'Divi is a registered trademark of Elegant Themes, Inc. DiviOps Agent is not affiliated with or endorsed by Elegant Themes.', 'diviops-agent' ); ?></p>
 			</div>
 
 			<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:20px;margin-top:20px;">
@@ -1528,17 +1690,16 @@ class DiviOps_Agent {
 				<?php // ── Updates ── ?>
 				<div class="card" style="padding:16px 20px;">
 					<h2 style="margin-top:0;"><?php esc_html_e( 'Free Plugin Updates', 'diviops-agent' ); ?></h2>
-					<p><?php esc_html_e( 'During beta, the Free WordPress plugin updates manually from the latest release ZIP. Native WordPress.org update notices are planned but not live yet.', 'diviops-agent' ); ?></p>
+					<p><?php esc_html_e( 'Once the Free plugin is published on WordPress.org, WordPress delivers updates through the normal plugin update flow.', 'diviops-agent' ); ?></p>
 					<ol style="margin-left:18px;">
-						<li><?php esc_html_e( 'Download the latest diviops-agent.zip.', 'diviops-agent' ); ?></li>
-						<li><?php esc_html_e( 'Upload it in Plugins → Add New → Upload Plugin.', 'diviops-agent' ); ?></li>
-						<li><?php esc_html_e( 'Choose Replace current with uploaded when WordPress asks.', 'diviops-agent' ); ?></li>
+						<li><?php esc_html_e( 'Open Dashboard → Updates or Plugins in WordPress admin.', 'diviops-agent' ); ?></li>
+						<li><?php esc_html_e( 'Apply the available DiviOps Agent update.', 'diviops-agent' ); ?></li>
+						<li><?php esc_html_e( 'Keep your Application Password and MCP client configuration unchanged.', 'diviops-agent' ); ?></li>
 					</ol>
 					<p>
-						<a href="<?php echo esc_url( $free_release_url ); ?>" target="_blank" rel="noopener noreferrer" class="button button-secondary"><?php esc_html_e( 'Latest Free Release', 'diviops-agent' ); ?></a>
 						<a href="<?php echo esc_url( $docs_url ); ?>" target="_blank" rel="noopener noreferrer" class="button"><?php esc_html_e( 'Setup Guide', 'diviops-agent' ); ?></a>
 					</p>
-					<p class="description"><?php esc_html_e( 'Your Application Password and MCP client configuration stay unchanged after replacing the plugin ZIP.', 'diviops-agent' ); ?></p>
+					<p class="description"><?php esc_html_e( 'The npm MCP server updates separately through npm or npx. Pro update and license access are managed by the Pro plugin.', 'diviops-agent' ); ?></p>
 				</div>
 
 			</div>

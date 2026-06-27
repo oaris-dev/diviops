@@ -16,7 +16,7 @@ DiviOps fits multiple WordPress workflows where AI-driven authoring + management
 - **SCF setup + management** — provision Secure Custom Fields field groups, sync schemas, export/import field group definitions; SCF data model becomes a tool surface, not an admin-UI flow.
 - **CPT + post population** — register custom post types via wp-cli passthrough; bulk-populate posts and pages across any post type, not just Divi-built ones.
 - **Data model reasoning** — schema introspection across Divi modules + SCF field groups + post meta; ask Claude what fields a post type carries, what attributes a module accepts, what tokens are defined.
-- **WordPress site auditing** — preset audits, design-token usage scans, orphan detection (presets, variables, dangling references); broader site surveys via wp-cli (`wp option list`, `wp post list --format=json`, `wp user list`).
+- **WordPress site auditing** — preset audits, design-token usage scans, orphan detection (presets, variables, dangling references); broader site surveys via wp-cli (`wp option list`, `wp post list --format=json`, `wp post term list <id> <taxonomy> --format=json`, `wp user list`).
 - **Hybrid sites (Divi + custom PHP)** — Divi authors the marketing pages; custom PHP templates handle dynamic ones (CPT listings, single-post views, member portals); design tokens harmonized across both surfaces via CSS custom properties driven from the Divi variable system.
 
 ## Quick start
@@ -25,9 +25,9 @@ Three steps to your first tool call.
 
 ### 1. Install the WordPress plugin
 
-Download and activate the **DiviOps Agent** plugin — [direct zip](https://github.com/oaris-dev/diviops/raw/main/diviops-agent.zip) or browse the [public distribution repo](https://github.com/oaris-dev/diviops). Requires Divi 5.1+ on WordPress 6.5+.
+Download and activate the **DiviOps Agent** plugin from WordPress.org once it is listed there. For pre-listing test packages or a manual fallback install, use the [direct zip](https://github.com/oaris-dev/diviops/raw/main/diviops-agent.zip) or browse the [public distribution repo](https://github.com/oaris-dev/diviops). Requires Divi 5.1+ on WordPress 6.5+.
 
-During beta, Free WordPress plugin updates are manual: download the latest `diviops-agent.zip` from the [Free GitHub release](https://github.com/oaris-dev/diviops/releases/latest), upload it via **WP Admin → Plugins → Add New → Upload Plugin**, and choose **Replace current with uploaded**. Native WordPress.org update notices are planned but not live yet.
+The npm MCP server updates through npm. WordPress.org installs of the Free plugin update through the normal WordPress plugin update flow. For pre-listing test packages or a manual fallback install, replace `diviops-agent.zip` through **WP Admin → Plugins → Add New → Upload Plugin** and choose **Replace current with uploaded**.
 
 ### 2. Create an Application Password
 
@@ -83,13 +83,14 @@ The skill enforces the Divi block format, the design system, and the response co
 
 ## Tools at a glance
 
-The server exposes **78 always-on tools** across the categories below. Each category links to representative tools; the full table lives in [server-reference.md](../docs/server-reference.md).
+The server exposes **85 always-on tools** across the categories below. Each category links to representative tools; the full table lives in [server-reference.md](../docs/server-reference.md).
 
 | Category | Use case | Tool prefixes |
 |----------|----------|---------------|
 | Page authoring | Create, edit, restructure pages | `page_*`, `section_*`, `module_*` |
 | Design system | Manage colors, fonts, variables, presets | `variable_*`, `global_color_*`, `global_font_*`, `preset_*` |
 | Library + templates | Reusable layouts + Theme Builder | `library_*`, `template_*`, `tb_*` |
+| WordPress menus | Author reusable nav menus and theme-location assignments | `menu_*` |
 | Schema introspection | Module attribute discovery | `schema_*` |
 | Canvas / off-canvas | Popups, modals, menus | `canvas_*` |
 | SCF integration | Secure Custom Fields sync | `scf_*` |
@@ -283,7 +284,7 @@ Every write tool accepts `dry_run: boolean` (default `false`). When `true`, the 
 }
 ```
 
-`meta_wp_cli` and `scf_import` do not accept `dry_run` (raw passthrough / upstream gap respectively). For bulk preview-then-commit flows (preset reassign, preset cleanup), see [safety-patterns.md](../docs/safety-patterns.md).
+`meta_wp_cli` and `scf_import` do not accept `dry_run` (raw passthrough / upstream gap respectively). `scf_sync` passes `dry_run` through to upstream `wp scf json sync --dry-run`, so its preview is the upstream plain-text summary rather than a plugin-built `data.plan`. For bulk preview-then-commit flows (preset reassign, preset cleanup), see [safety-patterns.md](../docs/safety-patterns.md).
 
 ### `_meta.idempotent` markers
 

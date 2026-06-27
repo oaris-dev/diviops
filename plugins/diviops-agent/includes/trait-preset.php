@@ -553,6 +553,21 @@ trait DiviOps_Agent_Preset {
 				self::save_d5_presets( $d5 );
 			}
 
+			if ( $dry_run ) {
+				return self::dry_run_response(
+					"Would strip prefix '{$prefix}' from " . count( $renamed ) . ' preset name(s).',
+					self::preset_cleanup_dry_run_changes( [], $renamed, [] ),
+					[],
+					[
+						'action'        => $action,
+						'prefix'        => $prefix,
+						'renamed_count' => count( $renamed ),
+						'kept_count'    => $kept,
+						'renamed'       => $renamed,
+					]
+				);
+			}
+
 			return self::envelope_success( [
 				'dry_run'       => $dry_run,
 				'action'        => $action,
@@ -606,6 +621,21 @@ trait DiviOps_Agent_Preset {
 
 			if ( ! $dry_run && $modified ) {
 				self::save_d5_presets( $d5 );
+			}
+
+			if ( $dry_run ) {
+				return self::dry_run_response(
+					"Would remove " . count( $removed ) . " unreferenced {$scope} preset(s).",
+					self::preset_cleanup_dry_run_changes( $removed, [], [] ),
+					[],
+					[
+						'action'        => $action,
+						'scope'         => $scope,
+						'removed_count' => count( $removed ),
+						'kept_count'    => $kept,
+						'removed'       => $removed,
+					]
+				);
 			}
 
 			return self::envelope_success( [
@@ -728,6 +758,29 @@ trait DiviOps_Agent_Preset {
 			self::save_d5_presets( $d5 );
 		}
 
+		if ( $dry_run ) {
+			return self::dry_run_response(
+				sprintf(
+					'Would clean presets: remove %d, rename %d, dedupe %d, keep %d.',
+					count( $removed ),
+					count( $renamed ),
+					count( $deduped ),
+					$kept
+				),
+				self::preset_cleanup_dry_run_changes( $removed, $renamed, $deduped ),
+				[],
+				[
+					'removed_count'  => count( $removed ),
+					'renamed_count'  => count( $renamed ),
+					'deduped_count'  => count( $deduped ),
+					'kept_count'     => $kept,
+					'removed'        => $removed,
+					'renamed'        => $renamed,
+					'deduped'        => $deduped,
+				]
+			);
+		}
+
 		return self::envelope_success( [
 			'dry_run'        => $dry_run,
 			'removed_count'  => count( $removed ),
@@ -738,6 +791,48 @@ trait DiviOps_Agent_Preset {
 			'renamed'        => $renamed,
 			'deduped'        => $deduped,
 		] );
+	}
+
+	/**
+	 * Build standard dry-run plan changes for preset_cleanup while preserving
+	 * the legacy removed/renamed/deduped arrays as sibling metadata.
+	 */
+	private static function preset_cleanup_dry_run_changes( array $removed, array $renamed, array $deduped ): array {
+		$changes = [];
+		foreach ( $removed as $entry ) {
+			$changes[] = [
+				'kind'   => 'preset.delete',
+				'target' => 'preset/' . ( $entry['module'] ?? 'unknown' ) . '/' . ( $entry['id'] ?? 'unknown' ),
+				'before' => [
+					'id'     => $entry['id'] ?? null,
+					'module' => $entry['module'] ?? null,
+					'name'   => $entry['name'] ?? '',
+				],
+				'after'  => null,
+			];
+		}
+		foreach ( $renamed as $entry ) {
+			$changes[] = [
+				'kind'   => 'preset.rename',
+				'target' => 'preset/' . ( $entry['module'] ?? 'unknown' ) . '/' . ( $entry['id'] ?? 'unknown' ),
+				'before' => [ 'name' => $entry['old_name'] ?? '' ],
+				'after'  => [ 'name' => $entry['new_name'] ?? '' ],
+			];
+		}
+		foreach ( $deduped as $entry ) {
+			$changes[] = [
+				'kind'   => 'preset.delete_duplicate',
+				'target' => 'preset/' . ( $entry['module'] ?? 'unknown' ) . '/' . ( $entry['id'] ?? 'unknown' ),
+				'before' => [
+					'id'      => $entry['id'] ?? null,
+					'module'  => $entry['module'] ?? null,
+					'name'    => $entry['name'] ?? '',
+					'kept_id' => $entry['kept_id'] ?? null,
+				],
+				'after'  => null,
+			];
+		}
+		return $changes;
 	}
 
 	/**
@@ -1807,6 +1902,73 @@ trait DiviOps_Agent_Preset {
 		}
 		if ( ! empty( $chain_details ) ) {
 			$summary['chain_details'] = $chain_details;
+		}
+
+		if ( 'apply' !== $mode ) {
+			$changes = [];
+			foreach ( ( $summary['details'] ?? [] ) as $detail ) {
+				$changes[] = [
+					'kind'   => 'preset.reassign_page_refs',
+					'target' => 'page#' . ( $detail['page_id'] ?? 'unknown' ),
+					'before' => [
+						'preset_id' => $old_uuid,
+						'scope'     => $effective_scope,
+					],
+					'after'  => [
+						'preset_id'    => $new_uuid,
+						'swaps'        => $detail['swaps'] ?? 0,
+						'strips'       => $detail['strips'] ?? 0,
+						'module_swaps' => $detail['module_swaps'] ?? 0,
+						'group_swaps'  => $detail['group_swaps'] ?? 0,
+					],
+				];
+			}
+			foreach ( ( $chain_details ?? [] ) as $detail ) {
+				$changes[] = [
+					'kind'   => 'preset.reassign_registry_chain',
+					'target' => 'preset/' . ( $detail['bucket'] ?? 'unknown' ) . '/' . ( $detail['module'] ?? 'unknown' ) . '/' . ( $detail['referenced_by'] ?? 'unknown' ),
+					'before' => [
+						'preset_id' => $old_uuid,
+						'slot'      => $detail['slot'] ?? null,
+					],
+					'after'  => [
+						'preset_id' => $new_uuid,
+						'swaps'     => $detail['swaps'] ?? 0,
+					],
+				];
+			}
+
+			$warnings = [];
+			if ( ! empty( $summary['truncated'] ) ) {
+				$warnings[] = 'Preset reassign scan was truncated to ' . ( $summary['max_pages'] ?? 0 ) . ' posts; chunk with page_ids before applying.';
+			}
+			foreach ( ( $summary['strip_advisory_per_slot'] ?? [] ) as $slot_key => $message ) {
+				$warnings[] = $slot_key . ': ' . $message;
+			}
+
+			return self::dry_run_response(
+				sprintf(
+					'Would reassign preset refs %s -> %s: %d page(s), %d page ref swap(s), %d registry chain swap(s), %d inline strip(s).',
+					$old_uuid,
+					$new_uuid,
+					$summary['pages_modified'] ?? 0,
+					$summary['uuid_swaps'] ?? 0,
+					$summary['chain_swaps'] ?? 0,
+					$summary['inline_stripped'] ?? 0
+				),
+				$changes,
+				$warnings,
+				[
+					'success'      => true,
+					'mode'         => $mode,
+					'scope'        => $scope,
+					'strip_inline' => $strip_inline,
+					'old_uuid'     => $old_uuid,
+					'new_uuid'     => $new_uuid,
+					'new_module'   => $new_mod,
+					'summary'      => $summary,
+				]
+			);
 		}
 
 		$success = 'apply' !== $mode || empty( $summary['errors'] );

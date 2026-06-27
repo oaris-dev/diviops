@@ -29,17 +29,22 @@ trait DiviOps_Agent_Page {
 			$post_type = 'page';
 		}
 
-		$query = new WP_Query( [
+		$query_args = [
 			'post_type'      => $post_type,
 			'post_status'    => [ 'publish', 'draft', 'private' ],
 			'posts_per_page' => $per_page,
 			'paged'          => $page_num,
 			'orderby'        => 'modified',
 			'order'          => 'DESC',
-		] );
+		];
 
+		$page    = self::query_inspectable_post_ids( $query_args, $per_page, $page_num );
 		$results = [];
-		foreach ( $query->posts as $post ) {
+		foreach ( $page['ids'] as $post_id ) {
+			$post = get_post( $post_id );
+			if ( ! $post ) {
+				continue;
+			}
 			$results[] = [
 				'id'       => $post->ID,
 				'title'    => $post->post_title,
@@ -52,8 +57,10 @@ trait DiviOps_Agent_Page {
 
 		return self::envelope_success( [
 			'results'     => $results,
-			'total'       => $query->found_posts,
-			'total_pages' => $query->max_num_pages,
+			'total'       => $page['total'],
+			'total_pages' => $page['total_pages'],
+			'truncated'   => $page['truncated'],
+			'scanned'     => $page['scanned'],
 		] );
 	}
 
@@ -72,6 +79,9 @@ trait DiviOps_Agent_Page {
 				404,
 				[ 'page_id' => $post_id ]
 			);
+		}
+		if ( ! self::can_inspect_post_object( $post ) ) {
+			return self::envelope_object_read_forbidden( $post_id, 'page' );
 		}
 
 		return self::envelope_success( [
@@ -102,6 +112,9 @@ trait DiviOps_Agent_Page {
 				404,
 				[ 'page_id' => $post_id ]
 			);
+		}
+		if ( ! self::can_inspect_post_object( $post ) ) {
+			return self::envelope_object_read_forbidden( $post_id, 'page' );
 		}
 
 		$content = $post->post_content;
@@ -242,6 +255,326 @@ trait DiviOps_Agent_Page {
 			'page_id' => $post_id,
 			'message' => 'Content updated successfully.',
 		] );
+	}
+
+	/**
+	 * Update page/post identity metadata without touching post_content.
+	 */
+	public static function page_update_meta( $request ) {
+		$post_id           = absint( $request['id'] );
+		$dry_run           = (bool) $request->get_param( 'dry_run' );
+		$preserve_old_slug = rest_sanitize_boolean( $request->get_param( 'preserve_old_slug' ) ?? true );
+		$post              = get_post( $post_id );
+
+		if ( ! $post ) {
+			return self::envelope_error(
+				'not_found',
+				"Page #{$post_id} not found.",
+				'Verify the page id via diviops_page_list.',
+				404,
+				[ 'page_id' => $post_id ]
+			);
+		}
+
+		if ( ! current_user_can( 'edit_post', $post_id ) ) {
+			return self::envelope_error(
+				'forbidden',
+				"Cannot edit page #{$post_id}.",
+				'Authenticate as a user with edit rights to this post.',
+				403,
+				[ 'page_id' => $post_id ]
+			);
+		}
+
+		$title_input = self::page_meta_request_value( $request, [ 'title', 'post_title' ] );
+		if ( ! empty( $title_input['conflict'] ) ) {
+			return self::page_meta_alias_conflict_error( 'title', $title_input );
+		}
+		$slug_input = self::page_meta_request_value( $request, [ 'slug', 'post_name' ] );
+		if ( ! empty( $slug_input['conflict'] ) ) {
+			return self::page_meta_alias_conflict_error( 'slug', $slug_input );
+		}
+		$parent_input = self::page_meta_request_value( $request, [ 'parent', 'post_parent' ] );
+		if ( ! empty( $parent_input['conflict'] ) ) {
+			return self::page_meta_alias_conflict_error( 'parent', $parent_input );
+		}
+		$menu_order_input = self::page_meta_request_value( $request, [ 'menu_order' ] );
+
+		$requested = [];
+		$update    = [ 'ID' => $post_id ];
+
+		if ( ! empty( $title_input['provided'] ) ) {
+			if ( ! is_string( $title_input['value'] ) ) {
+				return self::envelope_error(
+					'invalid_input',
+					'title must be a string.',
+					'Pass title as a non-empty string.',
+					400,
+					[ 'field' => $title_input['key'], 'received_type' => gettype( $title_input['value'] ) ]
+				);
+			}
+			$title = trim( (string) $title_input['value'] );
+			if ( '' === $title ) {
+				return self::envelope_error(
+					'invalid_input',
+					'title cannot be empty.',
+					'Pass a non-empty title or omit the field.',
+					400,
+					[ 'field' => $title_input['key'] ]
+				);
+			}
+			$requested['title']  = $title;
+			$update['post_title'] = $title;
+		}
+
+		$sanitized_slug = null;
+		if ( ! empty( $slug_input['provided'] ) ) {
+			if ( ! is_string( $slug_input['value'] ) ) {
+				return self::envelope_error(
+					'invalid_input',
+					'slug must be a string.',
+					'Pass slug as the exact sanitized post_name value you want to store.',
+					400,
+					[ 'field' => $slug_input['key'], 'received_type' => gettype( $slug_input['value'] ) ]
+				);
+			}
+			$slug           = trim( (string) $slug_input['value'] );
+			$sanitized_slug = sanitize_title( $slug );
+			if ( '' === $slug || '' === $sanitized_slug ) {
+				return self::envelope_error(
+					'invalid_input',
+					'slug cannot be empty after sanitization.',
+					'Pass a non-empty URL slug.',
+					400,
+					[ 'field' => $slug_input['key'], 'received' => $slug, 'sanitized' => $sanitized_slug ]
+				);
+			}
+			if ( $slug !== $sanitized_slug ) {
+				return self::envelope_error(
+					'invalid_input',
+					'slug must already be in sanitized WordPress slug form.',
+					'Pass the sanitized value shown in error.data.sanitized, or omit slug.',
+					400,
+					[ 'field' => $slug_input['key'], 'received' => $slug, 'sanitized' => $sanitized_slug ]
+				);
+			}
+			$requested['slug'] = $sanitized_slug;
+			$update['post_name'] = $sanitized_slug;
+		}
+
+		if ( ! empty( $parent_input['provided'] ) ) {
+			if ( ! is_numeric( $parent_input['value'] ) ) {
+				return self::envelope_error(
+					'invalid_input',
+					'parent must be an integer post ID.',
+					'Pass parent as 0 or an existing same-type parent post ID.',
+					400,
+					[ 'field' => $parent_input['key'], 'received_type' => gettype( $parent_input['value'] ) ]
+				);
+			}
+			$parent_id = (int) $parent_input['value'];
+			if ( $parent_id < 0 || $parent_id === $post_id ) {
+				return self::envelope_error(
+					'invalid_input',
+					'parent must be 0 or a different existing post ID.',
+					'Use parent=0 for no parent, or pass an existing same-type parent.',
+					400,
+					[ 'field' => $parent_input['key'], 'received' => $parent_id ]
+				);
+			}
+			if ( $parent_id > 0 ) {
+				if ( ! is_post_type_hierarchical( (string) $post->post_type ) ) {
+					return self::envelope_error(
+						'invalid_input',
+						"Post type '{$post->post_type}' is not hierarchical and cannot have a parent.",
+						'Omit parent or pass parent=0 for non-hierarchical post types.',
+						400,
+						[ 'field' => $parent_input['key'], 'post_type' => (string) $post->post_type ]
+					);
+				}
+				$parent_post = get_post( $parent_id );
+				if ( ! $parent_post || (string) $parent_post->post_type !== (string) $post->post_type ) {
+					return self::envelope_error(
+						'not_found',
+						"Parent post #{$parent_id} not found for post type '{$post->post_type}'.",
+						'Pass parent=0 or an existing parent with the same post type.',
+						404,
+						[ 'page_id' => $post_id, 'parent' => $parent_id, 'post_type' => (string) $post->post_type ]
+					);
+				}
+				if (
+					function_exists( 'wp_check_post_hierarchy_for_loops' )
+					&& $parent_id !== (int) wp_check_post_hierarchy_for_loops( $parent_id, $post_id )
+				) {
+					return self::envelope_error(
+						'invalid_input',
+						"Setting parent #{$parent_id} would create a hierarchy loop.",
+						'Choose a parent that is not this post or one of its descendants.',
+						400,
+						[ 'field' => $parent_input['key'], 'parent' => $parent_id, 'page_id' => $post_id ]
+					);
+				}
+			}
+			$requested['parent']  = $parent_id;
+			$update['post_parent'] = $parent_id;
+		}
+
+		if ( ! empty( $menu_order_input['provided'] ) ) {
+			if ( ! is_numeric( $menu_order_input['value'] ) ) {
+				return self::envelope_error(
+					'invalid_input',
+					'menu_order must be an integer.',
+					'Pass menu_order as a non-negative integer.',
+					400,
+					[ 'field' => 'menu_order', 'received_type' => gettype( $menu_order_input['value'] ) ]
+				);
+			}
+			$menu_order = (int) $menu_order_input['value'];
+			if ( $menu_order < 0 ) {
+				return self::envelope_error(
+					'invalid_input',
+					'menu_order must be non-negative.',
+					'Pass menu_order as 0 or a positive integer.',
+					400,
+					[ 'field' => 'menu_order', 'received' => $menu_order ]
+				);
+			}
+			$requested['menu_order']  = $menu_order;
+			$update['menu_order'] = $menu_order;
+		}
+
+		if ( empty( $requested ) ) {
+			return self::envelope_error(
+				'invalid_input',
+				'At least one metadata field is required.',
+				'Pass title, slug, parent, or menu_order.',
+				400,
+				[ 'fields' => [ 'title', 'slug', 'parent', 'menu_order' ] ]
+			);
+		}
+
+		$before = self::page_meta_readback( $post );
+		$after  = $before;
+		foreach ( $requested as $field => $value ) {
+			$after[ $field ] = $value;
+		}
+		if ( null !== $sanitized_slug ) {
+			$after['sanitized_slug'] = $sanitized_slug;
+		}
+
+		$changes = [];
+		foreach ( $requested as $field => $value ) {
+			if ( $before[ $field ] !== $value ) {
+				$changes[] = [
+					'kind'   => "page.update_meta.{$field}",
+					'target' => "page#{$post_id}",
+					'before' => $before[ $field ],
+					'after'  => $value,
+				];
+			}
+		}
+
+		$slug_changing = array_key_exists( 'slug', $requested ) && (string) $before['slug'] !== (string) $requested['slug'];
+		$will_record_old_slug = $slug_changing
+			&& $preserve_old_slug
+			&& 'publish' === (string) $post->post_status
+			&& '' !== (string) $before['slug'];
+
+		if ( $will_record_old_slug ) {
+			$changes[] = [
+				'kind'   => 'page.update_meta.old_slug_redirect',
+				'target' => "page#{$post_id}",
+				'before' => null,
+				'after'  => (string) $before['slug'],
+			];
+		}
+
+		$noop    = empty( $changes );
+		$summary = $noop
+			? "Page #{$post_id} metadata already matches requested values — no-op."
+			: "Would update page #{$post_id} metadata fields: " . implode( ', ', array_keys( $requested ) ) . '.';
+
+		if ( $dry_run ) {
+			return self::dry_run_response(
+				$summary,
+				$changes,
+				$slug_changing && ! $will_record_old_slug && $preserve_old_slug
+					? [ 'Old-slug redirect meta is only recorded for currently published posts with a non-empty previous slug.' ]
+					: [],
+				[
+					'id'                   => $post_id,
+					'before'               => $before,
+					'after'                => $after,
+					'sanitized_slug'       => $sanitized_slug,
+					'preserve_old_slug'    => $preserve_old_slug,
+					'old_slug_would_record' => $will_record_old_slug,
+				]
+			);
+		}
+
+		if ( $noop ) {
+			return self::envelope_success( array_merge(
+				$before,
+				[
+					'noop'                 => true,
+					'sanitized_slug'       => $sanitized_slug,
+					'preserve_old_slug'    => $preserve_old_slug,
+					'old_slug_recorded'    => false,
+					'old_slug_removed'     => false,
+				]
+			) );
+		}
+
+		$result = wp_update_post( $update, true );
+		if ( is_wp_error( $result ) ) {
+			return self::envelope_from_wp_error( $result );
+		}
+
+		$old_slug_recorded = false;
+		$old_slug_removed  = false;
+		if ( $slug_changing ) {
+			$current_old_slugs = (array) get_post_meta( $post_id, '_wp_old_slug', false );
+			if ( $will_record_old_slug && ! in_array( (string) $before['slug'], $current_old_slugs, true ) ) {
+				add_post_meta( $post_id, '_wp_old_slug', (string) $before['slug'] );
+				$current_old_slugs[] = (string) $before['slug'];
+			}
+			$old_slug_recorded = $will_record_old_slug && in_array( (string) $before['slug'], $current_old_slugs, true );
+			if ( ! $preserve_old_slug && in_array( (string) $before['slug'], $current_old_slugs, true ) ) {
+				delete_post_meta( $post_id, '_wp_old_slug', (string) $before['slug'] );
+				$old_slug_removed = true;
+				$current_old_slugs = array_values( array_diff( $current_old_slugs, [ (string) $before['slug'] ] ) );
+			}
+			if ( in_array( (string) $requested['slug'], $current_old_slugs, true ) ) {
+				delete_post_meta( $post_id, '_wp_old_slug', (string) $requested['slug'] );
+				$old_slug_removed = true;
+			}
+		}
+
+		self::invalidate_divi_cache( $post_id );
+
+		$updated = get_post( $post_id );
+		if ( ! $updated ) {
+			return self::envelope_error(
+				'readback_failed',
+				"Page #{$post_id} metadata was updated successfully, but reading back the record failed.",
+				'The transaction committed; reload the post before retrying.',
+				500,
+				[
+					'id'             => $post_id,
+					'status'         => 'committed',
+					'changed_fields' => array_keys( $requested ),
+				]
+			);
+		}
+		return self::envelope_success( array_merge(
+			self::page_meta_readback( $updated ),
+			[
+				'sanitized_slug'       => $sanitized_slug,
+				'preserve_old_slug'    => $preserve_old_slug,
+				'old_slug_recorded'    => $old_slug_recorded,
+				'old_slug_removed'     => $old_slug_removed,
+			]
+		) );
 	}
 
 	/**
@@ -677,6 +1010,9 @@ trait DiviOps_Agent_Page {
 				[ 'target_kind' => 'page', 'page_id' => $post_id ]
 			);
 		}
+		if ( ! self::can_inspect_post_object( $post ) ) {
+			return self::envelope_object_read_forbidden( $post_id, 'section' );
+		}
 
 		$target = self::resolve_module_target( $request, [ 'allow_auto_index' => false ] );
 		if ( is_wp_error( $target ) ) {
@@ -750,6 +1086,65 @@ trait DiviOps_Agent_Page {
 	}
 
 	/**
+	 * Catch the narrow high-risk case where a text selector resolves to one
+	 * module type but the caller writes a content slot belonging to another.
+	 *
+	 * This is intentionally not full schema validation: style/decoration paths
+	 * may be absent before first write and should remain seedable. Content
+	 * roots such as heading `title.innerContent` or button `button.innerContent`
+	 * are different because writing them to the wrong module silently stores a
+	 * never-rendered attr.
+	 *
+	 * @param string $module_type Short Divi block type, without `divi/`.
+	 * @param array  $attrs       Dot-path attrs passed to module_update.
+	 * @return array|null         First mismatch diagnostic, or null.
+	 */
+	private static function find_module_update_content_slot_mismatch( $module_type, array $attrs ) {
+		$content_roots_by_type = [
+			'text'          => [ 'content' ],
+			'heading'       => [ 'title' ],
+			'button'        => [ 'button' ],
+			'blurb'         => [ 'title', 'content' ],
+			'contact-field' => [ 'fieldItem' ],
+		];
+
+		$known_content_roots = [
+			'button'    => true,
+			'content'   => true,
+			'fieldItem' => true,
+			'title'     => true,
+		];
+
+		if ( ! isset( $content_roots_by_type[ $module_type ] ) ) {
+			return null;
+		}
+
+		$allowed_roots = array_fill_keys( $content_roots_by_type[ $module_type ], true );
+		foreach ( $attrs as $path => $_value ) {
+			$segments = self::split_dot_path( (string) $path );
+			$root     = $segments[0] ?? '';
+			if ( '' === $root || ! isset( $known_content_roots[ $root ] ) ) {
+				continue;
+			}
+			if ( ! in_array( 'innerContent', $segments, true ) ) {
+				continue;
+			}
+			if ( ! isset( $allowed_roots[ $root ] ) ) {
+				return [
+					'field'         => 'attrs',
+					'reason'        => 'module_attr_path_mismatch',
+					'path'          => (string) $path,
+					'block_type'    => $module_type,
+					'allowed_roots' => array_values( $content_roots_by_type[ $module_type ] ),
+					'received_root' => $root,
+				];
+			}
+		}
+
+		return null;
+	}
+
+	/**
 	 * Read one targeted Divi module/block without mutating post_content.
 	 */
 	public static function module_get( $request ) {
@@ -765,6 +1160,9 @@ trait DiviOps_Agent_Page {
 				404,
 				[ 'target_kind' => 'page', 'page_id' => $post_id ]
 			);
+		}
+		if ( ! self::can_inspect_post_object( $post ) ) {
+			return self::envelope_object_read_forbidden( $post_id, 'module' );
 		}
 
 		$target = self::resolve_module_target( $request );
@@ -1085,6 +1483,22 @@ trait DiviOps_Agent_Page {
 				'Re-save the page through the Visual Builder to regenerate canonical block markup.',
 				500,
 				[ 'page_id' => $post_id, 'block_type' => $type ]
+			);
+		}
+
+		$content_slot_mismatch = self::find_module_update_content_slot_mismatch( $type, $attrs );
+		if ( null !== $content_slot_mismatch ) {
+			$content_slot_mismatch['target_kind']  = 'module';
+			$content_slot_mismatch['target_mode']  = $target['mode'];
+			$content_slot_mismatch['target_value'] = $target['needle'];
+			$content_slot_mismatch['page_id']      = $post_id;
+
+			return self::envelope_error(
+				'invalid_input',
+				"Attr path '{$content_slot_mismatch['path']}' targets a content slot that does not belong to divi/{$type}.",
+				'Use diviops_module_get or diviops_page_get_layout to confirm the matched block type; prefer auto_index for generic text matches.',
+				400,
+				$content_slot_mismatch
 			);
 		}
 
@@ -2024,6 +2438,65 @@ trait DiviOps_Agent_Page {
 	}
 
 	/**
+	 * Resolve REST aliases such as {slug, post_name} without accepting conflicts.
+	 */
+	private static function page_meta_request_value( $request, array $keys ) {
+		$found = [];
+		foreach ( $keys as $key ) {
+			$value = $request->get_param( $key );
+			if ( null !== $value ) {
+				$found[ $key ] = $value;
+			}
+		}
+
+		if ( empty( $found ) ) {
+			return [ 'provided' => false ];
+		}
+
+		$first_key   = key( $found );
+		$first_value = reset( $found );
+		foreach ( $found as $key => $value ) {
+			if ( $value !== $first_value ) {
+				return [
+					'provided' => true,
+					'conflict' => true,
+					'keys'     => array_keys( $found ),
+					'values'   => $found,
+				];
+			}
+		}
+
+		return [
+			'provided' => true,
+			'key'      => $first_key,
+			'value'    => $first_value,
+		];
+	}
+
+	private static function page_meta_alias_conflict_error( $field, array $input ) {
+		return self::envelope_error(
+			'invalid_input',
+			"Conflicting aliases were provided for {$field}.",
+			'Pass only one alias, or pass matching values.',
+			400,
+			[ 'field' => $field, 'keys' => $input['keys'] ?? [], 'values' => $input['values'] ?? [] ]
+		);
+	}
+
+	private static function page_meta_readback( $post ) {
+		return [
+			'id'           => (int) $post->ID,
+			'title'        => (string) $post->post_title,
+			'slug'         => (string) $post->post_name,
+			'parent'       => (int) $post->post_parent,
+			'menu_order'   => (int) $post->menu_order,
+			'status'       => (string) $post->post_status,
+			'post_type'    => (string) $post->post_type,
+			'modified_gmt' => (string) $post->post_modified_gmt,
+		];
+	}
+
+	/**
 	 * Seed the minimum metadata Divi expects for builder-backed pages.
 	 *
 	 * This mirrors Divi's own onboarding and page creation helpers.
@@ -2306,6 +2779,13 @@ trait DiviOps_Agent_Page {
 		$allow_auto_index = $opts['allow_auto_index'] ?? true;
 		$context          = $opts['context']          ?? '';
 		$ctx_suffix       = '' !== $context ? " ({$context})" : '';
+		$error_data       = static function ( array $extra = [] ) use ( $context ): array {
+			$data = array_merge( [ 'status' => 400 ], $extra );
+			if ( '' !== $context ) {
+				$data['context'] = $context;
+			}
+			return $data;
+		};
 
 		// Mirror the per-handler sanitize_text_field that the inline parsing
 		// did before centralization (strips control chars, tags, extra
@@ -2332,7 +2812,7 @@ trait DiviOps_Agent_Page {
 					$auto_index_param,
 					$ctx_suffix
 				),
-				[ 'status' => 400 ]
+				$error_data()
 			);
 		}
 
@@ -2347,7 +2827,7 @@ trait DiviOps_Agent_Page {
 			return new WP_Error(
 				'missing_target',
 				sprintf( 'One of %s is required%s.', $allowed, $ctx_suffix ),
-				[ 'status' => 400 ]
+				$error_data()
 			);
 		}
 
@@ -2363,7 +2843,7 @@ trait DiviOps_Agent_Page {
 					$ctx_suffix,
 					implode( ', ', $provided )
 				),
-				[ 'status' => 400 ]
+				$error_data( [ 'fields_provided' => $provided ] )
 			);
 		}
 
@@ -2382,7 +2862,7 @@ trait DiviOps_Agent_Page {
 						$auto_index,
 						$ctx_suffix
 					),
-					[ 'status' => 400 ]
+					$error_data()
 				);
 			}
 		}
@@ -2668,12 +3148,14 @@ trait DiviOps_Agent_Page {
 					// Zero nulls = malformed parsed block — error rather than
 					// guess at insertion order.
 					if ( -1 === $last_null_idx && null === $ic_insert ) {
+						// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception messages are plain text; dynamic block name is sanitized before interpolation.
 						throw new \RuntimeException(
 							sprintf(
 								"Refusing to clone: parent block '%s' has innerBlocks but no `null` placeholders in innerContent (malformed parsed input). Cannot determine where to insert the new placeholder. Re-save the page through VB to regenerate canonical block markup, then retry.",
-								$parent_block['blockName'] ?? 'unknown'
+								sanitize_text_field( (string) ( $parent_block['blockName'] ?? 'unknown' ) )
 							)
 						);
+						// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 					}
 
 					// Fallback: $insert_at is beyond the last existing null

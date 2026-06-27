@@ -334,7 +334,7 @@ Instance inline attrs > attribute-level preset (`groupPreset`) > module-level pr
 > **Token names are canonical; values are reference.** The token names (`gcid-oa-primary-500`, `gvid-oa-size-h1`) and structure (3 color families, 15 font sizes, 13 spacings, 6 radii) are the canonical target every project should create during bootstrap. The hex/clamp values below are from a reference project — your project's actual values depend on its brand colors and are set during bootstrap Step 2. Inspect live values via `diviops_variable_list`.
 
 ### Naming convention
-All tokens use the `oa` prefix for filterability and collision avoidance.
+The reference catalog below uses explicit `oa`-prefixed IDs for collision avoidance. Existing Divi-created variables may instead have UUID-style IDs and only carry the `oa-*` meaning in `label`; `diviops_variable_list.prefix` filters IDs only, so audit semantic `oa` tokens by listing the relevant `type` and checking returned labels unless explicit `gcid-oa-*` / `gvid-oa-*` IDs are known to exist.
 
 ### Colors (35 variables)
 

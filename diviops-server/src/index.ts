@@ -694,6 +694,176 @@ registerPluginTool(
 );
 
 registerPluginTool(
+  "diviops_menu_list",
+  {
+    description:
+      "List WordPress nav menus, registered theme locations, and current location assignments. Free/core, read-only. Requires the WordPress user to have edit_theme_options. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }; success payload is { menus[], count, registered_locations, assigned_locations }.",
+    annotations: { idempotentHint: true },
+    _meta: { idempotent: "true" },
+  },
+  async () => {
+    const result = await wp.requestEnveloped("/menu/list");
+    return {
+      content: [
+        { type: "text" as const, text: serializeEnvelope(result, "diviops_menu_list") },
+      ],
+    };
+  },
+);
+
+registerPluginTool(
+  "diviops_menu_get",
+  {
+    description:
+      "Fetch one WordPress nav menu with normalized flat items and a nested item tree. Free/core, read-only. Requires edit_theme_options. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }; missing menu_id returns not_found.",
+    inputSchema: {
+      menu_id: z.number().int().positive().describe("WordPress nav menu term ID"),
+    },
+    annotations: { idempotentHint: true },
+    _meta: { idempotent: "true" },
+  },
+  async ({ menu_id }) => {
+    const result = await wp.requestEnveloped(`/menu/get/${menu_id}`);
+    return {
+      content: [
+        { type: "text" as const, text: serializeEnvelope(result, "diviops_menu_get") },
+      ],
+    };
+  },
+);
+
+registerPluginTool(
+  "diviops_menu_create",
+  {
+    description:
+      "Create a WordPress nav menu by name, optionally with a requested slug. Free/core single-site menu authoring primitive. Requires edit_theme_options. Existing same-name or same-slug menus return ok:true with noop:true instead of creating duplicates. Does not assign the menu to a location; follow with diviops_menu_location_assign. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }." +
+      DRY_RUN_DESC_SUFFIX,
+    inputSchema: {
+      name: z.string().min(1).describe("Menu display name, e.g. Primary"),
+      slug: z.string().optional().describe("Optional sanitized menu slug. Omit to let WordPress derive it."),
+      dry_run: DRY_RUN_FIELD,
+    },
+    annotations: { idempotentHint: true },
+    _meta: { idempotent: "true" },
+  },
+  async ({ name, slug, dry_run }) => {
+    const body: Record<string, unknown> = { name };
+    if (slug !== undefined) body.slug = slug;
+    if (dry_run) body.dry_run = true;
+    const result = await wp.requestEnveloped("/menu/create", {
+      method: "POST",
+      body,
+    });
+    return {
+      content: [
+        { type: "text" as const, text: serializeEnvelope(result, "diviops_menu_create") },
+      ],
+    };
+  },
+);
+
+registerPluginTool(
+  "diviops_menu_item_add_page",
+  {
+    description:
+      "Append a readable published page to an existing WordPress nav menu. Free/core single-site menu authoring primitive. Requires edit_theme_options plus read access to the page. Validates menu, page status/visibility, and optional parent menu item. Existing same page under the same parent returns noop:true; a different existing label returns conflict because item-update/reorder are deferred. No delete, reorder, or broad reconcile path. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }." +
+      DRY_RUN_DESC_SUFFIX,
+    inputSchema: {
+      menu_id: z.number().int().positive().describe("WordPress nav menu term ID"),
+      page_id: z.number().int().positive().describe("Published page ID to add"),
+      label: z.string().optional().describe("Optional menu label. Defaults to the page title."),
+      parent_item_id: z.number().int().min(0).optional().default(0).describe("Optional parent menu item ID from diviops_menu_get; 0 for top level."),
+      dry_run: DRY_RUN_FIELD,
+    },
+    annotations: { idempotentHint: true },
+    _meta: { idempotent: "true" },
+  },
+  async ({ menu_id, page_id, label, parent_item_id, dry_run }) => {
+    const body: Record<string, unknown> = {
+      menu_id,
+      page_id,
+      parent_item_id: parent_item_id ?? 0,
+    };
+    if (label !== undefined) body.label = label;
+    if (dry_run) body.dry_run = true;
+    const result = await wp.requestEnveloped("/menu/item/add-page", {
+      method: "POST",
+      body,
+    });
+    return {
+      content: [
+        { type: "text" as const, text: serializeEnvelope(result, "diviops_menu_item_add_page") },
+      ],
+    };
+  },
+);
+
+registerPluginTool(
+  "diviops_menu_item_add_custom",
+  {
+    description:
+      "Append a custom URL item to an existing WordPress nav menu. Free/core single-site menu authoring primitive. Requires edit_theme_options. URL validation allows only http, https, root-relative paths, same-page hashes, mailto, and tel; protocol-relative/javascript/data URLs are rejected. Existing same URL under the same parent with the same label returns noop:true. No delete, reorder, or broad reconcile path. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }." +
+      DRY_RUN_DESC_SUFFIX,
+    inputSchema: {
+      menu_id: z.number().int().positive().describe("WordPress nav menu term ID"),
+      label: z.string().min(1).describe("Menu item label"),
+      url: z.string().min(1).describe("Allowed URL: http(s), root-relative path, #hash, mailto, or tel"),
+      parent_item_id: z.number().int().min(0).optional().default(0).describe("Optional parent menu item ID from diviops_menu_get; 0 for top level."),
+      dry_run: DRY_RUN_FIELD,
+    },
+    annotations: { idempotentHint: true },
+    _meta: { idempotent: "true" },
+  },
+  async ({ menu_id, label, url, parent_item_id, dry_run }) => {
+    const body: Record<string, unknown> = {
+      menu_id,
+      label,
+      url,
+      parent_item_id: parent_item_id ?? 0,
+    };
+    if (dry_run) body.dry_run = true;
+    const result = await wp.requestEnveloped("/menu/item/add-custom", {
+      method: "POST",
+      body,
+    });
+    return {
+      content: [
+        { type: "text" as const, text: serializeEnvelope(result, "diviops_menu_item_add_custom") },
+      ],
+    };
+  },
+);
+
+registerPluginTool(
+  "diviops_menu_location_assign",
+  {
+    description:
+      "Assign an existing WordPress nav menu to a registered theme location discovered from the current theme. Free/core single-site menu authoring primitive. Requires edit_theme_options. Rejects arbitrary location strings; call diviops_menu_list first and use data.registered_locations keys. Reassigning the same menu/location returns noop:true. No location removal path in this MVP. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }." +
+      DRY_RUN_DESC_SUFFIX,
+    inputSchema: {
+      menu_id: z.number().int().positive().describe("WordPress nav menu term ID"),
+      location: z.string().min(1).describe("Registered theme location key from diviops_menu_list"),
+      dry_run: DRY_RUN_FIELD,
+    },
+    annotations: { idempotentHint: true },
+    _meta: { idempotent: "true" },
+  },
+  async ({ menu_id, location, dry_run }) => {
+    const body: Record<string, unknown> = { menu_id, location };
+    if (dry_run) body.dry_run = true;
+    const result = await wp.requestEnveloped("/menu/location/assign", {
+      method: "POST",
+      body,
+    });
+    return {
+      content: [
+        { type: "text" as const, text: serializeEnvelope(result, "diviops_menu_location_assign") },
+      ],
+    };
+  },
+);
+
+registerPluginTool(
   "diviops_schema_list_modules",
   {
     description:
@@ -1236,6 +1406,65 @@ registerPluginTool(
 );
 
 registerPluginTool(
+  "diviops_page_update_meta",
+  {
+    description:
+      "Update page/post metadata fields without touching post_content. Supports title, slug, parent, and menu_order; use diviops_page_update_status for status changes. Slug input must already be in sanitized WordPress post_name form. When a published post's slug changes, preserve_old_slug defaults to true and records the previous slug in _wp_old_slug so WordPress old-slug redirects can work. Returns readback fields after apply. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }; missing page_id or invalid parent returns 'not_found', edit-permission failures return 'forbidden' (HTTP 403), invalid/empty slug or malformed field values return 'invalid_input' with `error.data` documenting the field and sanitized slug where relevant." +
+      DRY_RUN_DESC_SUFFIX,
+    inputSchema: {
+      page_id: z.number().int().describe("WordPress post/page ID to update"),
+      title: z
+        .string()
+        .optional()
+        .describe("New post_title. Omit to leave unchanged."),
+      slug: z
+        .string()
+        .optional()
+        .describe("New post_name. Must already be sanitized, e.g. 'legal-notice'."),
+      parent: z
+        .number()
+        .int()
+        .min(0)
+        .optional()
+        .describe("New post_parent. Use 0 for no parent."),
+      menu_order: z
+        .number()
+        .int()
+        .min(0)
+        .optional()
+        .describe("New menu_order value."),
+      preserve_old_slug: z
+        .boolean()
+        .optional()
+        .default(true)
+        .describe("When true, record the previous slug in _wp_old_slug for published posts when slug changes."),
+      dry_run: DRY_RUN_FIELD,
+    },
+    annotations: { idempotentHint: true },
+    _meta: { idempotent: "true" },
+  },
+  async ({ page_id, title, slug, parent, menu_order, preserve_old_slug, dry_run }) => {
+    const body: Record<string, unknown> = {
+      preserve_old_slug: preserve_old_slug ?? true,
+    };
+    if (title !== undefined) body.title = title;
+    if (slug !== undefined) body.slug = slug;
+    if (parent !== undefined) body.parent = parent;
+    if (menu_order !== undefined) body.menu_order = menu_order;
+    if (dry_run) body.dry_run = true;
+    const result = await wp.requestEnveloped(`/page/update-meta/${page_id}`, {
+      method: "POST",
+      body,
+    });
+    return {
+      content: [
+        { type: "text" as const, text: serializeEnvelope(result, "diviops_page_update_meta") },
+      ],
+    };
+  },
+);
+
+registerPluginTool(
   "diviops_render_preview",
   {
     description:
@@ -1518,7 +1747,7 @@ registerPluginTool(
   "diviops_module_update",
   {
     description:
-      'Update specific attributes of a module. Target by auto_index (e.g. "text:5"), admin label, or text content. Uses dot notation for attribute paths. Example: {"content.decoration.headingFont.h2.font.desktop.value.color": "#ff0000"}. For paths whose key segments contain literal dots — notably Composable Settings preset slots like groupPreset["title.decoration.spacing"] — escape the inner dots with `\\.` to keep the segment intact: {"groupPreset.title\\\\.decoration\\\\.spacing.presetId": ["uuid"]}. Priority: auto_index > label > match_text. Use occurrence with label when duplicates exist. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }; missing module returns code "not_found" with error.data = { target_kind: "module", target_mode, target_value, page_id }, non-array attrs returns code "invalid_input" with error.data.field = "attrs", malformed Divi block markup surfaces code "divi_error" (HTTP 500).' +
+      'Update specific attributes of a module. Target by auto_index (e.g. "text:5"), admin label, or text content. Uses dot notation for attribute paths. Example: {"content.decoration.headingFont.h2.font.desktop.value.color": "#ff0000"}. For paths whose key segments contain literal dots — notably Composable Settings preset slots like groupPreset["title.decoration.spacing"] — escape the inner dots with `\\.` to keep the segment intact: {"groupPreset.title\\\\.decoration\\\\.spacing.presetId": ["uuid"]}. Priority: auto_index > label > match_text. Use occurrence with label when duplicates exist. match_text is a convenience selector: for generic or repeated visible text, prefer auto_index from diviops_page_get_layout/module_get. Content-slot mismatches such as writing a heading `title.innerContent` path into a matched divi/text block are rejected with invalid_input instead of silently storing never-rendered attrs. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }; missing module returns code "not_found" with error.data = { target_kind: "module", target_mode, target_value, page_id }, non-array attrs returns code "invalid_input" with error.data.field = "attrs", malformed Divi block markup surfaces code "divi_error" (HTTP 500).' +
       DRY_RUN_DESC_SUFFIX,
     inputSchema: {
       page_id: z.number().describe("WordPress post/page ID"),
@@ -1808,7 +2037,7 @@ registerPluginTool(
   "diviops_page_trash",
   {
     description:
-      "Trash or permanently delete a page/post. Defaults to trash (reversible via WP Admin → Trash). Pass force=true to permanently delete (wp_delete_post — irreversible). Idempotent: trashing an already-trashed post returns ok:true with `data.already_trashed = true` (repeat-safe semantics for AI-agent retries). Pass dry_run=true to preview without mutating. Replaces wp-cli `post delete --force=0|1` routing for AI-agent callers (typed input, deterministic envelope). Returns the standardized envelope { ok, data?, error: { code, message, hint? } }; missing post_id returns 'not_found', delete-permission failures return 'forbidden' (HTTP 403). Note: dry_run currently returns the route-specific shape rather than the standardized `data.plan = { summary, changes[] }` shape used by tools introduced after the dry_run convention was generalized; plan-shape standardization is tracked separately for the pre-existing dry_run wave.",
+      "Trash or permanently delete a page/post. Defaults to trash (reversible via WP Admin → Trash). Pass force=true to permanently delete (wp_delete_post — irreversible). Idempotent: trashing an already-trashed post returns ok:true with `data.already_trashed = true` (repeat-safe semantics for AI-agent retries). Pass dry_run=true to preview the standard `data.plan = { summary, changes[] }` without mutating. Replaces wp-cli `post delete --force=0|1` routing for AI-agent callers (typed input, deterministic envelope). Returns the standardized envelope { ok, data?, error: { code, message, hint? } }; missing post_id returns 'not_found', delete-permission failures return 'forbidden' (HTTP 403).",
     inputSchema: {
       post_id: z.number().int().describe("WordPress post/page ID"),
       force: z
@@ -1849,7 +2078,7 @@ registerPluginTool(
   "diviops_page_update_status",
   {
     description:
-      "Update a page's post_status. Valid statuses: publish, draft, private, pending, future. status='future' requires date_gmt (ISO 8601 UTC, must be in the future) — server writes both post_date_gmt and the site-tz post_date so WP's scheduler picks it up. status='publish' on a previously-scheduled post clears the future date so it publishes immediately. Idempotent: same-status update returns ok:true with `data.noop = true`. Pass dry_run=true to preview. Replaces wp-cli `post update --post_status=...` routing. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }; missing post_id returns 'not_found', edit-permission failures return 'forbidden' (HTTP 403); status enum violations and date_gmt validation failures return 'invalid_input' with `error.data` documenting the field. Note: dry_run currently returns the route-specific shape rather than the standardized `data.plan = { summary, changes[] }` shape used by tools introduced after the dry_run convention was generalized; plan-shape standardization is tracked separately for the pre-existing dry_run wave.",
+      "Update a page's post_status. Valid statuses: publish, draft, private, pending, future. status='future' requires date_gmt (ISO 8601 UTC, must be in the future) — server writes both post_date_gmt and the site-tz post_date so WP's scheduler picks it up. status='publish' on a previously-scheduled post clears the future date so it publishes immediately. Idempotent: same-status update returns ok:true with `data.noop = true`. Pass dry_run=true to preview the standard `data.plan = { summary, changes[] }` without mutating. Replaces wp-cli `post update --post_status=...` routing. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }; missing post_id returns 'not_found', edit-permission failures return 'forbidden' (HTTP 403); status enum violations and date_gmt validation failures return 'invalid_input' with `error.data` documenting the field.",
     inputSchema: {
       post_id: z.number().int().describe("WordPress post/page ID"),
       status: z
@@ -1932,7 +2161,7 @@ registerPluginTool(
   "diviops_preset_cleanup",
   {
     description:
-      'Clean up presets. Default: remove spam presets. Optional: dedup=true to also remove duplicates, action="rename_strip_prefix" with prefix to strip a name prefix, or action="remove_orphans" with scope="spam"|"all" to remove unreferenced presets. Use dry_run: true (default) to preview. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }. Note: dry_run currently returns the route-specific summary shape rather than the standardized `data.plan = { summary, changes[] }` shape used by tools introduced after the dry_run convention was generalized; plan-shape standardization is tracked separately for the pre-existing dry_run wave.',
+      'Clean up presets. Default: remove spam presets. Optional: dedup=true to also remove duplicates, action="rename_strip_prefix" with prefix to strip a name prefix, or action="remove_orphans" with scope="spam"|"all" to remove unreferenced presets. Use dry_run: true (default) to preview the standard `data.plan = { summary, changes[] }` without mutating; legacy removed/renamed/deduped summary arrays are preserved as sibling metadata. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }.',
     inputSchema: {
       dry_run: z
         .boolean()
@@ -3794,7 +4023,7 @@ registerPluginTool(
   "diviops_variable_list",
   {
     description:
-      "List all design token variables from the Divi Variable Manager. Colors (gcid-*) come from et_global_data, numbers/strings/etc (gvid-*) from et_divi_global_variables. Filter by type or ID prefix. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }; invalid `type` returns ok:false with code 'invalid_input'.",
+      "List all design token variables from the Divi Variable Manager. Colors (gcid-*) come from et_global_data, numbers/strings/etc (gvid-*) from et_divi_global_variables. Filter by type or stored ID prefix. The `prefix` parameter does not match labels; for semantic names such as `oa-*` labels on UUID-backed Divi variables, list by type and filter returned labels client-side. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }; invalid `type` returns ok:false with code 'invalid_input'.",
     inputSchema: {
       type: z
         .enum(["colors", "numbers", "strings", "images", "links", "fonts", "gradients"])
@@ -3804,7 +4033,7 @@ registerPluginTool(
         .string()
         .optional()
         .describe(
-          'Filter by ID prefix (e.g. "gcid-oa-" for oa design system colors)',
+          'Filter by stored ID prefix only. Does not match labels; for semantic names such as "oa-*" labels, list by type and filter returned labels client-side.',
         ),
     },
     annotations: { idempotentHint: true },
@@ -4115,7 +4344,7 @@ registerPluginTool(
         .optional()
         .default(false)
         .describe(
-          "Preview the full plan without persisting. Returns identical `created`/`skipped` shape so callers can audit IDs and clamp() values before committing.",
+          "Preview the standard dry-run plan without persisting. The response also preserves `created`/`skipped` diagnostics so callers can audit IDs and clamp() values before committing.",
         ),
       overwrite: z
         .boolean()
@@ -4955,7 +5184,7 @@ function registerProTools(): void {
     "diviops_fc_variation_list",
     {
       description:
-        "List FluentCart Pro variations for a product (Pro tier; V3; requires FluentCart Pro installed + activated). Read-only. Returns every variation row attached to the product with its subscription shape (payment_type, other_info.repeat_interval/times/trial_days/manage_setup_fee) and a license-settings projection when ProductMeta.license_settings is configured. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }; success payload is { product_id, variation_type, default_variation_id, variations: VariationRow[], variations_count }. Each VariationRow carries { id, post_id, variation_title, sku, payment_type, item_price, compare_price, fulfillment_type, stock_status, manage_stock, available, other_info: { ...all stored keys... }, license: { activation_limit, validity: { unit, value } } | null }. Unit convention: item_price and compare_price are stored cents (e.g. 1900 = $19.00). compare_price is null when FCP stores the no-compare sentinel 0; sku is null when the column is SQL NULL OR an empty string. license is null when the product has no license_settings; otherwise activation_limit is null/'' (unset), 0 (unlimited per FluentCart Pro License::getActivationLimit), or a positive integer (max activations). validity.unit is one of: lifetime/day/week/month/year. Error codes: invalid_input (400) when id is not a positive integer; not_found (404) when the product does not exist; fluentcart.module_inactive (412); fluentcart.query_failed (500). Idempotency: read-only.",
+        "List FluentCart Pro variations for a product (Pro tier; V3; requires FluentCart Pro installed + activated). Read-only. Returns every variation row attached to the product with its subscription shape (payment_type, other_info.repeat_interval/times/trial_days/manage_setup_fee) and a license-settings projection when ProductMeta.license_settings is configured. For FluentCart 1.5 advanced_variations products, also resolves attribute relation metadata into VariationRow.attributes[] while preserving raw other_info.variant term IDs; each attribute row carries { group_id, group_title, group_slug, group_type, term_id, term_title, term_slug, term_settings }. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }; success payload is { product_id, variation_type, default_variation_id, variations: VariationRow[], variations_count }. Each VariationRow carries { id, post_id, variation_title, sku, payment_type, item_price, compare_price, fulfillment_type, stock_status, manage_stock, available, other_info: { ...all stored keys... }, attributes?: AttributeRow[], license: { activation_limit, validity: { unit, value } } | null }. Unit convention: item_price and compare_price are stored cents (e.g. 1900 = $19.00). compare_price is null when FCP stores the no-compare sentinel 0; sku is null when the column is SQL NULL OR an empty string. license is null when the product has no license_settings; otherwise activation_limit is null/'' (unset), 0 (unlimited per FluentCart Pro License::getActivationLimit), or a positive integer (max activations). validity.unit is one of: lifetime/day/week/month/year. Advanced Variations authoring remains out of scope; write tools still refuse non-simple shapes with fluentcart.unsupported_product_shape. Error codes: invalid_input (400) when id is not a positive integer; not_found (404) when the product does not exist; fluentcart.module_inactive (412); fluentcart.query_failed (500). Idempotency: read-only.",
       inputSchema: {
         product_id: z
           .number()

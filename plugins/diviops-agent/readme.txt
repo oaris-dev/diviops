@@ -3,7 +3,7 @@ Contributors: davidricardo
 Tags: divi, mcp, ai, rest-api, site-builder
 Requires at least: 6.5
 Tested up to: 7.0
-Stable tag: 1.5.5
+Stable tag: 1.5.6
 Requires PHP: 7.4
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -17,6 +17,8 @@ DiviOps Agent is the WordPress-side companion plugin for DiviOps, an AI harness 
 The Free plugin is useful on its own as the core REST bridge for Divi 5 page authoring, schema inspection, block validation, design-token management, preset audits, and safe read-only diagnostics. Pro adds paid workflow leverage, including advanced cross-environment apply flows, deeper paid coverage slices, Pro plugin handlers, license/update handling, and higher-support agency or studio workflows. Not every current or future MCP tool is guaranteed to be backed by the Free plugin; tools are advertised through the DiviOps capability handshake for the plugins installed on the connected site.
 
 This plugin is not intended to be used as a standalone admin UI. Install and activate the WordPress plugin, create a WordPress Application Password, then configure the DiviOps MCP server for your AI client.
+
+Divi is a registered trademark of Elegant Themes, Inc. DiviOps Agent is not affiliated with or endorsed by Elegant Themes.
 
 = External services and authentication =
 
@@ -66,6 +68,12 @@ No. The Free plugin backs the core useful surface. Some higher-leverage workflow
 
 == Changelog ==
 
+= 1.5.6 =
+
+* Adds typed WordPress menu tools for creating menus, adding page/custom-link items, reading normalized menu trees, and assigning registered theme locations through the DiviOps capability handshake.
+* Adds safer FluentCart 1.5 Advanced Variations read support for attribute metadata inspection while continuing to refuse unsupported write shapes.
+* Adds read-only post taxonomy term inspection through the sanctioned WP-CLI fallback path.
+
 = 1.5.5 =
 
 * Adds richer DiviOps preflight metadata for the MCP server, including plugin version records used by `diviops_meta_info`.
@@ -74,6 +82,6 @@ No. The Free plugin backs the core useful surface. Some higher-leverage workflow
 
 == Upgrade Notice ==
 
-= 1.5.5 =
+= 1.5.6 =
 
-Recommended for beta users who rely on `diviops_meta_info` as a preflight before dogfooding, release validation, or Pro slice work.
+Recommended for beta users who want the new typed menu tooling, FluentCart Advanced Variations read enrichment, and current MCP capability handshake.

@@ -195,6 +195,9 @@ trait DiviOps_Agent_ThemeBuilder {
 				404
 			);
 		}
+		if ( ! self::can_inspect_post_object( $post ) ) {
+			return self::envelope_object_read_forbidden( $post_id, 'theme_builder_layout' );
+		}
 
 		return self::envelope_success( [
 			'id'          => $post->ID,
@@ -379,7 +382,7 @@ trait DiviOps_Agent_ThemeBuilder {
 
 	private static function cross_env_site_origin(): string {
 		$raw    = (string) get_site_url();
-		$parsed = parse_url( $raw );
+		$parsed = wp_parse_url( $raw );
 		$scheme = is_array( $parsed ) && ! empty( $parsed['scheme'] ) ? strtolower( (string) $parsed['scheme'] ) : 'https';
 		$host   = is_array( $parsed ) && ! empty( $parsed['host'] ) ? strtolower( (string) $parsed['host'] ) : '';
 		$port   = is_array( $parsed ) && ! empty( $parsed['port'] ) ? ':' . (int) $parsed['port'] : '';
@@ -565,7 +568,7 @@ trait DiviOps_Agent_ThemeBuilder {
 					return '';
 				}
 
-				$parsed = parse_url( $url );
+				$parsed = wp_parse_url( $url );
 				$path   = is_array( $parsed ) && ! empty( $parsed['path'] ) ? strtolower( (string) $parsed['path'] ) : '';
 				if ( false !== strpos( $path, '/wp-admin/' ) || '/wp-login.php' === $path ) {
 					return '[redacted]';
@@ -720,7 +723,7 @@ trait DiviOps_Agent_ThemeBuilder {
 	}
 
 	private static function cross_env_sanitize_absolute_url( string $raw_url ): ?string {
-		$parsed = parse_url( $raw_url );
+		$parsed = wp_parse_url( $raw_url );
 		if ( ! is_array( $parsed ) || empty( $parsed['scheme'] ) || empty( $parsed['host'] ) ) {
 			return null;
 		}
@@ -736,7 +739,7 @@ trait DiviOps_Agent_ThemeBuilder {
 	}
 
 	private static function cross_env_upload_path_from_url( string $url ): ?string {
-		$parsed = parse_url( $url );
+		$parsed = wp_parse_url( $url );
 		$path   = is_array( $parsed ) && ! empty( $parsed['path'] ) ? (string) $parsed['path'] : '';
 		$needle = '/wp-content/uploads/';
 		$pos    = strpos( $path, $needle );
@@ -803,7 +806,7 @@ trait DiviOps_Agent_ThemeBuilder {
 	}
 
 	private static function cross_env_normalize_asset_hint( string $hint ): ?array {
-		$parsed = parse_url( $hint );
+		$parsed = wp_parse_url( $hint );
 		$path   = is_array( $parsed ) && isset( $parsed['path'] ) ? (string) $parsed['path'] : $hint;
 		$path   = str_replace( '\\', '/', $path );
 		$path   = preg_replace( '/[?#].*$/', '', $path );
@@ -905,7 +908,7 @@ trait DiviOps_Agent_ThemeBuilder {
 
 	private static function cross_env_attachment_url( int $attachment_id, string $attached_file ): ?string {
 		$raw = function_exists( 'wp_get_attachment_url' ) ? wp_get_attachment_url( $attachment_id ) : '';
-		$parsed = $raw ? parse_url( (string) $raw ) : null;
+		$parsed = $raw ? wp_parse_url( (string) $raw ) : null;
 		if ( is_array( $parsed ) && ! empty( $parsed['scheme'] ) && ! empty( $parsed['host'] ) && ! empty( $parsed['path'] ) ) {
 			$port = ! empty( $parsed['port'] ) ? ':' . (int) $parsed['port'] : '';
 			return strtolower( (string) $parsed['scheme'] ) . '://' . strtolower( (string) $parsed['host'] ) . $port . (string) $parsed['path'];

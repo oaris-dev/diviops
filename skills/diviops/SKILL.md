@@ -94,9 +94,9 @@ Apply mode (`dry_run` omitted or `false`) keeps each tool's namespace-specific s
 - `diviops_meta_wp_cli` — raw passthrough; use explicit read-only commands instead.
 - `diviops_scf_import` — SCF's upstream `wp scf json import` lacks a `--dry-run` flag; use `diviops_scf_sync --dry_run` for SCF-on-disk previews.
 
-`diviops_scf_sync` flows `dry_run` through to wp-cli's `--dry-run` flag — the resulting preview is wp-cli's plain-text summary, NOT the standardized `data.plan = { summary, changes[] }` shape above. This divergence is by design; plan-shape standardization for wp-cli passthroughs is tracked separately.
+`diviops_scf_sync` flows `dry_run` through to wp-cli's `--dry-run` flag — the resulting preview is wp-cli's plain-text summary, NOT the standardized `data.plan = { summary, changes[] }` shape above. This divergence is by design because it reports the upstream SCF sync preview.
 
-Legacy plans on `preset_cleanup`, `preset_reassign`, `preset_delete`, `preset_set_default`, `page_trash`, `page_update_status`, `tb_template_trash`, `canvas_duplicate`, and the `module_*` / `section_*` mutating tools keep their route-specific summary shape inside the envelope's `data` slot — they're inside the envelope but not yet conformant to the unified plan shape above. Per-tool descriptions document the route-specific shape.
+Plugin-routed mutating tools should use the standard plan slot. Some tools also preserve route-specific diagnostics as sibling keys beside `dry_run` and `plan`, but callers should branch first on `data.plan.summary`, `data.plan.changes`, and optional `data.plan.warnings`.
 
 ## Idempotency conventions
 

@@ -14,23 +14,24 @@ Get from zero to generating Divi 5 pages with Claude Code or Codex in ~15 minute
 
 ## Step 1: Install the WordPress Plugin
 
-1. Download `diviops-agent.zip` from the dist repo root (`oaris-dev/diviops` or `oaris-dev/diviops-internal`) — it ships at the top level of each dist repo
-2. Go to **WP Admin → Plugins → Add New → Upload Plugin**
-3. Upload `diviops-agent.zip` and activate it
-4. Verify: visit `http://your-site.local/wp-json/diviops/v1/schema/settings` — you should get a 401 (auth required)
+1. If installing from WordPress.org after listing, go to **WP Admin → Plugins → Add New**, search for **DiviOps Agent**, install it, and activate it.
+2. For a pre-listing package or manual fallback install, upload `diviops-agent.zip` via **WP Admin → Plugins → Add New → Upload Plugin** and activate it.
+3. Verify: visit `http://your-site.local/wp-json/diviops/v1/schema/settings` — you should get a 401 (auth required)
 
 > **If Divi is not active**, authenticated requests return `503 divi_unavailable`. Unauthenticated requests return 401 first.
 
-### Free plugin updates during beta
+### Free plugin updates
 
-The npm MCP server updates with `npx`/npm, but the Free WordPress plugin does not yet receive native WordPress update notices. Until the WordPress.org distribution channel is live, update `diviops-agent` manually:
+The npm MCP server updates with `npx`/npm. Once the Free WordPress plugin is published on WordPress.org, WordPress delivers plugin updates through the normal **Dashboard → Updates** and **Plugins** screens.
 
-1. Download the latest `diviops-agent.zip` from the [Free GitHub release](https://github.com/oaris-dev/diviops/releases/latest) or the public dist repo root
+For pre-listing test packages or a manual fallback install, replace the plugin ZIP through WordPress admin:
+
+1. Download `diviops-agent.zip` from the public dist repo root
 2. Go to **WP Admin → Plugins → Add New → Upload Plugin**
 3. Upload the new `diviops-agent.zip`
 4. When WordPress asks, choose **Replace current with uploaded**
 
-Your Application Password and MCP client config stay the same. Native WordPress.org updates are planned separately from the beta ZIP workflow.
+Your Application Password and MCP client config stay the same across Free plugin updates.
 
 ### Purchased Pro: install the Pro plugin too
 
@@ -429,7 +430,7 @@ Four ways to target modules for editing:
 
 ## WP-CLI Security
 
-The `diviops_meta_wp_cli` tool validates every command against a safety allowlist. Default allowlist covers read-only commands (options, posts, taxonomies, users, ACF field groups, cron/plugin/theme/menu info) plus non-destructive writes (post/term/post-meta create and update, ACF schema export/import, cache flush, transient delete, rewrite flush, WXR export).
+The `diviops_meta_wp_cli` tool validates every command against a safety allowlist. Default allowlist covers read-only commands (options, posts, post-term assignment reads, taxonomies, users, ACF field groups, cron/plugin/theme/menu info) plus non-destructive writes (post create/update, term create/update, post-meta set/update, ACF schema export/import, cache flush, transient delete, rewrite flush, WXR export).
 
 **Extended commands** (opt-in via `DIVIOPS_WP_CLI_ALLOW`):
 

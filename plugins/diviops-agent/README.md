@@ -4,6 +4,8 @@
 
 The WordPress companion plugin for `@diviops/mcp-server`. Pairs with the MCP server to expose Divi 5 page authoring, SCF management, CPT/post population, data model introspection, and site auditing as `/diviops/v1/*` REST endpoints behind Application Password auth.
 
+Divi is a registered trademark of Elegant Themes, Inc. DiviOps Agent is not affiliated with or endorsed by Elegant Themes.
+
 > **Don't use this plugin standalone** — it's the WordPress side of a two-piece suite; install + configure the [DiviOps MCP Server](../../../diviops-server/) next.
 
 ## Requirements
@@ -21,16 +23,18 @@ The WordPress companion plugin for `@diviops/mcp-server`. Pairs with the MCP ser
 
 If Divi is not active, all endpoints return `503 divi_unavailable`. See [setup-guide.md](../../../docs/setup-guide.md) for the full onboarding walkthrough including MCP server registration.
 
-## Updates during beta
+## Updates
 
-The MCP server updates through npm. The Free WordPress plugin does not yet receive native WordPress update notices, so update it manually until the WordPress.org channel is live:
+The MCP server updates through npm. Once the Free WordPress plugin is published on WordPress.org, WordPress delivers plugin updates through the normal **Dashboard → Updates** and **Plugins** screens.
 
-1. Download the latest `diviops-agent.zip` from the Free GitHub release or public dist repo root.
+For pre-listing test packages or a manual fallback install, replace the plugin ZIP through WordPress admin:
+
+1. Download `diviops-agent.zip` from the public dist repo root.
 2. Go to **WP Admin → Plugins → Add New → Upload Plugin**.
 3. Upload the new `diviops-agent.zip`.
 4. Choose **Replace current with uploaded** when WordPress asks.
 
-Your Application Password and MCP client config stay unchanged. Purchased Pro users activate update access separately in **DiviOps → Pro License**.
+Your Application Password and MCP client config stay unchanged across Free plugin updates. Purchased Pro users activate Pro update access separately in **DiviOps → Pro License**.
 
 ## WordPress.org readiness metadata
 
@@ -51,14 +55,14 @@ git diff --check
 php -l wp-content/plugins/diviops-agent/diviops-agent.php
 ```
 
-Then run the official WordPress.org readme validator against `wp-content/plugins/diviops-agent/readme.txt` and run Plugin Check on the packaged plugin. If WP-CLI is available in the target environment, the Plugin Check command shape is:
+Then run the official WordPress.org readme validator against `wp-content/plugins/diviops-agent/readme.txt` and run Plugin Check on the packaged plugin. For WordPress.org submission, use `diviops-agent` as the directory slug/text domain target. If WP-CLI is available in the target environment, the Plugin Check command shape is:
 
 ```bash
 wp plugin install plugin-check --activate
-wp plugin check diviops-agent --checks=plugin_repo
+wp plugin check diviops-agent --categories=plugin_repo
 ```
 
-The current GitHub/manual beta ZIP path is unchanged until a later WordPress.org SVN submission is explicitly authorized.
+For WordPress.org-distributed installs, the Free plugin update channel is the standard WordPress.org plugin update flow. Manual ZIP replacement remains a fallback for pre-listing test packages and environments that intentionally install from the public dist repo.
 
 ## Pairing with the MCP server
 

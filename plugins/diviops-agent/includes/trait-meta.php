@@ -204,11 +204,11 @@ trait DiviOps_Agent_Meta {
 	 *    uniform; the message text disambiguates which selector check failed.
 	 *  - meta_flush_cache.unwritable (HTTP 500): cache root exists but the active
 	 *    backend cannot write to it (Divi's can_write_to_filesystem in native mode,
-	 *    is_writable() in fs_fallback). Distinct code so callers can branch on
+	 *    wp_is_writable() in fs_fallback). Distinct code so callers can branch on
 	 *    "filesystem refused" vs "command rejected" without parsing the message.
 	 *  - meta_flush_cache.fs_init_failed (HTTP 500): WP_Filesystem could not be
 	 *    initialized (FTP/SSH-credentialed hosts without saved creds). Native
-	 *    backend only — fs_fallback uses direct unlink() and never trips this.
+	 *    backend only — fs_fallback uses WordPress file helpers and never trips this.
 	 */
 	public static function flush_static_cache( $request ) {
 		$post_id_raw  = $request->get_param( 'post_id' );
@@ -262,8 +262,9 @@ trait DiviOps_Agent_Meta {
 		//     accepts WP_Filesystem-backed environments (FTP/SSH-credentialed
 		//     hosts) where is_writable() would return false even though Divi
 		//     can still write. Matches the same gate Divi uses internally.
-		//   - fs_fallback: we use direct unlink(), which genuinely needs OS
-		//     write permission — is_writable() is the correct check here.
+		//   - fs_fallback: we use WordPress' direct file delete helper with a
+		//     direct unlink fallback, which genuinely needs OS write permission
+		//     — wp_is_writable() is the correct check here.
 		if ( $use_native ) {
 			if (
 				method_exists( '\ET_Core_PageResource', 'can_write_to_filesystem' )
@@ -276,7 +277,15 @@ trait DiviOps_Agent_Meta {
 					500
 				);
 			}
-		} elseif ( is_dir( $cache_root ) && ! is_writable( $cache_root ) ) {
+		} elseif (
+			is_dir( $cache_root )
+			&& ! (
+				function_exists( 'wp_is_writable' )
+					? wp_is_writable( $cache_root )
+					// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_is_writable -- Minimal standalone/bootstrap fallback when WordPress helper is unavailable.
+					: is_writable( $cache_root )
+			)
+		) {
 			return self::envelope_error(
 				'meta_flush_cache.unwritable',
 				'et-cache directory exists but is not writable by the PHP process.',
@@ -467,7 +476,7 @@ trait DiviOps_Agent_Meta {
 				//   Both the sweep AND the DONOTCACHEPAGE sentinel write
 				//   route through WP_Filesystem to match Divi's own
 				//   deletion API (self::$wpfs->delete in
-				//   _mark_global_cache_cleared). Direct unlink() would
+				//   _mark_global_cache_cleared). Bypassing WP_Filesystem would
 				//   silently fail on managed FTP/SSH-credentialed hosts
 				//   where can_write_to_filesystem() accepts but PHP
 				//   itself lacks write permission.
@@ -686,7 +695,7 @@ trait DiviOps_Agent_Meta {
 
 		// fs_fallback path — Divi inactive / stripped build. Per-post
 		// iteration is already O(total_files) here because flush_et_cache_dir
-		// uses direct unlink() (no native glob loop), so it doesn't hit the
+		// uses a direct filesystem sweep (no native glob loop), so it doesn't hit the
 		// scaling issue the native path had. Kept as-is to preserve the
 		// prior dir-mtime filter semantic + per-post transient / post_meta
 		// invalidations that flush_et_cache_dir performs.
@@ -761,10 +770,13 @@ trait DiviOps_Agent_Meta {
 		}
 		$keys         = self::dynamic_assets_postmeta_keys( $include_canvas_refs );
 		$placeholders = implode( ', ', array_fill( 0, count( $keys ), '%s' ) );
+		// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.UnfinishedPrepare -- Dynamic placeholder list is derived from a fixed plugin-owned meta-key array and prepared with the matching values.
 		$sql          = $wpdb->prepare(
 			"SELECT DISTINCT post_id FROM {$wpdb->postmeta} WHERE meta_key IN ({$placeholders}) ORDER BY post_id ASC",
 			$keys
 		);
+		// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.UnfinishedPrepare
+		// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared, WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Prepared above; this bounded cleanup target discovery has no stable WordPress cache API equivalent.
 		$ids = array_map( 'intval', (array) $wpdb->get_col( $sql ) );
 		return array_values( array_filter( $ids, static function ( $id ) {
 			return $id > 0;
@@ -788,11 +800,14 @@ trait DiviOps_Agent_Meta {
 		$key_placeholders = implode( ', ', array_fill( 0, count( $keys ), '%s' ) );
 		foreach ( array_chunk( $post_ids, 500 ) as $chunk ) {
 			$id_placeholders = implode( ', ', array_fill( 0, count( $chunk ), '%d' ) );
+			// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.UnfinishedPrepare -- Dynamic placeholder lists are derived from fixed meta keys and integer post-id batches, then prepared with matching values.
 			$sql             = $wpdb->prepare(
 				"SELECT post_id, meta_key, COUNT(*) AS meta_count FROM {$wpdb->postmeta} WHERE meta_key IN ({$key_placeholders}) AND post_id IN ({$id_placeholders}) GROUP BY post_id, meta_key",
 				array_merge( $keys, $chunk )
 			);
+			// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.UnfinishedPrepare
 
+			// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared, WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Prepared above; aggregate diagnostic counts are returned immediately and are not suitable for persistent caching.
 			foreach ( (array) $wpdb->get_results( $sql ) as $row ) {
 				$post_id = (int) ( $row->post_id ?? 0 );
 				$key     = (string) ( $row->meta_key ?? '' );
@@ -825,10 +840,13 @@ trait DiviOps_Agent_Meta {
 		$key_placeholders = implode( ', ', array_fill( 0, count( $keys ), '%s' ) );
 		foreach ( array_chunk( $post_ids, 500 ) as $chunk ) {
 			$id_placeholders = implode( ', ', array_fill( 0, count( $chunk ), '%d' ) );
+			// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.UnfinishedPrepare -- Dynamic placeholder lists are derived from fixed meta keys and integer post-id batches, then prepared with matching values.
 			$sql             = $wpdb->prepare(
 				"SELECT COUNT(*) FROM {$wpdb->postmeta} WHERE meta_key IN ({$key_placeholders}) AND post_id IN ({$id_placeholders})",
 				array_merge( $keys, $chunk )
 			);
+			// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.UnfinishedPrepare
+			// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared, WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Prepared above; aggregate cleanup totals are request-scoped diagnostics.
 			$total += (int) $wpdb->get_var( $sql );
 		}
 		return $total;
@@ -855,10 +873,13 @@ trait DiviOps_Agent_Meta {
 		$key_placeholders = implode( ', ', array_fill( 0, count( $keys ), '%s' ) );
 		foreach ( array_chunk( $post_ids, 500 ) as $chunk ) {
 			$id_placeholders = implode( ', ', array_fill( 0, count( $chunk ), '%d' ) );
+			// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.UnfinishedPrepare -- Dynamic placeholder lists are derived from fixed meta keys and integer post-id batches, then prepared with matching values.
 			$sql             = $wpdb->prepare(
 				"DELETE FROM {$wpdb->postmeta} WHERE meta_key IN ({$key_placeholders}) AND post_id IN ({$id_placeholders})",
 				array_merge( $keys, $chunk )
 			);
+			// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.UnfinishedPrepare
+			// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared, WordPress.DB.DirectDatabaseQuery.DirectQuery -- Prepared above; this is the intentional bounded cleanup mutation.
 			$deleted = $wpdb->query( $sql );
 			if ( false === $deleted ) {
 				$result['failed_post_ids'] = array_merge( $result['failed_post_ids'], $chunk );
@@ -1168,7 +1189,7 @@ trait DiviOps_Agent_Meta {
 				// Root-level et-*.css files.
 				if ( self::is_divi_css_basename( $entry ) ) {
 					$size = filesize( $path );
-					if ( unlink( $path ) ) {
+					if ( self::delete_divi_cache_file( $path ) ) {
 						$result['files']++;
 						if ( false !== $size ) {
 							$result['bytes'] += $size;
@@ -1198,17 +1219,17 @@ trait DiviOps_Agent_Meta {
 						continue;
 					}
 					$size = filesize( $child );
-					if ( unlink( $child ) ) {
+					if ( self::delete_divi_cache_file( $child ) ) {
 						$result['files']++;
 						if ( false !== $size ) {
 							$result['bytes'] += $size;
 						}
 					}
 				} elseif ( $info->isDir() ) {
-					@rmdir( $child );
+					self::delete_empty_divi_cache_dir( $child );
 				}
 			}
-			@rmdir( $path );
+			self::delete_empty_divi_cache_dir( $path );
 		}
 		return $result;
 	}
@@ -1218,8 +1239,8 @@ trait DiviOps_Agent_Meta {
 	 * null if initialization fails (e.g. missing credentials on FTP/SSH
 	 * hosts without saved creds). Used by the native `all` sweep so
 	 * deletes go through the same API Divi itself uses
-	 * (self::$wpfs->delete in _mark_global_cache_cleared) — direct
-	 * unlink() would silently fail on hosts where Divi writes via
+	 * (self::$wpfs->delete in _mark_global_cache_cleared) — bypassing
+	 * WP_Filesystem would silently fail on hosts where Divi writes via
 	 * credentials but PHP itself can't.
 	 *
 	 * @return \WP_Filesystem_Base|null
@@ -1236,6 +1257,36 @@ trait DiviOps_Agent_Meta {
 			return $wp_filesystem;
 		}
 		return null;
+	}
+
+	/**
+	 * Delete a Divi cache file through WordPress' filesystem API.
+	 *
+	 * @param string $path
+	 * @return bool
+	 */
+	private static function delete_divi_cache_file( $path ) {
+		if ( function_exists( 'wp_delete_file' ) ) {
+			wp_delete_file( $path );
+			return ! file_exists( $path );
+		}
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.unlink_unlink -- Minimal standalone/bootstrap fallback when WordPress file helpers are unavailable.
+		return @unlink( $path );
+	}
+
+	/**
+	 * Remove an empty Divi cache directory through WP_Filesystem.
+	 *
+	 * @param string $path
+	 * @return bool
+	 */
+	private static function delete_empty_divi_cache_dir( $path ) {
+		$wpfs = self::init_wp_filesystem();
+		if ( $wpfs ) {
+			return (bool) $wpfs->rmdir( $path, false );
+		}
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_rmdir -- Minimal standalone/bootstrap fallback when WP_Filesystem is unavailable.
+		return @rmdir( $path );
 	}
 
 	/**
@@ -1546,14 +1597,14 @@ trait DiviOps_Agent_Meta {
 					// unlink actually succeeded — otherwise the caller
 					// sees phantom bytes for files still on disk.
 					$size = filesize( $path );
-					if ( unlink( $path ) ) {
+					if ( self::delete_divi_cache_file( $path ) ) {
 						$result['files']++;
 						if ( false !== $size ) {
 							$result['bytes'] += $size;
 						}
 					}
 				} elseif ( $info->isDir() ) {
-					@rmdir( $path );
+					self::delete_empty_divi_cache_dir( $path );
 				}
 			}
 
@@ -1561,7 +1612,7 @@ trait DiviOps_Agent_Meta {
 			// lingers (hidden files, non-writable entries), rmdir silently
 			// no-ops — the CSS files are gone, which is the
 			// staleness-unblocking outcome users need.
-			@rmdir( $dir );
+			self::delete_empty_divi_cache_dir( $dir );
 		}
 
 		// State-mutating invalidations only run when there was actually

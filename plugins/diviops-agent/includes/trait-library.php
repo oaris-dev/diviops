@@ -76,6 +76,7 @@ trait DiviOps_Agent_Library {
 		$layout_type = sanitize_key( (string) ( $request->get_param( 'layout_type' ) ?? '' ) );
 		$scope       = sanitize_key( (string) ( $request->get_param( 'scope' ) ?? '' ) );
 		$per_page    = max( 1, min( absint( $request->get_param( 'per_page' ) ?? 50 ), 100 ) );
+		$page_num    = self::get_request_page( $request );
 
 		$args = [
 			'post_type'      => 'et_pb_layout',
@@ -104,10 +105,18 @@ trait DiviOps_Agent_Library {
 			$args['tax_query'] = $tax_query;
 		}
 
-		$query   = new WP_Query( $args );
+		$page    = self::query_inspectable_post_ids( $args, $per_page, $page_num );
+		$library_ids = $page['ids'];
+		if ( ! empty( $library_ids ) ) {
+			update_object_term_cache( $library_ids, 'post' );
+		}
 		$results = [];
 
-		foreach ( $query->posts as $post ) {
+		foreach ( $library_ids as $post_id ) {
+			$post = get_post( $post_id );
+			if ( ! $post ) {
+				continue;
+			}
 			$results[] = [
 				'id'          => $post->ID,
 				'title'       => $post->post_title,
@@ -118,8 +127,11 @@ trait DiviOps_Agent_Library {
 		}
 
 		return self::envelope_success( [
-			'results' => $results,
-			'total'   => $query->found_posts,
+			'results'     => $results,
+			'total'       => $page['total'],
+			'total_pages' => $page['total_pages'],
+			'truncated'   => $page['truncated'],
+			'scanned'     => $page['scanned'],
 		] );
 	}
 
@@ -137,6 +149,9 @@ trait DiviOps_Agent_Library {
 				'Use diviops_library_list to find a valid item ID.',
 				404
 			);
+		}
+		if ( ! self::can_inspect_post_object( $post ) ) {
+			return self::envelope_object_read_forbidden( $post_id, 'library_item' );
 		}
 
 		return self::envelope_success( [
