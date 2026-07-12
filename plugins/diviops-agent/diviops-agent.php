@@ -3,7 +3,7 @@
  * Plugin Name: DiviOps Agent
  * Plugin URI: https://github.com/oaris-dev/diviops
  * Description: REST API bridge for DiviOps — connects Claude Code to your Divi 5 site for AI-powered page building and design management.
- * Version: 1.5.6
+ * Version: 1.5.7
  * Author: oaris.de
  * Author URI: https://oaris.de
  * Text Domain: diviops-agent
@@ -32,6 +32,7 @@ require_once __DIR__ . '/includes/trait-menu.php';
 require_once __DIR__ . '/includes/trait-page.php';
 require_once __DIR__ . '/includes/trait-preset.php';
 require_once __DIR__ . '/includes/trait-render.php';
+require_once __DIR__ . '/includes/trait-rollback.php';
 require_once __DIR__ . '/includes/trait-theme-builder.php';
 require_once __DIR__ . '/includes/trait-validate.php';
 require_once __DIR__ . '/includes/trait-variable.php';
@@ -54,6 +55,7 @@ class DiviOps_Agent {
 	use DiviOps_Agent_Page;
 	use DiviOps_Agent_Preset;
 	use DiviOps_Agent_Render;
+	use DiviOps_Agent_Rollback;
 	use DiviOps_Agent_ThemeBuilder;
 	use DiviOps_Agent_Validate;
 	use DiviOps_Agent_Variable;
@@ -62,7 +64,7 @@ class DiviOps_Agent {
 	 * Plugin version — surfaced in /handshake for self-diagnosis only;
 	 * server no longer gates on it (capability map is the gate).
 	 */
-	const VERSION = '1.5.6';
+	const VERSION = '1.5.7';
 
 	/**
 	 * Minimum MCP server version this plugin is compatible with.
@@ -101,21 +103,24 @@ class DiviOps_Agent {
 		'menu_create', 'menu_get', 'menu_item_add_custom', 'menu_item_add_page', 'menu_list', 'menu_location_assign',
 		// module
 		'module_clone', 'module_get', 'module_lock', 'module_move', 'module_unlock', 'module_update',
+		'module_clone_backup', 'module_lock_backup', 'module_move_backup', 'module_unlock_backup', 'module_update_backup',
 		// page
 		'page_create', 'page_get', 'page_get_layout', 'page_list',
-		'page_trash', 'page_update_content', 'page_update_meta', 'page_update_status',
+		'page_trash', 'page_update_content', 'page_update_content_backup', 'page_update_meta', 'page_update_status',
 		// preset
-		'preset_audit', 'preset_audit_storage', 'preset_cleanup', 'preset_create', 'preset_delete',
+		'preset_audit', 'preset_audit_storage', 'preset_cleanup', 'preset_create', 'preset_delete', 'preset_inspect',
 		'preset_reassign', 'preset_scan_orphans', 'preset_set_default', 'preset_update',
 		// render
 		'render_preview',
+		// rollback snapshots
+		'rollback_snapshot_delete', 'rollback_snapshot_get', 'rollback_snapshot_list', 'rollback_snapshot_restore',
 		// schema
 		'schema_get_module', 'schema_get_module_dump_all', 'schema_get_settings', 'schema_list_modules',
 		// section
-		'section_append', 'section_get', 'section_remove', 'section_replace',
+		'section_append', 'section_append_backup', 'section_get', 'section_remove', 'section_remove_backup', 'section_replace', 'section_replace_backup',
 		// theme builder
 		'cross_env_source_export_get', 'cross_env_target_context_get',
-		'tb_layout_block_insert', 'tb_layout_get', 'tb_layout_update', 'tb_template_create', 'tb_template_list',
+		'tb_layout_block_insert', 'tb_layout_block_insert_backup', 'tb_layout_get', 'tb_layout_update', 'tb_layout_update_backup', 'tb_template_create', 'tb_template_list',
 		'tb_template_trash',
 		// validate
 		'validate_blocks',
@@ -595,6 +600,56 @@ class DiviOps_Agent {
 			'permission_callback' => [ __CLASS__, 'check_admin_permission' ],
 		] );
 
+		register_rest_route( self::REST_NAMESPACE, '/preset/inspect/(?P<preset_id>[^/]+)', [
+			'methods'             => 'GET',
+			'callback'            => [ __CLASS__, 'preset_inspect' ],
+			'permission_callback' => [ __CLASS__, 'check_admin_permission' ],
+			'args'                => [
+				'preset_id' => [ 'required' => true, 'type' => 'string' ],
+			],
+		] );
+
+		register_rest_route( self::REST_NAMESPACE, '/rollback-snapshot/list', [
+			'methods'             => 'GET',
+			'callback'            => [ __CLASS__, 'rollback_snapshot_list' ],
+			'permission_callback' => [ __CLASS__, 'check_read_permission' ],
+			'args'                => [
+				'target_kind' => [ 'required' => false, 'type' => 'string' ],
+				'target_id'   => [ 'required' => false, 'type' => 'integer' ],
+				'status'      => [ 'required' => false, 'type' => 'string' ],
+				'limit'       => [ 'required' => false, 'type' => 'integer', 'default' => 20 ],
+			],
+		] );
+
+		register_rest_route( self::REST_NAMESPACE, '/rollback-snapshot/get/(?P<snapshot_id>[^/]+)', [
+			'methods'             => 'GET',
+			'callback'            => [ __CLASS__, 'rollback_snapshot_get' ],
+			'permission_callback' => [ __CLASS__, 'check_read_permission' ],
+			'args'                => [
+				'snapshot_id'   => [ 'required' => true, 'type' => 'string' ],
+				'include_value' => [ 'required' => false, 'type' => 'boolean', 'default' => false ],
+			],
+		] );
+
+		register_rest_route( self::REST_NAMESPACE, '/rollback-snapshot/delete/(?P<snapshot_id>[^/]+)', [
+			'methods'             => 'POST',
+			'callback'            => [ __CLASS__, 'rollback_snapshot_delete' ],
+			'permission_callback' => [ __CLASS__, 'check_read_permission' ],
+			'args'                => [
+				'snapshot_id' => [ 'required' => true, 'type' => 'string' ],
+			],
+		] );
+
+		register_rest_route( self::REST_NAMESPACE, '/rollback-snapshot/restore/(?P<snapshot_id>[^/]+)', [
+			'methods'             => 'POST',
+			'callback'            => [ __CLASS__, 'rollback_snapshot_restore' ],
+			'permission_callback' => [ __CLASS__, 'check_write_permission' ],
+			'args'                => [
+				'snapshot_id' => [ 'required' => true, 'type' => 'string' ],
+				'dry_run'     => [ 'required' => false, 'type' => 'boolean', 'default' => false ],
+			],
+		] );
+
 		register_rest_route( self::REST_NAMESPACE, '/preset/cleanup', [
 			'methods'             => 'POST',
 			'callback'            => [ __CLASS__, 'preset_cleanup' ],
@@ -780,6 +835,8 @@ class DiviOps_Agent {
 			'permission_callback' => [ __CLASS__, 'check_admin_permission' ],
 			'args'                => [
 				'content' => [ 'required' => true, 'type' => 'string' ],
+				'dry_run' => [ 'required' => false, 'type' => 'boolean', 'default' => false ],
+				'backup'  => [ 'required' => false, 'type' => 'boolean', 'default' => false ],
 			],
 		] );
 
@@ -793,6 +850,7 @@ class DiviOps_Agent {
 				'parent_path'     => [ 'required' => false, 'type' => 'string' ],
 				'position'        => [ 'required' => false, 'type' => 'string', 'default' => 'append' ],
 				'dry_run'         => [ 'required' => false, 'type' => 'boolean', 'default' => false ],
+				'backup'          => [ 'required' => false, 'type' => 'boolean', 'default' => false ],
 			],
 		] );
 
@@ -915,6 +973,8 @@ class DiviOps_Agent {
 					'required' => true,
 					'type'     => 'string',
 				],
+				'dry_run' => [ 'required' => false, 'type' => 'boolean', 'default' => false ],
+				'backup'  => [ 'required' => false, 'type' => 'boolean', 'default' => false ],
 			],
 		] );
 
@@ -1020,6 +1080,8 @@ class DiviOps_Agent {
 					'default'  => 'end',
 					'enum'     => [ 'start', 'end' ],
 				],
+				'dry_run'  => [ 'required' => false, 'type' => 'boolean', 'default' => false ],
+				'backup'   => [ 'required' => false, 'type' => 'boolean', 'default' => false ],
 			],
 		] );
 
@@ -1048,6 +1110,8 @@ class DiviOps_Agent {
 					'type'        => 'string',
 					'description' => 'New section block markup to replace the matched section',
 				],
+				'dry_run'    => [ 'required' => false, 'type' => 'boolean', 'default' => false ],
+				'backup'     => [ 'required' => false, 'type' => 'boolean', 'default' => false ],
 			],
 		] );
 
@@ -1071,6 +1135,8 @@ class DiviOps_Agent {
 					'description'       => 'Which occurrence to target when multiple sections match (1-based)',
 					'sanitize_callback' => 'absint',
 				],
+				'dry_run'    => [ 'required' => false, 'type' => 'boolean', 'default' => false ],
+				'backup'     => [ 'required' => false, 'type' => 'boolean', 'default' => false ],
 			],
 		] );
 
@@ -1129,6 +1195,8 @@ class DiviOps_Agent {
 					'type'        => 'object',
 					'description' => 'Attribute key-value pairs to merge (dot notation)',
 				],
+				'dry_run'     => [ 'required' => false, 'type' => 'boolean', 'default' => false ],
+				'backup'      => [ 'required' => false, 'type' => 'boolean', 'default' => false ],
 			],
 		] );
 
@@ -1216,6 +1284,8 @@ class DiviOps_Agent {
 					'description' => 'Where to place the source relative to the target: "before" or "after"',
 					'enum'        => [ 'before', 'after' ],
 				],
+				'dry_run'  => [ 'required' => false, 'type' => 'boolean', 'default' => false ],
+				'backup'   => [ 'required' => false, 'type' => 'boolean', 'default' => false ],
 			],
 		] );
 
@@ -1236,6 +1306,8 @@ class DiviOps_Agent {
 					'type'              => 'integer',
 					'sanitize_callback' => 'absint',
 				],
+				'dry_run'    => [ 'required' => false, 'type' => 'boolean', 'default' => false ],
+				'backup'     => [ 'required' => false, 'type' => 'boolean', 'default' => false ],
 			],
 		] );
 
@@ -1253,6 +1325,8 @@ class DiviOps_Agent {
 					'type'              => 'integer',
 					'sanitize_callback' => 'absint',
 				],
+				'dry_run'    => [ 'required' => false, 'type' => 'boolean', 'default' => false ],
+				'backup'     => [ 'required' => false, 'type' => 'boolean', 'default' => false ],
 			],
 		] );
 
@@ -1276,6 +1350,8 @@ class DiviOps_Agent {
 					'enum'        => [ 'before', 'after' ],
 					'description' => 'Place the clone "before" or "after" the source module within its parent.',
 				],
+				'dry_run'    => [ 'required' => false, 'type' => 'boolean', 'default' => false ],
+				'backup'     => [ 'required' => false, 'type' => 'boolean', 'default' => false ],
 			],
 		] );
 
@@ -1533,6 +1609,167 @@ class DiviOps_Agent {
 		return 'data:image/svg+xml;base64,' . base64_encode( $svg );
 	}
 
+	private static function admin_rollback_snapshot_badge_style( array $snapshot ): string {
+		if ( ! empty( $snapshot['cleanup']['deleted_at'] ) ) {
+			return 'background:rgb(240,240,241);color:rgb(80,87,94);border:1px solid rgb(195,196,199);';
+		}
+		if ( ! empty( $snapshot['restore']['restored_at'] ) ) {
+			return 'background:#e7f5ea;color:#0a6b24;border:1px solid #8bd19a;';
+		}
+		if ( ! empty( $snapshot['expired'] ) ) {
+			return 'background:#fcf0f1;color:#8a2424;border:1px solid #e0a4a4;';
+		}
+		if ( ! empty( $snapshot['interrupted'] ) ) {
+			return 'background:#fff8e5;color:#7a5600;border:1px solid #e5c46b;';
+		}
+
+		$status = sanitize_key( (string) ( $snapshot['status'] ?? '' ) );
+		if ( 'write_applied' === $status ) {
+			return 'background:#e7f5ea;color:#0a6b24;border:1px solid #8bd19a;';
+		}
+		if ( 'write_failed_restored' === $status ) {
+			return 'background:rgb(232,240,254);color:rgb(23,78,166);border:1px solid rgb(158,192,255);';
+		}
+		if ( 'aborted_before_write' === $status ) {
+			return 'background:#f6f7f7;color:#3c434a;border:1px solid #c3c4c7;';
+		}
+		return 'background:#fff8e5;color:#7a5600;border:1px solid #e5c46b;';
+	}
+
+	private static function admin_rollback_snapshot_badge_label( array $snapshot ): string {
+		if ( ! empty( $snapshot['cleanup']['deleted_at'] ) ) {
+			return __( 'deleted', 'diviops-agent' );
+		}
+		if ( ! empty( $snapshot['restore']['restored_at'] ) ) {
+			return __( 'restored', 'diviops-agent' );
+		}
+		if ( ! empty( $snapshot['expired'] ) ) {
+			return __( 'expired', 'diviops-agent' );
+		}
+		if ( ! empty( $snapshot['interrupted'] ) ) {
+			return __( 'interrupted', 'diviops-agent' );
+		}
+		return str_replace( '_', ' ', sanitize_key( (string) ( $snapshot['status'] ?? 'created' ) ) );
+	}
+
+	private static function admin_rollback_snapshot_short_checksum( array $snapshot, string $phase ): string {
+		$checksum = (string) ( $snapshot[ $phase ]['checksum'] ?? '' );
+		if ( '' === $checksum ) {
+			return '—';
+		}
+		$checksum = preg_replace( '/^sha256:/', '', $checksum );
+		return substr( (string) $checksum, 0, 12 ) . '…';
+	}
+
+	private static function admin_rollback_snapshot_format_datetime( $value ): string {
+		if ( empty( $value ) ) {
+			return '—';
+		}
+		$timestamp = strtotime( (string) $value );
+		if ( false === $timestamp ) {
+			return '—';
+		}
+		$date_format = (string) get_option( 'date_format', 'Y-m-d' );
+		$time_format = (string) get_option( 'time_format', 'H:i:s' );
+		$format      = trim( $date_format . ' ' . $time_format );
+		if ( '' === $format ) {
+			$format = 'Y-m-d H:i:s';
+		}
+		return wp_date( $format, $timestamp );
+	}
+
+	private static function render_admin_rollback_snapshots_card( array $snapshots ): void {
+		?>
+		<div class="card" style="padding:16px 20px;grid-column:1/-1;">
+			<h2 style="margin-top:0;"><?php esc_html_e( 'Rollback Backups', 'diviops-agent' ); ?></h2>
+			<p class="description" style="margin-top:-4px;">
+				<?php esc_html_e( 'Temporary rollback snapshots created by backup-enabled DiviOps content writes. These are not full site backups and this dashboard is read-only.', 'diviops-agent' ); ?>
+			</p>
+			<?php if ( empty( $snapshots ) ) : ?>
+				<p style="margin:14px 0 0;"><?php esc_html_e( 'No rollback snapshots are currently visible for this user.', 'diviops-agent' ); ?></p>
+			<?php else : ?>
+				<div style="overflow-x:auto;margin-top:12px;">
+					<table class="widefat striped" style="min-width:980px;">
+						<thead>
+							<tr>
+								<th><?php esc_html_e( 'Snapshot', 'diviops-agent' ); ?></th>
+								<th><?php esc_html_e( 'Target', 'diviops-agent' ); ?></th>
+								<th><?php esc_html_e( 'Operation', 'diviops-agent' ); ?></th>
+								<th><?php esc_html_e( 'Status', 'diviops-agent' ); ?></th>
+								<th><?php esc_html_e( 'Created / Expires', 'diviops-agent' ); ?></th>
+								<th><?php esc_html_e( 'Created By', 'diviops-agent' ); ?></th>
+								<th><?php esc_html_e( 'Checksums', 'diviops-agent' ); ?></th>
+								<th><?php esc_html_e( 'State', 'diviops-agent' ); ?></th>
+							</tr>
+						</thead>
+						<tbody>
+							<?php foreach ( $snapshots as $snapshot ) : ?>
+								<?php
+								$operation = self::rollback_snapshot_as_array( $snapshot['operation'] ?? [] );
+								$target    = self::rollback_snapshot_as_array( $snapshot['target'] ?? [] );
+								$created_by = self::rollback_snapshot_as_array( $snapshot['created_by'] ?? [] );
+								$target_label = sprintf(
+									'%s #%d',
+									sanitize_key( (string) ( $target['post_type'] ?? $target['kind'] ?? 'post' ) ),
+									absint( $target['id'] ?? 0 )
+								);
+								$operation_label = (string) ( $operation['tool_operation'] ?? $snapshot['tool'] ?? '' );
+								if ( '' === $operation_label ) {
+									$operation_label = '—';
+								}
+								$state_bits = [];
+								if ( false === ( $target['exists'] ?? true ) ) {
+									$state_bits[] = __( 'target missing', 'diviops-agent' );
+								}
+								if ( ! empty( $snapshot['restore']['restorable'] ) ) {
+									$state_bits[] = __( 'restorable', 'diviops-agent' );
+								}
+								if ( ! empty( $snapshot['restore']['restored_at'] ) ) {
+									$state_bits[] = __( 'restored', 'diviops-agent' );
+								}
+								if ( ! empty( $snapshot['cleanup']['deleted_at'] ) ) {
+									$state_bits[] = __( 'deleted', 'diviops-agent' );
+								}
+								?>
+								<tr>
+									<td><code><?php echo esc_html( (string) ( $snapshot['snapshot_id'] ?? '' ) ); ?></code></td>
+									<td><?php echo esc_html( $target_label ); ?></td>
+									<td>
+										<code><?php echo esc_html( $operation_label ); ?></code>
+										<?php if ( ! empty( $snapshot['tool'] ) ) : ?>
+											<br><span class="description"><?php echo esc_html( (string) $snapshot['tool'] ); ?></span>
+										<?php endif; ?>
+									</td>
+									<td>
+										<span style="display:inline-block;padding:2px 8px;border-radius:999px;<?php echo esc_attr( self::admin_rollback_snapshot_badge_style( $snapshot ) ); ?>">
+											<?php echo esc_html( self::admin_rollback_snapshot_badge_label( $snapshot ) ); ?>
+										</span>
+									</td>
+									<td>
+										<?php echo esc_html( self::admin_rollback_snapshot_format_datetime( $snapshot['created_at'] ?? '' ) ); ?>
+										<br><span class="description"><?php echo esc_html( self::admin_rollback_snapshot_format_datetime( $snapshot['expires_at'] ?? '' ) ); ?></span>
+									</td>
+									<td>
+										<?php echo esc_html( (string) ( $created_by['login'] ?? '' ) ); ?>
+										<?php if ( ! empty( $created_by['user_id'] ) ) : ?>
+											<br><span class="description">#<?php echo esc_html( (string) absint( $created_by['user_id'] ) ); ?></span>
+										<?php endif; ?>
+									</td>
+									<td>
+										<span class="description"><?php esc_html_e( 'before', 'diviops-agent' ); ?></span> <code><?php echo esc_html( self::admin_rollback_snapshot_short_checksum( $snapshot, 'before' ) ); ?></code>
+										<br><span class="description"><?php esc_html_e( 'after', 'diviops-agent' ); ?></span> <code><?php echo esc_html( self::admin_rollback_snapshot_short_checksum( $snapshot, 'after' ) ); ?></code>
+									</td>
+									<td><?php echo esc_html( empty( $state_bits ) ? __( 'active', 'diviops-agent' ) : implode( ', ', $state_bits ) ); ?></td>
+								</tr>
+							<?php endforeach; ?>
+						</tbody>
+					</table>
+				</div>
+			<?php endif; ?>
+		</div>
+		<?php
+	}
+
 	public static function render_admin_page() {
 		$divi_active   = function_exists( 'et_get_option' );
 		$divi_version  = $divi_active && defined( 'ET_BUILDER_PRODUCT_VERSION' ) ? ET_BUILDER_PRODUCT_VERSION : null;
@@ -1561,6 +1798,12 @@ class DiviOps_Agent {
 
 		$docs_url = 'https://diviops.com/docs/';
 		$brand_logo_url   = plugins_url( 'assets/diviops-wordmark.svg', __FILE__ );
+		$snapshot_request = new class() {
+			public function get_param( $key ) {
+				return 'limit' === $key ? 8 : null;
+			}
+		};
+		$rollback_snapshots = self::rollback_snapshot_filtered_summaries( $snapshot_request );
 
 		?>
 		<div class="wrap">
@@ -1701,6 +1944,8 @@ class DiviOps_Agent {
 					</p>
 					<p class="description"><?php esc_html_e( 'The npm MCP server updates separately through npm or npx. Pro update and license access are managed by the Pro plugin.', 'diviops-agent' ); ?></p>
 				</div>
+
+				<?php self::render_admin_rollback_snapshots_card( $rollback_snapshots ); ?>
 
 			</div>
 

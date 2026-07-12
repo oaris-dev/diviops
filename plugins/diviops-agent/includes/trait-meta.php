@@ -23,10 +23,12 @@ trait DiviOps_Agent_Meta {
 	public static function schema_get_settings( $request ) {
 		$settings = [];
 
-		// Theme options.
+		// Theme options. Keep this surface intentionally narrow: `et_divi`
+		// can contain admin-only script injection fields and other private
+		// configuration. Dedicated tools expose richer design-system surfaces.
 		$et_options = get_option( 'et_divi', [] );
 		if ( is_array( $et_options ) ) {
-			$settings['theme_options'] = $et_options;
+			$settings['theme_options'] = (object) self::filter_public_theme_options( $et_options );
 		}
 
 		// Key customizer values.
@@ -45,6 +47,31 @@ trait DiviOps_Agent_Meta {
 		];
 
 		return self::envelope_success( $settings );
+	}
+
+	private static function filter_public_theme_options( array $options ): array {
+		$allowed = [
+			'heading_font',
+			'body_font',
+			'accent_color',
+			'secondary_accent_color',
+			'font_color',
+			'header_color',
+			'link_color',
+			'body_header_size',
+			'heading_font_size',
+			'body_font_size',
+		];
+		$filtered = [];
+
+		foreach ( $allowed as $key ) {
+			if ( ! array_key_exists( $key, $options ) || ! is_scalar( $options[ $key ] ) ) {
+				continue;
+			}
+			$filtered[ $key ] = $options[ $key ];
+		}
+
+		return $filtered;
 	}
 
 	/**

@@ -117,6 +117,281 @@ trait DiviOps_Agent_Preset {
 		return $response;
 	}
 
+	/** Inspect one D5 preset UUID without mutating storage. */
+	public static function preset_inspect( $request ) {
+		$preset_id = sanitize_text_field( (string) $request->get_param( 'preset_id' ) );
+		$audit     = self::audit_d5_preset_storage();
+		if ( '' === $preset_id || ! isset( $audit['aggregated'][ $preset_id ] ) ) {
+			return self::envelope_error( 'not_found', "Preset '{$preset_id}' not found in D5 preset storage.", 'Use diviops_preset_audit to discover registered D5 preset UUIDs.', 404, [ 'preset_id' => $preset_id ] );
+		}
+
+		$preset       = (array) $audit['aggregated'][ $preset_id ];
+		$occurrences  = self::preset_storage_occurrences( $preset_id );
+		$source       = array_merge(
+			[ 'bucket' => '', 'bucket_key' => '', 'path' => '', 'provenance' => '' ],
+			self::preset_primary_d5_source( $occurrences, $audit['entry_sources'][ $preset_id ] ?? [] )
+		);
+		$page_refs    = self::collect_preset_consumer_samples( $preset_id );
+		$d5           = self::preset_inspection_registry();
+		$chain        = self::collect_group_chain_refs( $d5 );
+		$chain_ids    = $chain['referenced_by'][ $preset_id ] ?? [];
+		$warnings     = self::preset_scope_warnings( $preset );
+		$noncanonical = array_filter( $occurrences, static fn( $o ) => 'd5_top_level' !== $o['provenance'] );
+		if ( count( $occurrences ) > 1 && ! empty( $noncanonical ) ) {
+			$warnings[] = [
+				'type'        => 'legacy_storage_duplicate',
+				'message'     => 'This UUID also exists in legacy or nested preset storage; the inspector did not reconcile or repair it.',
+				'occurrences' => $occurrences,
+			];
+		}
+
+		return self::envelope_success( [
+			'preset_id' => $preset_id,
+			'name'      => $preset['name'] ?? '',
+			'coordinates' => [
+				'bucket'      => $source['bucket'],
+				'type'        => $preset['type'] ?? $source['bucket'],
+				'module_name' => $preset['moduleName'] ?? ( 'module' === $source['bucket'] ? $source['bucket_key'] : null ),
+				'group_name'  => $preset['groupName'] ?? ( 'group' === $source['bucket'] ? $source['bucket_key'] : null ),
+				'group_id'    => $preset['groupId'] ?? null,
+				'bucket_key'  => $source['bucket_key'],
+				'is_default'  => self::preset_is_bucket_default( $preset_id, $source['bucket'], $source['bucket_key'], $source['path'] ),
+			],
+			'attrs'       => isset( $preset['attrs'] ) ? (object) $preset['attrs'] : null,
+			'styleAttrs'  => isset( $preset['styleAttrs'] ) ? (object) $preset['styleAttrs'] : null,
+			'renderAttrs' => isset( $preset['renderAttrs'] ) ? (object) $preset['renderAttrs'] : null,
+			'storage' => [ 'path' => $source['path'], 'provenance' => $source['provenance'], 'occurrences' => $occurrences ],
+			'references' => [
+				'total'            => $page_refs['count'] + ( $chain['counts'][ $preset_id ] ?? 0 ),
+				'block_ref_count'  => $page_refs['count'],
+				'preset_ref_count' => $chain['counts'][ $preset_id ] ?? 0,
+				'sample_consumers' => array_slice( array_merge( $page_refs['samples'], self::preset_chain_consumer_samples( $chain_ids, $d5 ) ), 0, 10 ),
+			],
+			'warnings' => $warnings,
+		] );
+	}
+
+	private static function preset_storage_occurrences( string $preset_id ): array {
+		$rows = [];
+		foreach ( self::d5_preset_paths() as $candidate ) {
+			$content = self::read_storage_path( $candidate['path'] );
+			foreach ( self::collect_d5_preset_audit_entries( is_array( $content ) ? $content : [] ) as $row ) {
+				if ( $preset_id === $row['id'] ) {
+					$rows[] = [
+						'path'       => $candidate['path'],
+						'provenance' => $candidate['provenance'],
+						'bucket'     => $row['bucket'],
+						'bucket_key' => $row['bucket_key'],
+					];
+				}
+			}
+		}
+		$ng = self::read_storage_path( 'et_divi_builder_global_presets_ng' );
+		foreach ( self::collect_legacy_ng_preset_audit_entries( is_array( $ng ) ? $ng : [] ) as $row ) {
+			if ( $preset_id === $row['id'] ) {
+				$rows[] = [
+					'path'       => 'et_divi_builder_global_presets_ng',
+					'provenance' => 'legacy_d4_ng',
+					'bucket'     => $row['bucket'],
+					'bucket_key' => $row['bucket_key'],
+				];
+			}
+		}
+		return $rows;
+	}
+
+	private static function preset_primary_d5_source( array $occurrences, array $fallback ): array {
+		foreach ( $occurrences as $row ) {
+			if ( 'legacy_d4_ng' !== ( $row['provenance'] ?? '' ) ) {
+				return $row;
+			}
+		}
+		return $fallback;
+	}
+
+	/** Merge D5 read candidates for inspection only; priority-path items win. */
+	private static function preset_inspection_registry(): array {
+		$merged = [];
+		foreach ( self::d5_preset_paths() as $candidate ) {
+			$content = self::read_storage_path( $candidate['path'] );
+			foreach ( [ 'module', 'group' ] as $bucket ) {
+				foreach ( (array) ( is_array( $content ) ? ( $content[ $bucket ] ?? [] ) : [] ) as $bucket_key => $info ) {
+					$info = (array) $info;
+						if ( ! isset( $merged[ $bucket ][ $bucket_key ] ) ) {
+							$merged[ $bucket ][ $bucket_key ] = $info;
+							continue;
+						}
+						if ( ! isset( $merged[ $bucket ][ $bucket_key ]['items'] ) || ! is_array( $merged[ $bucket ][ $bucket_key ]['items'] ) ) {
+							$merged[ $bucket ][ $bucket_key ]['items'] = [];
+						}
+						foreach ( (array) ( $info['items'] ?? [] ) as $id => $preset ) {
+							if ( ! isset( $merged[ $bucket ][ $bucket_key ]['items'][ $id ] ) ) {
+								$merged[ $bucket ][ $bucket_key ]['items'][ $id ] = $preset;
+						}
+					}
+				}
+			}
+		}
+		return $merged;
+	}
+
+	private static function collect_preset_consumer_samples( string $preset_id ): array {
+		global $wpdb;
+		$post_ids = [];
+		if ( is_object( $wpdb ?? null ) && method_exists( $wpdb, 'get_col' ) && method_exists( $wpdb, 'prepare' ) && method_exists( $wpdb, 'esc_like' ) && ! empty( $wpdb->posts ) ) {
+			// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Table name is WordPress-owned; the preset UUID LIKE value is prepared immediately below.
+			$query = $wpdb->prepare(
+				"SELECT ID FROM {$wpdb->posts} WHERE post_content LIKE %s AND post_type IN ('page', 'post') AND post_status IN ('publish', 'draft', 'private')",
+				'%' . $wpdb->esc_like( $preset_id ) . '%'
+			);
+			// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+			// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared, WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Prepared above; this targeted prefilter avoids loading every post before structural block parsing.
+			$post_ids = $wpdb->get_col( $query );
+		}
+		if ( empty( $post_ids ) ) {
+			return [ 'count' => 0, 'samples' => [] ];
+		}
+		$count = 0;
+		$samples = [];
+		foreach ( array_chunk( array_values( array_unique( array_map( 'intval', $post_ids ) ) ), 100 ) as $batch ) {
+			$posts = get_posts( [
+				'post__in'               => $batch,
+				'post_type'              => [ 'page', 'post' ],
+				'post_status'            => [ 'publish', 'draft', 'private' ],
+				'posts_per_page'         => count( $batch ),
+				'orderby'                => 'post__in',
+				'no_found_rows'          => true,
+				'update_post_meta_cache' => false,
+				'update_post_term_cache' => false,
+			] );
+			foreach ( $posts as $post ) {
+				if ( false !== strpos( $post->post_content, $preset_id ) ) {
+					self::walk_blocks_for_preset_consumer( parse_blocks( $post->post_content ), $preset_id, $post, $count, $samples );
+				}
+			}
+		}
+		return [ 'count' => $count, 'samples' => array_slice( $samples, 0, 10 ) ];
+	}
+
+	private static function walk_blocks_for_preset_consumer( array $blocks, string $preset_id, $post, int &$count, array &$samples ): void {
+		foreach ( $blocks as $block ) {
+			if ( ! is_array( $block ) ) {
+				continue;
+			}
+			$attrs = is_array( $block['attrs'] ?? null ) ? $block['attrs'] : [];
+			$ids = isset( $attrs['modulePreset'] ) ? ( is_array( $attrs['modulePreset'] ) ? $attrs['modulePreset'] : [ $attrs['modulePreset'] ] ) : [];
+			foreach ( $ids as $id ) {
+				if ( $preset_id === $id ) {
+					$count++;
+					if ( count( $samples ) < 10 ) {
+						$samples[] = [
+							'kind'       => 'block',
+							'post_id'    => $post->ID,
+							'title'      => $post->post_title,
+							'post_type'  => $post->post_type,
+							'status'     => $post->post_status,
+							'block_name' => $block['blockName'] ?? null,
+							'reference'  => 'modulePreset',
+						];
+					}
+				}
+			}
+			foreach ( (array) ( $attrs['groupPreset'] ?? [] ) as $slot => $binding ) {
+				if ( ! is_array( $binding ) ) {
+					continue;
+				}
+				$ids = isset( $binding['presetId'] ) ? ( is_array( $binding['presetId'] ) ? $binding['presetId'] : [ $binding['presetId'] ] ) : [];
+				foreach ( $ids as $id ) {
+					if ( $preset_id === $id ) {
+						$count++;
+						if ( count( $samples ) < 10 ) {
+							$samples[] = [
+								'kind'       => 'block',
+								'post_id'    => $post->ID,
+								'title'      => $post->post_title,
+								'post_type'  => $post->post_type,
+								'status'     => $post->post_status,
+								'block_name' => $block['blockName'] ?? null,
+								'reference'  => 'groupPreset',
+								'slot'       => $slot,
+							];
+						}
+					}
+				}
+			}
+			if ( ! empty( $block['innerBlocks'] ) ) {
+				self::walk_blocks_for_preset_consumer( $block['innerBlocks'], $preset_id, $post, $count, $samples );
+			}
+		}
+	}
+
+	private static function preset_chain_consumer_samples( array $ids, array $d5 ): array {
+		$samples = [];
+		foreach ( [ 'module', 'group' ] as $bucket ) {
+			foreach ( (array) ( $d5[ $bucket ] ?? [] ) as $bucket_key => $info ) {
+				$info = (array) $info;
+				foreach ( (array) ( $info['items'] ?? [] ) as $id => $preset ) {
+					if ( in_array( $id, $ids, true ) ) {
+						$samples[] = [
+							'kind'       => 'preset',
+							'preset_id'  => $id,
+							'name'       => ( (array) $preset )['name'] ?? '',
+							'bucket'     => $bucket,
+							'bucket_key' => $bucket_key,
+						];
+					}
+				}
+			}
+		}
+		return array_slice( $samples, 0, 10 );
+	}
+
+	private static function preset_scope_warnings( array $preset ): array {
+		$warnings = [];
+		foreach ( [ 'attrs', 'styleAttrs', 'renderAttrs' ] as $bag ) {
+			$paths = [];
+			self::collect_preset_scope_paths( $preset[ $bag ] ?? null, '', $paths );
+			if ( $paths ) {
+				$warnings[] = [
+					'type'       => 'visual_preset_scope_leak',
+					'bag'        => $bag,
+					'categories' => array_values( array_unique( array_map( static fn( $p ) => explode( ':', $p )[0], $paths ) ) ),
+					'paths'      => array_map( static fn( $p ) => explode( ':', $p, 2 )[1], $paths ),
+					'message'    => 'Layout, position, sizing, or transform attributes can make a visual preset affect geometry.',
+				];
+			}
+		}
+		return $warnings;
+	}
+
+	private static function collect_preset_scope_paths( $value, string $path, array &$paths ): void {
+		if ( ! is_array( $value ) && ! is_object( $value ) ) {
+			return;
+		}
+		foreach ( (array) $value as $key => $child ) {
+			$next = '' === $path ? (string) $key : $path . '.' . $key;
+			if ( in_array( strtolower( (string) $key ), [ 'layout', 'position', 'sizing', 'transform' ], true ) && ! self::is_box_shadow_position_path( $next ) ) {
+				$paths[] = strtolower( (string) $key ) . ':' . $next;
+			}
+			self::collect_preset_scope_paths( $child, $next, $paths );
+		}
+	}
+
+	private static function is_box_shadow_position_path( string $path ): bool {
+		return (bool) preg_match( '/(^|\\.)boxShadow\\..+\\.value\\.position$/', $path );
+	}
+
+	private static function preset_is_bucket_default( string $preset_id, string $bucket, string $bucket_key, string $path ): bool {
+		$registry = self::read_storage_path( $path );
+		if ( ! is_array( $registry ) && ! is_object( $registry ) ) {
+			return false;
+		}
+		$registry    = (array) $registry;
+		$bucket_data = isset( $registry[ $bucket ] ) && ( is_array( $registry[ $bucket ] ) || is_object( $registry[ $bucket ] ) ) ? (array) $registry[ $bucket ] : [];
+		$info        = isset( $bucket_data[ $bucket_key ] ) && ( is_array( $bucket_data[ $bucket_key ] ) || is_object( $bucket_data[ $bucket_key ] ) ) ? (array) $bucket_data[ $bucket_key ] : [];
+		return $preset_id === ( $info['default'] ?? '' );
+	}
+
 	/**
 	 * Collect preset UUIDs referenced in page/post block markup.
 	 *

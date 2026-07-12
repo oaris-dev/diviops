@@ -949,6 +949,7 @@ trait DiviOps_Agent_ThemeBuilder {
 	public static function tb_layout_update( $request ) {
 		$post_id = absint( $request['id'] );
 		$content = $request->get_param( 'content' );
+		$backup  = self::rollback_snapshot_requested( $request );
 		$post    = get_post( $post_id );
 
 		$valid_types = [ 'et_header_layout', 'et_body_layout', 'et_footer_layout' ];
@@ -982,6 +983,7 @@ trait DiviOps_Agent_ThemeBuilder {
 		$content = $normalized['content'];
 
 		if ( (bool) $request->get_param( 'dry_run' ) ) {
+			$extra = $backup ? [ 'backup' => self::rollback_snapshot_plan_for_post_write( $post, 'diviops_tb_layout_update', [ 'tool_operation' => 'tb_layout.update' ] ) ] : [];
 			return self::dry_run_response(
 				"Would replace post_content on {$post->post_type} #{$post_id} ('{$post->post_title}') (" . strlen( (string) $post->post_content ) . "→" . strlen( $content ) . ' bytes).',
 				[ [
@@ -989,8 +991,18 @@ trait DiviOps_Agent_ThemeBuilder {
 					'target' => "{$post->post_type}#{$post_id}",
 					'before' => [ 'bytes' => strlen( (string) $post->post_content ) ],
 					'after'  => [ 'bytes' => strlen( $content ) ],
-				] ]
+				] ],
+				[],
+				$extra
 			);
+		}
+
+		$snapshot = null;
+		if ( $backup ) {
+			$snapshot = self::rollback_snapshot_create_for_post_write( $post, 'diviops_tb_layout_update', [ 'tool_operation' => 'tb_layout.update' ] );
+			if ( is_wp_error( $snapshot ) ) {
+				return self::envelope_from_wp_error( $snapshot );
+			}
 		}
 
 		$result = self::update_post_content_with_integrity_guard(
@@ -1002,17 +1014,24 @@ trait DiviOps_Agent_ThemeBuilder {
 		);
 
 		if ( is_wp_error( $result ) ) {
+			if ( null !== $snapshot ) {
+				$snapshot = self::rollback_snapshot_mark_from_write_error( $snapshot, $result );
+				$result   = self::rollback_snapshot_error_with_summary( $result, $snapshot );
+			}
 			return self::envelope_from_content_write_error( $result );
 		}
 
 		self::invalidate_divi_cache( $post_id );
+		if ( null !== $snapshot ) {
+			$snapshot = self::rollback_snapshot_mark_post_write( $snapshot, 'write_applied', $content );
+		}
 
-		return self::envelope_success( [
+		return self::envelope_success( self::rollback_snapshot_add_to_response( [
 			'success' => true,
 			'id'      => $post_id,
 			'type'    => $post->post_type,
 			'message' => "Layout '{$post->post_title}' updated.",
-		] );
+		], $snapshot ) );
 	}
 
 	/**
@@ -1025,6 +1044,7 @@ trait DiviOps_Agent_ThemeBuilder {
 		$parent_selector = trim( (string) $request->get_param( 'parent_selector' ) );
 		$parent_path     = trim( (string) $request->get_param( 'parent_path' ) );
 		$dry_run         = (bool) $request->get_param( 'dry_run' );
+		$backup          = self::rollback_snapshot_requested( $request );
 		$post            = get_post( $post_id );
 
 		$valid_types = [ 'et_header_layout', 'et_body_layout', 'et_footer_layout' ];
@@ -1132,18 +1152,23 @@ trait DiviOps_Agent_ThemeBuilder {
 		];
 
 		if ( $dry_run ) {
+			$extra = [ 'target' => $target_summary ];
+			if ( $backup ) {
+				$extra['backup'] = self::rollback_snapshot_plan_for_post_write( $post, 'diviops_tb_layout_block_insert', [ 'tool_operation' => 'tb_layout.block_insert', 'target' => $target_summary, 'position' => $position, 'inserted_block_count' => $inserted_count ] );
+			}
 			return self::dry_run_response(
 				$already_there
 					? "Theme Builder layout #{$post_id} already contains the requested block sequence at {$target['path']} ({$position}) — no-op."
 					: "Would insert {$inserted_count} block(s) into Theme Builder layout #{$post_id} at {$target['path']} ({$position}).",
 				[ $plan ],
 				[],
-				[ 'target' => $target_summary ]
+				$extra
 			);
 		}
 
 		if ( $already_there ) {
-			return self::envelope_success( [
+			$snapshot = $backup ? self::rollback_snapshot_noop_for_post_write( $post, 'diviops_tb_layout_block_insert', [ 'tool_operation' => 'tb_layout.block_insert', 'target' => $target_summary, 'position' => $position, 'inserted_block_count' => $inserted_count ] ) : null;
+			return self::envelope_success( self::rollback_snapshot_add_to_response( [
 				'success'              => true,
 				'noop'                 => true,
 				'id'                   => $post_id,
@@ -1152,7 +1177,7 @@ trait DiviOps_Agent_ThemeBuilder {
 				'position'             => $position,
 				'inserted_block_count' => $inserted_count,
 				'message'              => 'Requested block sequence already exists at target.',
-			] );
+			], $snapshot ) );
 		}
 
 		try {
@@ -1175,7 +1200,8 @@ trait DiviOps_Agent_ThemeBuilder {
 		$new_content = $normalized['content'];
 		$current_normalized = self::normalize_divi_full_content_for_write( (string) $post->post_content );
 		if ( ! empty( $current_normalized['ok'] ) && $new_content === $current_normalized['content'] ) {
-			return self::envelope_success( [
+			$snapshot = $backup ? self::rollback_snapshot_noop_for_post_write( $post, 'diviops_tb_layout_block_insert', [ 'tool_operation' => 'tb_layout.block_insert', 'target' => $target_summary, 'position' => $position, 'inserted_block_count' => $inserted_count ] ) : null;
+			return self::envelope_success( self::rollback_snapshot_add_to_response( [
 				'success'              => true,
 				'noop'                 => true,
 				'id'                   => $post_id,
@@ -1184,7 +1210,15 @@ trait DiviOps_Agent_ThemeBuilder {
 				'position'             => $position,
 				'inserted_block_count' => $inserted_count,
 				'message'              => 'Requested block sequence already exists at target.',
-			] );
+			], $snapshot ) );
+		}
+
+		$snapshot = null;
+		if ( $backup ) {
+			$snapshot = self::rollback_snapshot_create_for_post_write( $post, 'diviops_tb_layout_block_insert', [ 'tool_operation' => 'tb_layout.block_insert', 'target' => $target_summary, 'position' => $position, 'inserted_block_count' => $inserted_count ] );
+			if ( is_wp_error( $snapshot ) ) {
+				return self::envelope_from_wp_error( $snapshot );
+			}
 		}
 
 		$result = self::update_post_content_with_integrity_guard(
@@ -1195,12 +1229,19 @@ trait DiviOps_Agent_ThemeBuilder {
 			(string) $post->post_content
 		);
 		if ( is_wp_error( $result ) ) {
+			if ( null !== $snapshot ) {
+				$snapshot = self::rollback_snapshot_mark_from_write_error( $snapshot, $result );
+				$result   = self::rollback_snapshot_error_with_summary( $result, $snapshot );
+			}
 			return self::envelope_from_content_write_error( $result );
 		}
 
 		self::invalidate_divi_cache( $post_id );
+		if ( null !== $snapshot ) {
+			$snapshot = self::rollback_snapshot_mark_post_write( $snapshot, 'write_applied', $new_content );
+		}
 
-		return self::envelope_success( [
+		return self::envelope_success( self::rollback_snapshot_add_to_response( [
 			'success'              => true,
 			'noop'                 => false,
 			'id'                   => $post_id,
@@ -1211,7 +1252,7 @@ trait DiviOps_Agent_ThemeBuilder {
 			'before'               => [ 'bytes' => strlen( (string) $post->post_content ) ],
 			'after'                => [ 'bytes' => strlen( $new_content ) ],
 			'message'              => "Inserted {$inserted_count} block(s) into layout '{$post->post_title}'.",
-		] );
+		], $snapshot ) );
 	}
 
 	/**

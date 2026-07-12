@@ -403,6 +403,23 @@ function requireCapability(key: string): void {
   }
 }
 
+function backupCapabilityError(toolName: string, backup: boolean | undefined): { content: Array<{ type: "text"; text: string }>; isError: true } | null {
+  if (!backup) return null;
+  const key = toolName.replace(/^diviops_/, "") + "_backup";
+  try {
+    requireCapability(key);
+  } catch (e) {
+    if (e instanceof MissingCapabilityError) {
+      return {
+        content: [{ type: "text" as const, text: e.message }],
+        isError: true,
+      };
+    }
+    throw e;
+  }
+  return null;
+}
+
 // `any` here is deliberate, not laziness. McpServer.registerTool is a
 // multi-overload generic whose `cb`/`InputArgs` machinery doesn't compose
 // with `Parameters<typeof server.registerTool>` (overload collapse to
@@ -539,6 +556,13 @@ const DRY_RUN_FIELD = z
   .default(false)
   .describe(
     "When true, return the change plan { summary, changes[, warnings] } without mutating state.",
+  );
+const BACKUP_FIELD = z
+  .boolean()
+  .optional()
+  .default(false)
+  .describe(
+    "When true on supported content writes, capture a rollback snapshot before applying. dry_run + backup only reports the planned snapshot and does not create one.",
   );
 
 // ── Read Tools ───────────────────────────────────────────────────────
@@ -739,10 +763,10 @@ registerPluginTool(
       "Create a WordPress nav menu by name, optionally with a requested slug. Free/core single-site menu authoring primitive. Requires edit_theme_options. Existing same-name or same-slug menus return ok:true with noop:true instead of creating duplicates. Does not assign the menu to a location; follow with diviops_menu_location_assign. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }." +
       DRY_RUN_DESC_SUFFIX,
     inputSchema: {
-      name: z.string().min(1).describe("Menu display name, e.g. Primary"),
-      slug: z.string().optional().describe("Optional sanitized menu slug. Omit to let WordPress derive it."),
-      dry_run: DRY_RUN_FIELD,
-    },
+	      name: z.string().min(1).describe("Menu display name, e.g. Primary"),
+	      slug: z.string().optional().describe("Optional sanitized menu slug. Omit to let WordPress derive it."),
+	      dry_run: DRY_RUN_FIELD,
+	    },
     annotations: { idempotentHint: true },
     _meta: { idempotent: "true" },
   },
@@ -773,8 +797,8 @@ registerPluginTool(
       page_id: z.number().int().positive().describe("Published page ID to add"),
       label: z.string().optional().describe("Optional menu label. Defaults to the page title."),
       parent_item_id: z.number().int().min(0).optional().default(0).describe("Optional parent menu item ID from diviops_menu_get; 0 for top level."),
-      dry_run: DRY_RUN_FIELD,
-    },
+	      dry_run: DRY_RUN_FIELD,
+	    },
     annotations: { idempotentHint: true },
     _meta: { idempotent: "true" },
   },
@@ -809,8 +833,8 @@ registerPluginTool(
       label: z.string().min(1).describe("Menu item label"),
       url: z.string().min(1).describe("Allowed URL: http(s), root-relative path, #hash, mailto, or tel"),
       parent_item_id: z.number().int().min(0).optional().default(0).describe("Optional parent menu item ID from diviops_menu_get; 0 for top level."),
-      dry_run: DRY_RUN_FIELD,
-    },
+	      dry_run: DRY_RUN_FIELD,
+	    },
     annotations: { idempotentHint: true },
     _meta: { idempotent: "true" },
   },
@@ -970,7 +994,7 @@ registerPluginTool(
   "diviops_schema_get_settings",
   {
     description:
-      "Get Divi site settings including theme options, site info, and builder version. Useful for understanding the site context before generating content. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }.",
+      "Get Divi site settings including site info, builder version, and a narrow public allowlist of non-sensitive Divi theme options (fonts, colors, sizes). Useful for understanding the site context before generating content. Does not expose the raw `et_divi` option bag. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }.",
     annotations: { idempotentHint: true },
     _meta: { idempotent: "true" },
   },
@@ -1384,15 +1408,19 @@ registerPluginTool(
           "Full page content in WordPress block markup format (<!-- wp:divi/section -->...<!-- /wp:divi/section -->)",
         ),
       dry_run: DRY_RUN_FIELD,
+      backup: BACKUP_FIELD,
     },
     annotations: { idempotentHint: false },
     _meta: { idempotent: "conditional" },
   },
-  async ({ page_id, content, dry_run }) => {
+  async ({ page_id, content, dry_run, backup }) => {
+    const backupGate = backupCapabilityError("diviops_page_update_content", backup);
+    if (backupGate) return backupGate;
     const hits = findForeignVarRefs(content, "content");
     if (hits.length > 0) return isolationErrorResult("diviops_page_update_content", hits);
     const body: Record<string, unknown> = { content };
     if (dry_run) body.dry_run = true;
+    if (backup) body.backup = true;
     const result = await wp.requestEnveloped(`/page/update-content/${page_id}`, {
       method: "POST",
       body,
@@ -1581,15 +1609,19 @@ registerPluginTool(
         .default("end")
         .describe('Where to insert: "start" or "end" (default)'),
       dry_run: DRY_RUN_FIELD,
+      backup: BACKUP_FIELD,
     },
     annotations: { idempotentHint: false },
     _meta: { idempotent: "false" },
   },
-  async ({ page_id, content, position, dry_run }) => {
+  async ({ page_id, content, position, dry_run, backup }) => {
+    const backupGate = backupCapabilityError("diviops_section_append", backup);
+    if (backupGate) return backupGate;
     const hits = findForeignVarRefs(content, "content");
     if (hits.length > 0) return isolationErrorResult("diviops_section_append", hits);
     const body: Record<string, unknown> = { content, position: position ?? "end" };
     if (dry_run) body.dry_run = true;
+    if (backup) body.backup = true;
     const result = await wp.requestEnveloped(`/section/append/${page_id}`, {
       method: "POST",
       body,
@@ -1631,17 +1663,21 @@ registerPluginTool(
         .default(1)
         .describe("Which match to target (1-based, default: 1)"),
       dry_run: DRY_RUN_FIELD,
+      backup: BACKUP_FIELD,
     },
     annotations: { idempotentHint: false },
     _meta: { idempotent: "conditional" },
   },
-  async ({ page_id, label, match_text, content, occurrence, dry_run }) => {
+  async ({ page_id, label, match_text, content, occurrence, dry_run, backup }) => {
+    const backupGate = backupCapabilityError("diviops_section_replace", backup);
+    if (backupGate) return backupGate;
     const hits = findForeignVarRefs(content, "content");
     if (hits.length > 0) return isolationErrorResult("diviops_section_replace", hits);
     const body: Record<string, any> = { content, occurrence };
     if (label) body.label = label;
     if (match_text) body.match_text = match_text;
     if (dry_run) body.dry_run = true;
+    if (backup) body.backup = true;
     const result = await wp.requestEnveloped(`/section/replace/${page_id}`, {
       method: "POST",
       body,
@@ -1680,15 +1716,19 @@ registerPluginTool(
         .default(1)
         .describe("Which match to target (1-based, default: 1)"),
       dry_run: DRY_RUN_FIELD,
+      backup: BACKUP_FIELD,
     },
     annotations: { idempotentHint: true },
     _meta: { idempotent: "true" },
   },
-  async ({ page_id, label, match_text, occurrence, dry_run }) => {
+  async ({ page_id, label, match_text, occurrence, dry_run, backup }) => {
+    const backupGate = backupCapabilityError("diviops_section_remove", backup);
+    if (backupGate) return backupGate;
     const body: Record<string, any> = { occurrence };
     if (label) body.label = label;
     if (match_text) body.match_text = match_text;
     if (dry_run) body.dry_run = true;
+    if (backup) body.backup = true;
     const result = await wp.requestEnveloped(`/section/remove/${page_id}`, {
       method: "POST",
       body,
@@ -1780,11 +1820,14 @@ registerPluginTool(
         .record(z.string(), z.any())
         .describe("Attribute paths (dot notation) and their new values"),
       dry_run: DRY_RUN_FIELD,
+      backup: BACKUP_FIELD,
     },
     annotations: { idempotentHint: false },
     _meta: { idempotent: "conditional" },
   },
-  async ({ page_id, label, match_text, auto_index, occurrence, attrs, dry_run }) => {
+  async ({ page_id, label, match_text, auto_index, occurrence, attrs, dry_run, backup }) => {
+    const backupGate = backupCapabilityError("diviops_module_update", backup);
+    if (backupGate) return backupGate;
     const hits = scanAttrsForForeignVarRefs(attrs);
     if (hits.length > 0) return isolationErrorResult("diviops_module_update", hits);
     const body: Record<string, any> = { attrs };
@@ -1793,6 +1836,7 @@ registerPluginTool(
     if (match_text) body.match_text = match_text;
     if (occurrence > 1) body.occurrence = occurrence;
     if (dry_run) body.dry_run = true;
+    if (backup) body.backup = true;
     const result = await wp.requestEnveloped(`/module/update/${page_id}`, {
       method: "POST",
       body,
@@ -1863,6 +1907,7 @@ registerPluginTool(
         .enum(["before", "after"])
         .describe("Place the source before or after the target"),
       dry_run: DRY_RUN_FIELD,
+      backup: BACKUP_FIELD,
     },
     annotations: { idempotentHint: false },
     _meta: { idempotent: "conditional" },
@@ -1879,7 +1924,10 @@ registerPluginTool(
     target_occurrence,
     position,
     dry_run,
+    backup,
   }) => {
+    const backupGate = backupCapabilityError("diviops_module_move", backup);
+    if (backupGate) return backupGate;
     const body: Record<string, any> = { position };
     if (source_label) body.source_label = source_label;
     if (source_match_text) body.source_match_text = source_match_text;
@@ -1890,6 +1938,7 @@ registerPluginTool(
     if (target_auto_index) body.target_auto_index = target_auto_index;
     if (target_occurrence > 1) body.target_occurrence = target_occurrence;
     if (dry_run) body.dry_run = true;
+    if (backup) body.backup = true;
     const result = await wp.requestEnveloped(`/module/move/${page_id}`, {
       method: "POST",
       body,
@@ -1915,17 +1964,21 @@ registerPluginTool(
       auto_index: z.string().optional().describe('Auto-index in "type:N" format (e.g. "text:3")'),
       occurrence: z.number().int().min(1).optional().default(1).describe("Which occurrence when multiple modules share the same label (1-based)"),
       dry_run: DRY_RUN_FIELD,
+      backup: BACKUP_FIELD,
     },
     annotations: { idempotentHint: false },
     _meta: { idempotent: "false" },
   },
-  async ({ page_id, label, match_text, auto_index, occurrence, dry_run }) => {
+  async ({ page_id, label, match_text, auto_index, occurrence, dry_run, backup }) => {
+    const backupGate = backupCapabilityError("diviops_module_lock", backup);
+    if (backupGate) return backupGate;
     const body: Record<string, any> = {};
     if (label) body.label = label;
     if (match_text) body.match_text = match_text;
     if (auto_index) body.auto_index = auto_index;
     if (occurrence && occurrence > 1) body.occurrence = occurrence;
     if (dry_run) body.dry_run = true;
+    if (backup) body.backup = true;
     const result = await wp.requestEnveloped(`/module/lock/${page_id}`, { method: "POST", body });
     return { content: [{ type: "text" as const, text: serializeEnvelope(result, "diviops_module_lock") }] };
   },
@@ -1944,17 +1997,21 @@ registerPluginTool(
       auto_index: z.string().optional().describe('Auto-index in "type:N" format'),
       occurrence: z.number().int().min(1).optional().default(1).describe("Which occurrence when multiple modules share the same label (1-based)"),
       dry_run: DRY_RUN_FIELD,
+      backup: BACKUP_FIELD,
     },
     annotations: { idempotentHint: false },
     _meta: { idempotent: "false" },
   },
-  async ({ page_id, label, match_text, auto_index, occurrence, dry_run }) => {
+  async ({ page_id, label, match_text, auto_index, occurrence, dry_run, backup }) => {
+    const backupGate = backupCapabilityError("diviops_module_unlock", backup);
+    if (backupGate) return backupGate;
     const body: Record<string, any> = {};
     if (label) body.label = label;
     if (match_text) body.match_text = match_text;
     if (auto_index) body.auto_index = auto_index;
     if (occurrence && occurrence > 1) body.occurrence = occurrence;
     if (dry_run) body.dry_run = true;
+    if (backup) body.backup = true;
     const result = await wp.requestEnveloped(`/module/unlock/${page_id}`, { method: "POST", body });
     return { content: [{ type: "text" as const, text: serializeEnvelope(result, "diviops_module_unlock") }] };
   },
@@ -1974,11 +2031,14 @@ registerPluginTool(
       occurrence: z.number().int().min(1).optional().default(1).describe("Which occurrence when multiple modules share the same label (1-based)"),
       position: z.enum(["before", "after"]).optional().default("after").describe('Place the clone "before" or "after" the source module within its parent.'),
       dry_run: DRY_RUN_FIELD,
+      backup: BACKUP_FIELD,
     },
     annotations: { idempotentHint: false },
     _meta: { idempotent: "false" },
   },
-  async ({ page_id, label, match_text, auto_index, occurrence, position, dry_run }) => {
+  async ({ page_id, label, match_text, auto_index, occurrence, position, dry_run, backup }) => {
+    const backupGate = backupCapabilityError("diviops_module_clone", backup);
+    if (backupGate) return backupGate;
     const body: Record<string, any> = {};
     if (label) body.label = label;
     if (match_text) body.match_text = match_text;
@@ -1986,6 +2046,7 @@ registerPluginTool(
     if (occurrence && occurrence > 1) body.occurrence = occurrence;
     if (position) body.position = position;
     if (dry_run) body.dry_run = true;
+    if (backup) body.backup = true;
     const result = await wp.requestEnveloped(`/module/clone/${page_id}`, { method: "POST", body });
     return { content: [{ type: "text" as const, text: serializeEnvelope(result, "diviops_module_clone") }] };
   },
@@ -2152,6 +2213,130 @@ registerPluginTool(
     return {
       content: [
         { type: "text" as const, text: serializeEnvelope(result, "diviops_preset_audit_storage") },
+      ],
+    };
+  },
+);
+
+registerPluginTool(
+  "diviops_preset_inspect",
+  {
+    description:
+      "Inspect one Divi 5 preset UUID without writing. Returns bucket/type/module/group coordinates, attrs/styleAttrs/renderAttrs, storage path and provenance, block plus preset-chain reference counts with sample consumers, geometry-scope warnings for layout/position/sizing/transform attrs, and a warning when the same UUID also exists in nested D5 or legacy _ng storage. This is intentionally narrower than diviops_preset_audit and has no repair mode. Missing UUID returns not_found.",
+    inputSchema: {
+      preset_id: z.string().min(1).describe("Preset UUID to inspect."),
+    },
+    annotations: { idempotentHint: true },
+    _meta: { idempotent: "true" },
+  },
+  async ({ preset_id }) => {
+    const result = await wp.requestEnveloped(`/preset/inspect/${encodeURIComponent(preset_id)}`);
+    return {
+      content: [
+        { type: "text" as const, text: serializeEnvelope(result, "diviops_preset_inspect") },
+      ],
+    };
+  },
+);
+
+registerPluginTool(
+  "diviops_rollback_snapshot_list",
+  {
+    description:
+      "List DiviOps rollback snapshots from the option-backed store. Free/core storage management read surface; returns metadata only, never stored before.value payloads. Supports target_kind, target_id, status, and limit filters. Results are target-permission filtered; missing-target snapshots are shown only to site admins or the snapshot creator and are payload-redacted. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }.",
+    inputSchema: {
+      target_kind: z.string().optional().describe("Optional target kind filter, usually post."),
+      target_id: z.number().int().positive().optional().describe("Optional target post/layout ID filter."),
+      status: z.string().optional().describe("Optional snapshot status filter, such as created or write_applied."),
+      limit: z.number().int().min(1).max(100).optional().default(20).describe("Maximum snapshots to return."),
+    },
+    annotations: { idempotentHint: true },
+    _meta: { idempotent: "true" },
+  },
+  async ({ target_kind, target_id, status, limit }) => {
+    const params: Record<string, string> = {};
+    if (target_kind) params.target_kind = target_kind;
+    if (target_id) params.target_id = String(target_id);
+    if (status) params.status = status;
+    if (limit && limit !== 20) params.limit = String(limit);
+    const qs = new URLSearchParams(params).toString();
+    const result = await wp.requestEnveloped(`/rollback-snapshot/list${qs ? `?${qs}` : ""}`);
+    return {
+      content: [
+        { type: "text" as const, text: serializeEnvelope(result, "diviops_rollback_snapshot_list") },
+      ],
+    };
+  },
+);
+
+registerPluginTool(
+  "diviops_rollback_snapshot_get",
+  {
+    description:
+      "Inspect one rollback snapshot. Free/core storage management read surface. include_value defaults false; true returns the stored before.value and captured side-effect payload only when the referenced target still exists and the caller passes the target-level permission gate. Missing-target snapshots are metadata-only for admins/creators. No restore path in this tool. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }.",
+    inputSchema: {
+      snapshot_id: z.string().min(1).describe("Snapshot id returned by diviops_rollback_snapshot_list."),
+      include_value: z.boolean().optional().default(false).describe("Include stored before.value and side-effect payload when target access allows it."),
+    },
+    annotations: { idempotentHint: true },
+    _meta: { idempotent: "true" },
+  },
+  async ({ snapshot_id, include_value }) => {
+    const params = include_value ? "?include_value=true" : "";
+    const result = await wp.requestEnveloped(
+      `/rollback-snapshot/get/${encodeURIComponent(snapshot_id)}${params}`,
+    );
+    return {
+      content: [
+        { type: "text" as const, text: serializeEnvelope(result, "diviops_rollback_snapshot_get") },
+      ],
+    };
+  },
+);
+
+registerPluginTool(
+  "diviops_rollback_snapshot_delete",
+  {
+    description:
+      "Hard-delete one rollback snapshot option after operator acceptance. Free/core cleanup surface; normally requires target-level permission, with a missing-target cleanup path for site admins or the snapshot creator. Does not expose before.value and does not restore content. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }.",
+    inputSchema: {
+      snapshot_id: z.string().min(1).describe("Snapshot id to delete."),
+    },
+    annotations: { idempotentHint: true },
+    _meta: { idempotent: "true" },
+  },
+  async ({ snapshot_id }) => {
+    const result = await wp.requestEnveloped(
+      `/rollback-snapshot/delete/${encodeURIComponent(snapshot_id)}`,
+      { method: "POST" },
+    );
+    return {
+      content: [
+        { type: "text" as const, text: serializeEnvelope(result, "diviops_rollback_snapshot_delete") },
+      ],
+    };
+  },
+);
+
+registerPluginTool(
+  "diviops_rollback_snapshot_restore",
+  {
+    description:
+      "Restore one guarded rollback snapshot to its original post/page or Theme Builder layout target. Requires target edit permission, refuses content or captured Divi post-meta checksum drift with conflict before mutation, has no force override, writes through the shared full-content integrity/readback guard, restores captured supported post meta, invalidates Divi cache, and marks restore_applied only after verified readback. dry_run previews without writing. This MVP does not create a second pre-restore snapshot. Returns the standardized envelope.",
+    inputSchema: {
+      snapshot_id: z.string().min(1).describe("Snapshot id to restore."),
+      dry_run: z.boolean().optional().default(false).describe("Preview the checksum-bound restore without mutation."),
+    },
+    _meta: { idempotent: "false" },
+  },
+  async ({ snapshot_id, dry_run }) => {
+    const result = await wp.requestEnveloped(
+      `/rollback-snapshot/restore/${encodeURIComponent(snapshot_id)}`,
+      { method: "POST", body: { dry_run } },
+    );
+    return {
+      content: [
+        { type: "text" as const, text: serializeEnvelope(result, "diviops_rollback_snapshot_restore") },
       ],
     };
   },
@@ -2810,13 +2995,17 @@ registerPluginTool(
       layout_id: z.number().describe("Layout post ID to update"),
       content: z.string().describe("New block markup content"),
       dry_run: DRY_RUN_FIELD,
+      backup: BACKUP_FIELD,
     },
     annotations: { idempotentHint: false },
     _meta: { idempotent: "conditional" },
   },
-  async ({ layout_id, content, dry_run }) => {
+  async ({ layout_id, content, dry_run, backup }) => {
+    const backupGate = backupCapabilityError("diviops_tb_layout_update", backup);
+    if (backupGate) return backupGate;
     const body: Record<string, unknown> = { content };
     if (dry_run) body.dry_run = true;
+    if (backup) body.backup = true;
     const result = await wp.requestEnveloped(`/theme-builder/layout/update/${layout_id}`, {
       method: "PUT",
       body,
@@ -2852,11 +3041,14 @@ registerPluginTool(
         .describe("Where to insert relative to the target block."),
       content: z.string().describe("One or more serialized Divi blocks to insert"),
       dry_run: DRY_RUN_FIELD,
+      backup: BACKUP_FIELD,
     },
     annotations: { idempotentHint: false },
     _meta: { idempotent: "conditional" },
   },
-  async ({ layout_id, parent_selector, parent_path, position, content, dry_run }) => {
+  async ({ layout_id, parent_selector, parent_path, position, content, dry_run, backup }) => {
+    const backupGate = backupCapabilityError("diviops_tb_layout_block_insert", backup);
+    if (backupGate) return backupGate;
     const body: Record<string, unknown> = {
       content,
       position: position ?? "append",
@@ -2864,6 +3056,7 @@ registerPluginTool(
     if (parent_selector !== undefined) body.parent_selector = parent_selector;
     if (parent_path !== undefined) body.parent_path = parent_path;
     if (dry_run) body.dry_run = true;
+    if (backup) body.backup = true;
     const result = await wp.requestEnveloped(
       `/theme-builder/layout/block-insert/${layout_id}`,
       {

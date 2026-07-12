@@ -1,6 +1,6 @@
 # MCP Tool Reference
 
-Curated reference for the 56 Divi-builder-relevant tools (Read 26 + Write 28 + Utility 2) — the authoring surface this skill exercises. The full DiviOps server ships 79 always-on tools across all namespaces; see [`diviops-server/README.md`](../../../../diviops-server/README.md) for the complete inventory. SCF coverage lives in the [diviops-scf/](../../diviops-scf/SKILL.md) skill; cross-cutting harness conventions (response envelope, capability handshake, `dry_run` plan shape, idempotency) live in the [diviops/](../../diviops/SKILL.md) primer skill.
+Curated reference for the 58 Divi-builder-relevant tools (Read 27 + Write 29 + Utility 2) — the authoring surface this skill exercises. The full DiviOps server ships 90 always-on tools across all namespaces; see [`diviops-server/README.md`](../../../../diviops-server/README.md) for the complete inventory. SCF coverage lives in the [diviops-scf/](../../diviops-scf/SKILL.md) skill; cross-cutting harness conventions (response envelope, capability handshake, `dry_run` plan shape, idempotency) live in the [diviops/](../../diviops/SKILL.md) primer skill.
 
 ## Response shape
 
@@ -66,7 +66,7 @@ All namespaces have adopted the envelope as of the last wave (`module_*` + `sect
 
 **dry_run** plans (where supported) flow through the success branch as `data: { dry_run: true, plan: { summary, changes[, warnings] } }` — same shape as before, now wrapped in the envelope.
 
-## Read Tools (26)
+## Read Tools (27)
 <!-- Distinct-tool count; multiple tools per bullet via `/` separator -->
 
 
@@ -79,6 +79,7 @@ All namespaces have adopted the envelope as of the last wave (`module_*` + `sect
 - `diviops_section_get` — get a section's markup by admin label or text content
 - `diviops_template_list` / `diviops_template_get` — load verified block markup templates
 - `diviops_preset_audit` — audit presets with referenced/unreferenced analysis (exposes `block_ref_count`, `group_ref_count`, `referenced_by_presets` chain)
+- `diviops_preset_inspect` — inspect one preset UUID: coordinates, all three attr bags, storage provenance, reference samples, geometry-scope leaks, and legacy/nested duplicates; read-only with no repair mode
 - `diviops_preset_scan_orphans` — list page-referenced preset UUIDs missing from the D5 registry; separates dangling orphans from D4-legacy refs
 - `diviops_library_list` / `diviops_library_get` — browse and load Divi Library items
 - `diviops_render_preview` — render block markup to HTML for preview. Accepts EITHER `content` (inline markup) OR `page_id` (loads from DB; requires edit_post on the page). Use `page_id` for regression preview of shipped pages without round-tripping the markup blob.
@@ -88,11 +89,12 @@ All namespaces have adopted the envelope as of the last wave (`module_*` + `sect
 - `diviops_variable_list` — list design token variables, filter by type (`colors`, `numbers`, etc.) or ID prefix. `prefix` matches the stored ID only; it does not match `label`. For semantic token names such as `oa-*` labels on UUID-backed Divi variables, list by `type` and filter the returned `label` client-side.
 - `diviops_variable_scan_orphans` — find `gvid-`/`gcid-` refs with no backing Variable Manager entry (orphans render as invalid CSS when the `$variable()$` resolver falls through) plus variables defined but referenced nowhere (unused — deletion candidates). Scans pages, Theme Builder layouts (`et_header_layout` / `et_body_layout` / `et_footer_layout`), Divi Library items (`et_pb_layout`), canvas pages (`et_pb_canvas`), and the preset registry. Symmetric to `diviops_preset_scan_orphans`
 
-## Write Tools (28)
+## Write Tools (29)
 
 - `diviops_page_create` — create new page with Divi content
 - `diviops_page_update_content` — full page rewrite
 - `diviops_page_update_meta` — update title, slug, parent, and menu order without touching content. Slug changes on published posts preserve `_wp_old_slug` by default; use `diviops_page_update_status` for status
+- `diviops_rollback_snapshot_restore` — restore one guarded snapshot to its captured post/page or Theme Builder layout. Requires target edit permission, refuses content or captured Divi post-meta drift before mutation, uses the full-content readback guard, and has no force path or second snapshot in this MVP
 - `diviops_section_append` — add section to existing page (start or end)
 - `diviops_section_replace` — replace section by admin label or text content
 - `diviops_section_remove` — remove section by admin label or text content

@@ -453,6 +453,11 @@ trait DiviOps_Agent_Validate {
 				}
 			}
 
+			// ── Absolute center-right floating groups (warning) ─────
+			if ( 'divi/group' === $name ) {
+				self::validate_absolute_center_right_offset( $attrs, $index, $warnings );
+			}
+
 			// ── Empty text module (error) ───────────────────────────
 
 			if ( 'divi/text' === $name ) {
@@ -650,6 +655,42 @@ trait DiviOps_Agent_Validate {
 		}
 
 		return $default;
+	}
+
+	private static function validate_absolute_center_right_offset( array $attrs, int $index, array &$warnings ): void {
+		foreach ( [ 'desktop', 'tablet', 'phone' ] as $breakpoint ) {
+			$position = self::get_nested_array_value( $attrs, [ 'module', 'decoration', 'position', $breakpoint, 'value' ] );
+			if ( ! is_array( $position ) ) {
+				continue;
+			}
+
+			$mode = self::get_inherited_responsive_value( $attrs, [ 'module', 'decoration', 'position' ], $breakpoint, 'mode' );
+			if ( 'absolute' !== $mode ) {
+				continue;
+			}
+
+			$origin = is_array( $position['origin'] ?? null ) ? ( $position['origin']['absolute'] ?? null ) : null;
+			if ( 'center right' !== $origin ) {
+				continue;
+			}
+
+			$offset = is_array( $position['offset'] ?? null ) ? $position['offset'] : [];
+			if ( isset( $offset['horizontal'] ) && is_scalar( $offset['horizontal'] ) && '' !== trim( (string) $offset['horizontal'] ) ) {
+				continue;
+			}
+
+			$warnings[] = [
+				'block'      => 'divi/group',
+				'index'      => $index,
+				'code'       => 'absolute_center_right_missing_horizontal_offset',
+				'message'    => sprintf(
+					'Absolute group uses center-right origin at %s with no horizontal offset; frontend renders flush at right:0. Confirm whether a negative horizontal offset is intended.',
+					$breakpoint
+				),
+				'path'       => sprintf( 'module.decoration.position.%s.value.offset.horizontal', $breakpoint ),
+				'breakpoint' => $breakpoint,
+			];
+		}
 	}
 
 	private static function validate_responsive_flex_child( string $name, array $attrs, int $index, array $parent, array &$warnings ): void {

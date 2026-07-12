@@ -174,6 +174,7 @@ trait DiviOps_Agent_Page {
 		$post_id = absint( $request['id'] );
 		$content = $request->get_param( 'content' );
 		$dry_run = (bool) $request->get_param( 'dry_run' );
+		$backup  = self::rollback_snapshot_requested( $request );
 		$post    = get_post( $post_id );
 
 		if ( ! $post ) {
@@ -220,6 +221,7 @@ trait DiviOps_Agent_Page {
 		if ( $dry_run ) {
 			$old_len = strlen( (string) $post->post_content );
 			$new_len = strlen( $content );
+			$extra   = $backup ? [ 'backup' => self::rollback_snapshot_plan_for_post_write( $post, 'diviops_page_update_content', [ 'tool_operation' => 'page.update_content' ] ) ] : [];
 			return self::dry_run_response(
 				"Would replace post_content on page #{$post_id} ('{$post->post_title}') ({$old_len}→{$new_len} bytes).",
 				[ [
@@ -227,8 +229,18 @@ trait DiviOps_Agent_Page {
 					'target' => "page#{$post_id}",
 					'before' => [ 'bytes' => $old_len ],
 					'after'  => [ 'bytes' => $new_len ],
-				] ]
+				] ],
+				[],
+				$extra
 			);
+		}
+
+		$snapshot = null;
+		if ( $backup ) {
+			$snapshot = self::rollback_snapshot_create_for_post_write( $post, 'diviops_page_update_content', [ 'tool_operation' => 'page.update_content' ] );
+			if ( is_wp_error( $snapshot ) ) {
+				return self::envelope_from_wp_error( $snapshot );
+			}
 		}
 
 		$result = self::update_post_content_with_integrity_guard(
@@ -240,6 +252,10 @@ trait DiviOps_Agent_Page {
 		);
 
 		if ( is_wp_error( $result ) ) {
+			if ( null !== $snapshot ) {
+				$snapshot = self::rollback_snapshot_mark_from_write_error( $snapshot, $result );
+				$result   = self::rollback_snapshot_error_with_summary( $result, $snapshot );
+			}
 			return self::envelope_from_content_write_error( $result );
 		}
 
@@ -250,11 +266,15 @@ trait DiviOps_Agent_Page {
 
 		self::invalidate_divi_cache( $post_id );
 
-		return self::envelope_success( [
+		if ( null !== $snapshot ) {
+			$snapshot = self::rollback_snapshot_mark_post_write( $snapshot, 'write_applied', $content );
+		}
+
+		return self::envelope_success( self::rollback_snapshot_add_to_response( [
 			'success' => true,
 			'page_id' => $post_id,
 			'message' => 'Content updated successfully.',
-		] );
+		], $snapshot ) );
 	}
 
 	/**
@@ -654,6 +674,7 @@ trait DiviOps_Agent_Page {
 		$content  = $request->get_param( 'content' );
 		$position = sanitize_key( (string) ( $request->get_param( 'position' ) ?? 'end' ) );
 		$dry_run  = (bool) $request->get_param( 'dry_run' );
+		$backup   = self::rollback_snapshot_requested( $request );
 		$post     = get_post( $post_id );
 
 		if ( ! $post ) {
@@ -694,6 +715,7 @@ trait DiviOps_Agent_Page {
 		}
 
 		if ( $dry_run ) {
+			$extra = $backup ? [ 'backup' => self::rollback_snapshot_plan_for_post_write( $post, 'diviops_section_append', [ 'tool_operation' => 'section.append', 'position' => $position ] ) ] : [];
 			return self::dry_run_response(
 				"Would append section to page #{$post_id} ('{$post->post_title}') at position '{$position}' (" . strlen( $content ) . " bytes).",
 				[ [
@@ -703,7 +725,9 @@ trait DiviOps_Agent_Page {
 						'position' => $position,
 						'bytes'    => strlen( $content ),
 					],
-				] ]
+				] ],
+				[],
+				$extra
 			);
 		}
 
@@ -743,6 +767,14 @@ trait DiviOps_Agent_Page {
 		}
 		$final = $normalized['content'];
 
+		$snapshot = null;
+		if ( $backup ) {
+			$snapshot = self::rollback_snapshot_create_for_post_write( $post, 'diviops_section_append', [ 'tool_operation' => 'section.append', 'position' => $position ] );
+			if ( is_wp_error( $snapshot ) ) {
+				return self::envelope_from_wp_error( $snapshot );
+			}
+		}
+
 		$result = self::update_post_content_with_integrity_guard(
 			$post_id,
 			$final,
@@ -752,17 +784,25 @@ trait DiviOps_Agent_Page {
 		);
 
 		if ( is_wp_error( $result ) ) {
+			if ( null !== $snapshot ) {
+				$snapshot = self::rollback_snapshot_mark_from_write_error( $snapshot, $result );
+				$result   = self::rollback_snapshot_error_with_summary( $result, $snapshot );
+			}
 			return self::envelope_from_content_write_error( $result );
 		}
 
 		self::invalidate_divi_cache( $post_id );
 
-		return self::envelope_success( [
+		if ( null !== $snapshot ) {
+			$snapshot = self::rollback_snapshot_mark_post_write( $snapshot, 'write_applied', $final );
+		}
+
+		return self::envelope_success( self::rollback_snapshot_add_to_response( [
 			'success'  => true,
 			'page_id'  => $post_id,
 			'position' => $position,
 			'message'  => 'Section appended successfully.',
-		] );
+		], $snapshot ) );
 	}
 
 	/**
@@ -813,6 +853,7 @@ trait DiviOps_Agent_Page {
 		}
 
 		$dry_run = (bool) $request->get_param( 'dry_run' );
+		$backup  = self::rollback_snapshot_requested( $request );
 
 		$existing = $post->post_content;
 		$result   = self::find_and_replace_section( $existing, $label, $content, $match_text, $occurrence );
@@ -823,6 +864,7 @@ trait DiviOps_Agent_Page {
 
 		if ( $dry_run ) {
 			$display_target = '' !== $label ? $label : "text:{$match_text}";
+			$extra          = $backup ? [ 'backup' => self::rollback_snapshot_plan_for_post_write( $post, 'diviops_section_replace', [ 'tool_operation' => 'section.replace', 'target' => $display_target, 'occurrence' => $occurrence ] ) ] : [];
 			return self::dry_run_response(
 				"Would replace section '{$display_target}' on page #{$post_id} ('{$post->post_title}') (occurrence {$occurrence}, {$result['total_matches']} match(es)).",
 				[ [
@@ -835,7 +877,9 @@ trait DiviOps_Agent_Page {
 						'total_matches' => $result['total_matches'],
 					],
 					'after'  => [ 'bytes' => strlen( $content ) ],
-				] ]
+				] ],
+				[],
+				$extra
 			);
 		}
 
@@ -851,6 +895,15 @@ trait DiviOps_Agent_Page {
 			);
 		}
 
+		$target_for_snapshot = '' !== $label ? $label : "text:{$match_text}";
+		$snapshot = null;
+		if ( $backup ) {
+			$snapshot = self::rollback_snapshot_create_for_post_write( $post, 'diviops_section_replace', [ 'tool_operation' => 'section.replace', 'target' => $target_for_snapshot, 'occurrence' => $occurrence ] );
+			if ( is_wp_error( $snapshot ) ) {
+				return self::envelope_from_wp_error( $snapshot );
+			}
+		}
+
 		$update = self::update_post_content_with_integrity_guard(
 			$post_id,
 			$normalized['content'],
@@ -860,10 +913,17 @@ trait DiviOps_Agent_Page {
 		);
 
 		if ( is_wp_error( $update ) ) {
+			if ( null !== $snapshot ) {
+				$snapshot = self::rollback_snapshot_mark_from_write_error( $snapshot, $update );
+				$update   = self::rollback_snapshot_error_with_summary( $update, $snapshot );
+			}
 			return self::envelope_from_content_write_error( $update );
 		}
 
 		self::invalidate_divi_cache( $post_id );
+		if ( null !== $snapshot ) {
+			$snapshot = self::rollback_snapshot_mark_post_write( $snapshot, 'write_applied', $normalized['content'] );
+		}
 
 		$target   = '' !== $label ? $label : "text:{$match_text}";
 		$response = [
@@ -879,7 +939,7 @@ trait DiviOps_Agent_Page {
 			$response['total_matches'] = $result['total_matches'];
 		}
 
-		return self::envelope_success( $response );
+		return self::envelope_success( self::rollback_snapshot_add_to_response( $response, $snapshot ) );
 	}
 
 	/**
@@ -917,6 +977,7 @@ trait DiviOps_Agent_Page {
 		$occurrence = $target['occurrence'];
 
 		$dry_run = (bool) $request->get_param( 'dry_run' );
+		$backup  = self::rollback_snapshot_requested( $request );
 
 		$existing = $post->post_content;
 		$result   = self::find_and_replace_section( $existing, $label, '', $match_text, $occurrence );
@@ -934,6 +995,7 @@ trait DiviOps_Agent_Page {
 
 		if ( $dry_run ) {
 			$display_target = '' !== $label ? $label : "text:{$match_text}";
+			$extra          = $backup ? [ 'backup' => self::rollback_snapshot_plan_for_post_write( $post, 'diviops_section_remove', [ 'tool_operation' => 'section.remove', 'target' => $display_target, 'occurrence' => $occurrence ] ) ] : [];
 			return self::dry_run_response(
 				"Would remove section '{$display_target}' from page #{$post_id} ('{$post->post_title}') (occurrence {$occurrence}, {$result['total_matches']} match(es)).",
 				[ [
@@ -945,7 +1007,9 @@ trait DiviOps_Agent_Page {
 						'occurrence'    => $occurrence,
 						'total_matches' => $result['total_matches'],
 					],
-				] ]
+				] ],
+				[],
+				$extra
 			);
 		}
 
@@ -961,6 +1025,15 @@ trait DiviOps_Agent_Page {
 			);
 		}
 
+		$target_for_snapshot = '' !== $label ? $label : "text:{$match_text}";
+		$snapshot = null;
+		if ( $backup ) {
+			$snapshot = self::rollback_snapshot_create_for_post_write( $post, 'diviops_section_remove', [ 'tool_operation' => 'section.remove', 'target' => $target_for_snapshot, 'occurrence' => $occurrence ] );
+			if ( is_wp_error( $snapshot ) ) {
+				return self::envelope_from_wp_error( $snapshot );
+			}
+		}
+
 		$update = self::update_post_content_with_integrity_guard(
 			$post_id,
 			$normalized['content'],
@@ -970,10 +1043,17 @@ trait DiviOps_Agent_Page {
 		);
 
 		if ( is_wp_error( $update ) ) {
+			if ( null !== $snapshot ) {
+				$snapshot = self::rollback_snapshot_mark_from_write_error( $snapshot, $update );
+				$update   = self::rollback_snapshot_error_with_summary( $update, $snapshot );
+			}
 			return self::envelope_from_content_write_error( $update );
 		}
 
 		self::invalidate_divi_cache( $post_id );
+		if ( null !== $snapshot ) {
+			$snapshot = self::rollback_snapshot_mark_post_write( $snapshot, 'write_applied', $normalized['content'] );
+		}
 
 		$target   = '' !== $label ? $label : "text:{$match_text}";
 		$response = [
@@ -989,7 +1069,7 @@ trait DiviOps_Agent_Page {
 			$response['total_matches'] = $result['total_matches'];
 		}
 
-		return self::envelope_success( $response );
+		return self::envelope_success( self::rollback_snapshot_add_to_response( $response, $snapshot ) );
 	}
 
 	// ── Helpers ──────────────────────────────────────────────────────
@@ -1251,6 +1331,7 @@ trait DiviOps_Agent_Page {
 		$post_id = absint( $request['id'] );
 		$attrs   = $request->get_param( 'attrs' );
 		$dry_run = (bool) $request->get_param( 'dry_run' );
+		$backup  = self::rollback_snapshot_requested( $request );
 		$post    = get_post( $post_id );
 
 		if ( ! $post ) {
@@ -1548,9 +1629,12 @@ trait DiviOps_Agent_Page {
 					'after'  => $value,
 				];
 			}
+			$extra = $backup ? [ 'backup' => self::rollback_snapshot_plan_for_post_write( $post, 'diviops_module_update', [ 'tool_operation' => 'module.update', 'target' => $target_desc, 'updated' => array_keys( $attrs ) ] ) ] : [];
 			return self::dry_run_response(
 				"Would update " . count( $attrs ) . " attr path(s) on module '{$target_desc}' (page #{$post_id}, type {$type}).",
-				$changes
+				$changes,
+				[],
+				$extra
 			);
 		}
 
@@ -1565,19 +1649,6 @@ trait DiviOps_Agent_Page {
 
 		$content = substr_replace( $content, $new_comment, $pos, $comment_end - $pos );
 
-		// Save.
-		$result = wp_update_post( [
-			'ID'           => $post_id,
-			'post_content' => wp_slash( $content ),
-		], true );
-
-		if ( is_wp_error( $result ) ) {
-			return self::envelope_from_wp_error( $result );
-		}
-
-		self::invalidate_divi_cache( $post_id );
-
-		// Build response.
 		$target_desc = '';
 		$matched_by  = $mode;
 		if ( 'auto_index' === $mode ) {
@@ -1586,6 +1657,35 @@ trait DiviOps_Agent_Page {
 			$target_desc = $label;
 		} else {
 			$target_desc = "text:{$match_text}";
+		}
+
+		$snapshot = null;
+		if ( $backup ) {
+			$snapshot = self::rollback_snapshot_create_for_post_write( $post, 'diviops_module_update', [ 'tool_operation' => 'module.update', 'target' => $target_desc, 'updated' => array_keys( $attrs ) ] );
+			if ( is_wp_error( $snapshot ) ) {
+				return self::envelope_from_wp_error( $snapshot );
+			}
+		}
+
+		$result = self::update_post_content_with_integrity_guard(
+			$post_id,
+			$content,
+			'module',
+			"page #{$post_id} module update",
+			(string) $post->post_content
+		);
+
+		if ( is_wp_error( $result ) ) {
+			if ( null !== $snapshot ) {
+				$snapshot = self::rollback_snapshot_mark_from_write_error( $snapshot, $result );
+				$result   = self::rollback_snapshot_error_with_summary( $result, $snapshot );
+			}
+			return self::envelope_from_content_write_error( $result );
+		}
+
+		self::invalidate_divi_cache( $post_id );
+		if ( null !== $snapshot ) {
+			$snapshot = self::rollback_snapshot_mark_post_write( $snapshot, 'write_applied', $content );
 		}
 
 		$response = [
@@ -1602,7 +1702,7 @@ trait DiviOps_Agent_Page {
 			$response['total_matches'] = $total_matches;
 		}
 
-		return self::envelope_success( $response );
+		return self::envelope_success( self::rollback_snapshot_add_to_response( $response, $snapshot ) );
 	}
 
 	/**
@@ -2153,6 +2253,13 @@ trait DiviOps_Agent_Page {
 		}
 
 		$dry_run = (bool) $request->get_param( 'dry_run' );
+		$backup  = self::rollback_snapshot_requested( $request );
+		$operation = [
+			'tool_operation' => 'module.move',
+			'position'       => $position,
+			'source'         => $source['target_desc'],
+			'target'         => $target['target_desc'],
+		];
 
 		// No-op detection. When source is already in the requested position,
 		// the apply path returns the legacy `{success, page_id, message, ...}`
@@ -2164,6 +2271,7 @@ trait DiviOps_Agent_Page {
 			|| ( 'after' === $position && $target['end'] === $source['start'] );
 
 		if ( $dry_run ) {
+			$extra = $backup ? [ 'backup' => self::rollback_snapshot_plan_for_post_write( $post, 'diviops_module_move', $operation ) ] : [];
 			if ( $is_noop ) {
 				return self::dry_run_response(
 					"Module '{$source['target_desc']}' ({$source['type']}) is already {$position} '{$target['target_desc']}' on page #{$post_id} — would be a no-op.",
@@ -2177,7 +2285,9 @@ trait DiviOps_Agent_Page {
 							'target'      => $target['target_desc'],
 						],
 						'after'  => [ 'noop' => true ],
-					] ]
+					] ],
+					[],
+					$extra
 				);
 			}
 			return self::dry_run_response(
@@ -2194,19 +2304,22 @@ trait DiviOps_Agent_Page {
 						'target'      => $target['target_desc'],
 						'target_type' => $target['type'],
 					],
-				] ]
+				] ],
+				[],
+				$extra
 			);
 		}
 
 		if ( $is_noop ) {
-			return self::envelope_success( [
+			$snapshot = $backup ? self::rollback_snapshot_noop_for_post_write( $post, 'diviops_module_move', $operation ) : null;
+			return self::envelope_success( self::rollback_snapshot_add_to_response( [
 				'success' => true,
 				'page_id' => $post_id,
 				'message' => 'Module is already in the requested position (no change).',
 				'source'  => $source['target_desc'],
 				'target'  => $target['target_desc'],
 				'noop'    => true,
-			] );
+			], $snapshot ) );
 		}
 
 		// Extract source markup.
@@ -2225,19 +2338,36 @@ trait DiviOps_Agent_Page {
 		// Insert source markup at adjusted position.
 		$content = substr( $content, 0, $insert_pos ) . $source_markup . substr( $content, $insert_pos );
 
-		// Save.
-		$result = wp_update_post( [
-			'ID'           => $post_id,
-			'post_content' => wp_slash( $content ),
-		], true );
+		$snapshot = null;
+		if ( $backup ) {
+			$snapshot = self::rollback_snapshot_create_for_post_write( $post, 'diviops_module_move', $operation );
+			if ( is_wp_error( $snapshot ) ) {
+				return self::envelope_from_wp_error( $snapshot );
+			}
+		}
+
+		$result = self::update_post_content_with_integrity_guard(
+			$post_id,
+			$content,
+			'module',
+			"page #{$post_id} module move",
+			(string) $post->post_content
+		);
 
 		if ( is_wp_error( $result ) ) {
-			return self::envelope_from_wp_error( $result );
+			if ( null !== $snapshot ) {
+				$snapshot = self::rollback_snapshot_mark_from_write_error( $snapshot, $result );
+				$result   = self::rollback_snapshot_error_with_summary( $result, $snapshot );
+			}
+			return self::envelope_from_content_write_error( $result );
 		}
 
 		self::invalidate_divi_cache( $post_id );
+		if ( null !== $snapshot ) {
+			$snapshot = self::rollback_snapshot_mark_post_write( $snapshot, 'write_applied', $content );
+		}
 
-		return self::envelope_success( [
+		return self::envelope_success( self::rollback_snapshot_add_to_response( [
 			'success'    => true,
 			'page_id'    => $post_id,
 			'source'     => $source['target_desc'],
@@ -2246,7 +2376,7 @@ trait DiviOps_Agent_Page {
 			'target_type' => $target['type'],
 			'position'   => $position,
 			'message'    => "Moved '{$source['target_desc']}' ({$source['type']}) {$position} '{$target['target_desc']}' ({$target['type']}).",
-		] );
+		], $snapshot ) );
 	}
 
 	/**
@@ -2901,14 +3031,13 @@ trait DiviOps_Agent_Page {
 	 */
 	private static function save_mutated_blocks( $post, array $blocks ) {
 		$new_content = serialize_blocks( self::restore_blocks_empty_objects( $blocks ) );
-		$result      = wp_update_post(
-			[ 'ID' => $post->ID, 'post_content' => wp_slash( $new_content ) ],
-			true
+		return self::update_post_content_with_integrity_guard(
+			(int) $post->ID,
+			$new_content,
+			'module',
+			"page #{$post->ID} module mutation",
+			(string) $post->post_content
 		);
-		if ( is_wp_error( $result ) ) {
-			return $result;
-		}
-		return true;
 	}
 
 	/**
@@ -2919,6 +3048,7 @@ trait DiviOps_Agent_Page {
 	 */
 	public static function module_lock( $request ) {
 		$post_id = absint( $request['id'] );
+		$backup  = self::rollback_snapshot_requested( $request );
 		$target  = self::resolve_module_target( $request );
 		if ( is_wp_error( $target ) ) {
 			return self::envelope_from_helper_error( $target, 'module', $post_id );
@@ -2965,6 +3095,7 @@ trait DiviOps_Agent_Page {
 
 		if ( (bool) $request->get_param( 'dry_run' ) ) {
 			$desc = $captured['admin_label'] ?: $target['needle'];
+			$extra = $backup ? [ 'backup' => self::rollback_snapshot_plan_for_post_write( $loaded['post'], 'diviops_module_lock', [ 'tool_operation' => 'module.lock', 'target' => $desc ] ) ] : [];
 			return self::dry_run_response(
 				$captured['was_locked']
 					? "Module '{$desc}' ({$captured['block_name']}) is already locked — would be a no-op."
@@ -2974,20 +3105,40 @@ trait DiviOps_Agent_Page {
 					'target' => "page#{$loaded['post']->ID}/{$captured['block_name']}/{$desc}",
 					'before' => [ 'is_locked' => $captured['was_locked'] ],
 					'after'  => [ 'is_locked' => true ],
-				] ]
+				] ],
+				[],
+				$extra
 			);
+		}
+
+		$desc = $captured['admin_label'] ?: $target['needle'];
+		$snapshot = null;
+		if ( $backup ) {
+			$snapshot = self::rollback_snapshot_create_for_post_write( $loaded['post'], 'diviops_module_lock', [ 'tool_operation' => 'module.lock', 'target' => $desc ] );
+			if ( is_wp_error( $snapshot ) ) {
+				return self::envelope_from_wp_error( $snapshot );
+			}
 		}
 
 		$saved = self::save_mutated_blocks( $loaded['post'], $blocks );
 		if ( is_wp_error( $saved ) ) {
-			return self::envelope_from_wp_error( $saved );
+			if ( null !== $snapshot ) {
+				$snapshot = self::rollback_snapshot_mark_from_write_error( $snapshot, $saved );
+				$saved    = self::rollback_snapshot_error_with_summary( $saved, $snapshot );
+			}
+			return self::envelope_from_content_write_error( $saved );
 		}
 
-		return self::envelope_success( [
+		if ( null !== $snapshot ) {
+			$current  = get_post( (int) $loaded['post']->ID );
+			$snapshot = self::rollback_snapshot_mark_post_write( $snapshot, 'write_applied', $current ? (string) $current->post_content : '' );
+		}
+
+		return self::envelope_success( self::rollback_snapshot_add_to_response( [
 			'success' => true,
 			'module'  => array_merge( $captured, [ 'is_locked' => true ] ),
 			'message' => $captured['was_locked'] ? 'Module was already locked (re-confirmed).' : 'Module locked.',
-		] );
+		], $snapshot ) );
 	}
 
 	/**
@@ -2997,6 +3148,7 @@ trait DiviOps_Agent_Page {
 	 */
 	public static function module_unlock( $request ) {
 		$post_id = absint( $request['id'] );
+		$backup  = self::rollback_snapshot_requested( $request );
 		$target  = self::resolve_module_target( $request );
 		if ( is_wp_error( $target ) ) {
 			return self::envelope_from_helper_error( $target, 'module', $post_id );
@@ -3043,6 +3195,7 @@ trait DiviOps_Agent_Page {
 
 		if ( (bool) $request->get_param( 'dry_run' ) ) {
 			$desc = $captured['admin_label'] ?: $target['needle'];
+			$extra = $backup ? [ 'backup' => self::rollback_snapshot_plan_for_post_write( $loaded['post'], 'diviops_module_unlock', [ 'tool_operation' => 'module.unlock', 'target' => $desc ] ) ] : [];
 			return self::dry_run_response(
 				$captured['was_locked']
 					? "Would unlock module '{$desc}' ({$captured['block_name']})."
@@ -3052,20 +3205,40 @@ trait DiviOps_Agent_Page {
 					'target' => "page#{$loaded['post']->ID}/{$captured['block_name']}/{$desc}",
 					'before' => [ 'is_locked' => $captured['was_locked'] ],
 					'after'  => [ 'is_locked' => false ],
-				] ]
+				] ],
+				[],
+				$extra
 			);
+		}
+
+		$desc = $captured['admin_label'] ?: $target['needle'];
+		$snapshot = null;
+		if ( $backup ) {
+			$snapshot = self::rollback_snapshot_create_for_post_write( $loaded['post'], 'diviops_module_unlock', [ 'tool_operation' => 'module.unlock', 'target' => $desc ] );
+			if ( is_wp_error( $snapshot ) ) {
+				return self::envelope_from_wp_error( $snapshot );
+			}
 		}
 
 		$saved = self::save_mutated_blocks( $loaded['post'], $blocks );
 		if ( is_wp_error( $saved ) ) {
-			return self::envelope_from_wp_error( $saved );
+			if ( null !== $snapshot ) {
+				$snapshot = self::rollback_snapshot_mark_from_write_error( $snapshot, $saved );
+				$saved    = self::rollback_snapshot_error_with_summary( $saved, $snapshot );
+			}
+			return self::envelope_from_content_write_error( $saved );
 		}
 
-		return self::envelope_success( [
+		if ( null !== $snapshot ) {
+			$current  = get_post( (int) $loaded['post']->ID );
+			$snapshot = self::rollback_snapshot_mark_post_write( $snapshot, 'write_applied', $current ? (string) $current->post_content : '' );
+		}
+
+		return self::envelope_success( self::rollback_snapshot_add_to_response( [
 			'success' => true,
 			'module'  => array_merge( $captured, [ 'is_locked' => false ] ),
 			'message' => $captured['was_locked'] ? 'Module unlocked.' : 'Module was not locked (no-op).',
-		] );
+		], $snapshot ) );
 	}
 
 	/**
@@ -3079,6 +3252,7 @@ trait DiviOps_Agent_Page {
 	 */
 	public static function module_clone( $request ) {
 		$post_id = absint( $request['id'] );
+		$backup  = self::rollback_snapshot_requested( $request );
 		$target  = self::resolve_module_target( $request );
 		if ( is_wp_error( $target ) ) {
 			return self::envelope_from_helper_error( $target, 'module', $post_id );
@@ -3197,26 +3371,47 @@ trait DiviOps_Agent_Page {
 
 		if ( (bool) $request->get_param( 'dry_run' ) ) {
 			$desc = $captured['admin_label'] ?: $target['needle'];
+			$extra = $backup ? [ 'backup' => self::rollback_snapshot_plan_for_post_write( $loaded['post'], 'diviops_module_clone', [ 'tool_operation' => 'module.clone', 'target' => $desc, 'position' => $position ] ) ] : [];
 			return self::dry_run_response(
 				"Would clone module '{$desc}' ({$captured['block_name']}) {$position} source on page #{$loaded['post']->ID}.",
 				[ [
 					'kind'   => 'module.clone',
 					'target' => "page#{$loaded['post']->ID}/{$captured['block_name']}/{$desc}",
 					'after'  => [ 'position' => $position ],
-				] ]
+				] ],
+				[],
+				$extra
 			);
+		}
+
+		$desc = $captured['admin_label'] ?: $target['needle'];
+		$snapshot = null;
+		if ( $backup ) {
+			$snapshot = self::rollback_snapshot_create_for_post_write( $loaded['post'], 'diviops_module_clone', [ 'tool_operation' => 'module.clone', 'target' => $desc, 'position' => $position ] );
+			if ( is_wp_error( $snapshot ) ) {
+				return self::envelope_from_wp_error( $snapshot );
+			}
 		}
 
 		$saved = self::save_mutated_blocks( $loaded['post'], $blocks );
 		if ( is_wp_error( $saved ) ) {
-			return self::envelope_from_wp_error( $saved );
+			if ( null !== $snapshot ) {
+				$snapshot = self::rollback_snapshot_mark_from_write_error( $snapshot, $saved );
+				$saved    = self::rollback_snapshot_error_with_summary( $saved, $snapshot );
+			}
+			return self::envelope_from_content_write_error( $saved );
 		}
 
-		return self::envelope_success( [
+		if ( null !== $snapshot ) {
+			$current  = get_post( (int) $loaded['post']->ID );
+			$snapshot = self::rollback_snapshot_mark_post_write( $snapshot, 'write_applied', $current ? (string) $current->post_content : '' );
+		}
+
+		return self::envelope_success( self::rollback_snapshot_add_to_response( [
 			'success' => true,
 			'cloned'  => array_merge( $captured, [ 'position' => $position ] ),
 			'message' => sprintf( "Module cloned %s source.", $position ),
-		] );
+		], $snapshot ) );
 	}
 
 	/**

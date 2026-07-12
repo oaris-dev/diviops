@@ -9,6 +9,12 @@ Policy:
 - Keep entries customer-facing. Avoid internal issue numbers unless they are needed to explain a user-visible change.
 - Do not include secrets, credentials, customer data, or environment-specific URLs.
 
+## 1.5.7
+
+- Adds guarded rollback snapshots for Divi content writes, including captured before-state records, list/get/delete inspection surfaces, and verified restore support.
+- Adds dashboard-ready rollback snapshot data so operators can review available snapshots before restoring content.
+- Restore operations refuse content or supported Divi post-meta drift before mutation and report readback/cache evidence after verified restore.
+
 ## 1.5.6
 
 - Adds typed WordPress menu tools for listing menus, reading normalized menu trees, creating menus, appending page/custom-link items, and assigning registered theme locations.

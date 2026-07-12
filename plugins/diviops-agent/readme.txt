@@ -3,7 +3,7 @@ Contributors: davidricardo
 Tags: divi, mcp, ai, rest-api, site-builder
 Requires at least: 6.5
 Tested up to: 7.0
-Stable tag: 1.5.6
+Stable tag: 1.5.7
 Requires PHP: 7.4
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -68,6 +68,12 @@ No. The Free plugin backs the core useful surface. Some higher-leverage workflow
 
 == Changelog ==
 
+= 1.5.7 =
+
+* Adds guarded rollback snapshots for Divi content writes, including snapshot list/get/delete surfaces and restore support with checksum drift checks.
+* Adds dashboard-ready rollback snapshot inspection data for operator review before restore.
+* Keeps restore operations protected by readback verification and cache invalidation evidence.
+
 = 1.5.6 =
 
 * Adds typed WordPress menu tools for creating menus, adding page/custom-link items, reading normalized menu trees, and assigning registered theme locations through the DiviOps capability handshake.
@@ -82,6 +88,6 @@ No. The Free plugin backs the core useful surface. Some higher-leverage workflow
 
 == Upgrade Notice ==
 
-= 1.5.6 =
+= 1.5.7 =
 
-Recommended for beta users who want the new typed menu tooling, FluentCart Advanced Variations read enrichment, and current MCP capability handshake.
+Recommended for beta users who want guarded rollback snapshot backup and restore support for Divi content writes.

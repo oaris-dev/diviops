@@ -83,7 +83,7 @@ The skill enforces the Divi block format, the design system, and the response co
 
 ## Tools at a glance
 
-The server exposes **85 always-on tools** across the categories below. Each category links to representative tools; the full table lives in [server-reference.md](../docs/server-reference.md).
+The server exposes **90 always-on tools** across the categories below. Each category links to representative tools; the full table lives in [server-reference.md](../docs/server-reference.md).
 
 | Category | Use case | Tool prefixes |
 |----------|----------|---------------|
@@ -285,6 +285,18 @@ Every write tool accepts `dry_run: boolean` (default `false`). When `true`, the 
 ```
 
 `meta_wp_cli` and `scf_import` do not accept `dry_run` (raw passthrough / upstream gap respectively). `scf_sync` passes `dry_run` through to upstream `wp scf json sync --dry-run`, so its preview is the upstream plain-text summary rather than a plugin-built `data.plan`. For bulk preview-then-commit flows (preset reassign, preset cleanup), see [safety-patterns.md](../docs/safety-patterns.md).
+
+Selected guarded post-content write tools also accept `backup: true`. In apply
+mode the Free plugin stores an option-backed rollback snapshot before writing
+and returns `data.backup` evidence with the snapshot id and status. With
+`dry_run: true`, `backup: true` only reports the planned snapshot; it never
+creates an option record.
+
+`diviops_rollback_snapshot_restore` restores those snapshots only to their
+captured post/page or Theme Builder layout target. It requires row-level edit
+permission, refuses content or supported Divi post-meta drift before mutation,
+uses the same full-content integrity/readback guard, and has no force override
+or second pre-restore snapshot in this MVP.
 
 ### `_meta.idempotent` markers
 

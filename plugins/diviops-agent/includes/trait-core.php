@@ -191,7 +191,7 @@ trait DiviOps_Agent_Core {
 	 * @param string $error_namespace  Namespace for the corruption error code.
 	 * @param string $target_label     Human-readable target for messages/data.
 	 * @param string $previous_content Original content to restore on mismatch.
-	 * @return true|WP_Error
+	 * @return array|WP_Error
 	 */
 	private static function update_post_content_with_integrity_guard( int $post_id, string $content, string $error_namespace, string $target_label, string $previous_content ) {
 		$preflight = self::assert_divi_full_content_safe_for_write( $content, 'content' );
@@ -211,7 +211,14 @@ trait DiviOps_Agent_Core {
 		$readback = get_post( $post_id );
 		$stored   = $readback && isset( $readback->post_content ) ? (string) $readback->post_content : null;
 		if ( $stored === $content ) {
-			return true;
+			return [
+				'write_applied'     => true,
+				'readback_verified' => true,
+				'after'             => [
+					'checksum'    => 'sha256:' . hash( 'sha256', $content ),
+					'byte_length' => strlen( $content ),
+				],
+			];
 		}
 
 		$reverted     = false;

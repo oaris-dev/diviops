@@ -612,7 +612,7 @@ trait DiviOps_Agent_Menu {
 			return [ 'ok' => true, 'url' => $url ];
 		}
 
-		$scheme = parse_url( $url, PHP_URL_SCHEME );
+		$scheme = wp_parse_url( $url, PHP_URL_SCHEME );
 		$scheme = is_string( $scheme ) ? strtolower( $scheme ) : '';
 		if ( ! in_array( $scheme, [ 'http', 'https', 'mailto', 'tel' ], true ) ) {
 			return [ 'ok' => false, 'message' => "URL scheme '{$scheme}' is not allowed." ];
