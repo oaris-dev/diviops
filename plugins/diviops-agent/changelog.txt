@@ -9,6 +9,12 @@ Policy:
 - Keep entries customer-facing. Avoid internal issue numbers unless they are needed to explain a user-visible change.
 - Do not include secrets, credentials, customer data, or environment-specific URLs.
 
+## 1.5.8
+
+- Adds a guarded preset-registry doctor with inspection-first behavior and explicit mutation safeguards for duplicate or stale registry entries.
+- Improves nested module moves with a parser-backed fallback for placements that the direct block parser cannot safely resolve.
+- Rejects foreign CSS variable references recursively across supported Divi content and design writers before mutation.
+
 ## 1.5.7
 
 - Adds guarded rollback snapshots for Divi content writes, including captured before-state records, list/get/delete inspection surfaces, and verified restore support.

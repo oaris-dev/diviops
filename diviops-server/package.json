@@ -1,6 +1,6 @@
 {
   "name": "@diviops/mcp-server",
-  "version": "1.5.34",
+  "version": "1.5.35",
   "description": "MCP server exposing Divi 5 Visual Builder as tools for Claude",
   "type": "module",
   "main": "dist/index.js",
@@ -21,7 +21,7 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "dev": "tsc --watch",
-    "test": "npm run build && node --test \"dist/__tests__/*.test.js\" \"dist/preset-cli/__tests__/*.test.js\" \"dist/cross-env-preflight/__tests__/*.test.js\"",
+    "test": "npm run build && node --test dist/__tests__/*.test.js dist/preset-cli/__tests__/*.test.js dist/cross-env-preflight/__tests__/*.test.js",
     "prepublishOnly": "npm run build",
     "regen:skill": "node scripts/regen-module-formats.mjs"
   },

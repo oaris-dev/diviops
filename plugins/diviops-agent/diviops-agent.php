@@ -3,7 +3,7 @@
  * Plugin Name: DiviOps Agent
  * Plugin URI: https://github.com/oaris-dev/diviops
  * Description: REST API bridge for DiviOps — connects Claude Code to your Divi 5 site for AI-powered page building and design management.
- * Version: 1.5.7
+ * Version: 1.5.8
  * Author: oaris.de
  * Author URI: https://oaris.de
  * Text Domain: diviops-agent
@@ -64,7 +64,7 @@ class DiviOps_Agent {
 	 * Plugin version — surfaced in /handshake for self-diagnosis only;
 	 * server no longer gates on it (capability map is the gate).
 	 */
-	const VERSION = '1.5.7';
+	const VERSION = '1.5.8';
 
 	/**
 	 * Minimum MCP server version this plugin is compatible with.
@@ -108,7 +108,7 @@ class DiviOps_Agent {
 		'page_create', 'page_get', 'page_get_layout', 'page_list',
 		'page_trash', 'page_update_content', 'page_update_content_backup', 'page_update_meta', 'page_update_status',
 		// preset
-		'preset_audit', 'preset_audit_storage', 'preset_cleanup', 'preset_create', 'preset_delete', 'preset_inspect',
+		'preset_audit', 'preset_audit_storage', 'preset_cleanup', 'preset_create', 'preset_delete', 'preset_inspect', 'preset_registry_doctor',
 		'preset_reassign', 'preset_scan_orphans', 'preset_set_default', 'preset_update',
 		// render
 		'render_preview',
@@ -606,6 +606,18 @@ class DiviOps_Agent {
 			'permission_callback' => [ __CLASS__, 'check_admin_permission' ],
 			'args'                => [
 				'preset_id' => [ 'required' => true, 'type' => 'string' ],
+			],
+		] );
+
+		register_rest_route( self::REST_NAMESPACE, '/preset/registry-doctor', [
+			'methods'             => 'POST',
+			'callback'            => [ __CLASS__, 'preset_registry_doctor' ],
+			'permission_callback' => [ __CLASS__, 'check_admin_permission' ],
+			'args'                => [
+				'repair'                 => [ 'required' => false, 'type' => 'boolean', 'default' => false ],
+				'clear_chunk_transients' => [ 'required' => false, 'type' => 'boolean', 'default' => false ],
+				'dry_run'                => [ 'required' => false, 'type' => 'boolean', 'default' => true ],
+				'limit'                  => [ 'required' => false, 'type' => 'integer', 'default' => 100, 'minimum' => 1, 'maximum' => 500 ],
 			],
 		] );
 

@@ -26,12 +26,13 @@ WordPress plugin providing modern design effects for Divi 5 pages. CSS animation
 | `ddl-gradient-animated` | Animated gradient background |
 | `ddl-gradient-text` | Static gradient text |
 | `ddl-gradient-text-animated` | Animated gradient text |
-| `ddl-stroke-text` | Text outline (stroke) |
+| `ddl-text-stroke` | Light text outline (stroke) |
+| `ddl-text-stroke-dark` | Dark text outline (stroke) |
 | `ddl-pulse-dot` | Pulsing green indicator |
 
 ### Three.js WebGL
 - Three.js r128 bundled locally (no CDN)
-- Auto-loaded when page content contains `webgl`, `shader`, or `three-js`
+- Loaded when post meta `_divi_design_threejs` is exactly `'1'`, or when page content contains one of these case-sensitive markers: `webgl`, `THREE`, `shader`, `three.js`
 - Use with Code module for custom shader heroes
 
 ### Gooey Text Morphing
@@ -59,4 +60,4 @@ diviops-design-library/
 ## Conditional Loading
 - CSS is always printed (lightweight, no external requests)
 - `design-fx.js` loads on all frontend pages
-- `three.min.js` only loads when page content contains WebGL-related keywords
+- `three.min.js` only loads through the explicit `_divi_design_threejs = '1'` post-meta opt-in or the documented content markers

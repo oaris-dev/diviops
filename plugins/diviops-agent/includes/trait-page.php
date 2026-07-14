@@ -1832,6 +1832,275 @@ trait DiviOps_Agent_Page {
 	}
 
 	/**
+	 * Collect parser-backed module targets with their tree paths.
+	 *
+	 * Paths contain the child index at each level, starting from the top-level
+	 * parse_blocks() array. The walk is document-order/top-down, matching
+	 * collect_readable_divi_blocks() and parse_block_tree().
+	 */
+	private static function collect_parser_move_blocks( array $blocks, array &$flat_modules, array &$type_counts, array $parent_path = [] ) {
+		foreach ( $blocks as $index => $block ) {
+			$path = array_merge( $parent_path, [ $index ] );
+			$name = isset( $block['blockName'] ) ? (string) $block['blockName'] : '';
+			if ( 0 === strpos( $name, 'divi/' ) ) {
+				$type = substr( $name, 5 );
+				$type_counts[ $type ] = ( $type_counts[ $type ] ?? 0 ) + 1;
+				$attrs   = isset( $block['attrs'] ) && is_array( $block['attrs'] ) ? $block['attrs'] : [];
+				$shallow = $block;
+				$shallow['innerBlocks']  = [];
+				$shallow['innerContent'] = [];
+
+				$flat_modules[] = [
+					'path'          => $path,
+					'type'          => $type,
+					'auto_index'    => $type . ':' . $type_counts[ $type ],
+					'admin_label'   => self::module_admin_label_from_attrs( $attrs ),
+					'search_markup' => serialize_block( $shallow ),
+				];
+			}
+
+			if ( isset( $block['innerBlocks'] ) && is_array( $block['innerBlocks'] ) && ! empty( $block['innerBlocks'] ) ) {
+				self::collect_parser_move_blocks( $block['innerBlocks'], $flat_modules, $type_counts, $path );
+			}
+		}
+	}
+
+	/** Resolve one already-validated selector against parser-backed entries. */
+	private static function resolve_parser_move_target( array $entries, array $target ) {
+		$matches = [];
+		foreach ( $entries as $entry ) {
+			$matched = false;
+			if ( 'auto_index' === $target['mode'] ) {
+				$matched = $entry['auto_index'] === $target['needle'];
+			} elseif ( 'label' === $target['mode'] ) {
+				$matched = $entry['admin_label'] === $target['needle'];
+			} else {
+				$matched = false !== stripos( $entry['search_markup'], $target['needle'] );
+			}
+			if ( $matched ) {
+				$matches[] = $entry;
+				if ( 'label' !== $target['mode'] ) {
+					break;
+				}
+			}
+		}
+
+		if ( empty( $matches ) ) {
+			return new WP_Error(
+				'block_not_found',
+				"No block found matching {$target['needle']}",
+				[ 'status' => 404, 'target_mode' => $target['mode'], 'target_value' => $target['needle'] ]
+			);
+		}
+		if ( 'label' === $target['mode'] && $target['occurrence'] > count( $matches ) ) {
+			return new WP_Error(
+				'invalid_occurrence',
+				"Requested occurrence {$target['occurrence']} but only " . count( $matches ) . " block(s) match label '{$target['needle']}'",
+				[
+					'status'        => 400,
+					'target_mode'   => 'label',
+					'target_value'  => $target['needle'],
+					'received'      => $target['occurrence'],
+					'total_matches' => count( $matches ),
+				]
+			);
+		}
+
+		$match = 'label' === $target['mode'] ? $matches[ $target['occurrence'] - 1 ] : $matches[0];
+		$match['target_desc'] = 'match_text' === $target['mode'] ? 'text:' . $target['needle'] : $target['needle'];
+		return $match;
+	}
+
+	/** Whether $prefix is the same path as, or an ancestor of, $path. */
+	private static function parser_path_is_prefix( array $prefix, array $path ): bool {
+		return count( $prefix ) <= count( $path ) && $prefix === array_slice( $path, 0, count( $prefix ) );
+	}
+
+	/**
+	 * Return the sibling array addressed by a parent path.
+	 */
+	private static function &parser_siblings_at_path( array &$blocks, array $parent_path ) {
+		$siblings = &$blocks;
+		foreach ( $parent_path as $index ) {
+			$siblings = &$siblings[ $index ]['innerBlocks'];
+		}
+		return $siblings;
+	}
+
+	/** Return the parsed block addressed by a non-empty tree path. */
+	private static function &parser_block_at_path( array &$blocks, array $path ) {
+		$siblings = &$blocks;
+		foreach ( $path as $depth => $index ) {
+			$block = &$siblings[ $index ];
+			if ( $depth < count( $path ) - 1 ) {
+				$siblings = &$block['innerBlocks'];
+			}
+		}
+		return $block;
+	}
+
+	/** Find the innerContent offset corresponding to a child index. */
+	private static function parser_child_placeholder_offset( array $inner_content, int $child_index ) {
+		$seen = 0;
+		foreach ( $inner_content as $offset => $chunk ) {
+			if ( null !== $chunk ) {
+				continue;
+			}
+			if ( $seen === $child_index ) {
+				return $offset;
+			}
+			$seen++;
+		}
+		return null;
+	}
+
+	/** Refuse parsed trees whose child/placeholder mapping is ambiguous. */
+	private static function validate_parser_move_placeholders( array $blocks ) {
+		foreach ( $blocks as $block ) {
+			$children = isset( $block['innerBlocks'] ) && is_array( $block['innerBlocks'] ) ? $block['innerBlocks'] : [];
+			$chunks   = isset( $block['innerContent'] ) && is_array( $block['innerContent'] ) ? $block['innerContent'] : [];
+			if ( count( $children ) !== count( array_filter( $chunks, static function ( $chunk ) { return null === $chunk; } ) ) ) {
+				return new WP_Error(
+					'parse_error',
+					"Parser-backed parent '{$block['blockName']}' has an ambiguous innerBlocks/innerContent mapping.",
+					[ 'status' => 500, 'reason' => 'malformed_parent', 'block_type' => $block['blockName'] ]
+				);
+			}
+			$error = self::validate_parser_move_placeholders( $children );
+			if ( is_wp_error( $error ) ) {
+				return $error;
+			}
+		}
+		return null;
+	}
+
+	/**
+	 * Safely move a parsed block and keep parent placeholder arrays aligned.
+	 */
+	private static function move_block_with_parser( string $content, array $source_target, array $target_target, string $position ) {
+		$blocks       = self::enrich_blocks_with_empty_object_paths( parse_blocks( $content ), $content );
+		$entries      = [];
+		$type_counts  = [];
+		$mapping_error = self::validate_parser_move_placeholders( $blocks );
+		if ( is_wp_error( $mapping_error ) ) {
+			return $mapping_error;
+		}
+		self::collect_parser_move_blocks( $blocks, $entries, $type_counts );
+
+		$source = self::resolve_parser_move_target( $entries, $source_target );
+		if ( is_wp_error( $source ) ) {
+			return $source;
+		}
+		$target = self::resolve_parser_move_target( $entries, $target_target );
+		if ( is_wp_error( $target ) ) {
+			return $target;
+		}
+
+		if ( self::parser_path_is_prefix( $source['path'], $target['path'] ) || self::parser_path_is_prefix( $target['path'], $source['path'] ) ) {
+			return new WP_Error( 'module.overlap', 'Source and target blocks overlap — cannot move a block inside itself.', [ 'status' => 400 ] );
+		}
+
+		$source_parent_path = array_slice( $source['path'], 0, -1 );
+		$target_parent_path = array_slice( $target['path'], 0, -1 );
+		$source_index       = (int) end( $source['path'] );
+		$target_index       = (int) end( $target['path'] );
+		$is_noop = $source_parent_path === $target_parent_path
+			&& ( ( 'before' === $position && $source_index + 1 === $target_index )
+				|| ( 'after' === $position && $target_index + 1 === $source_index ) );
+
+		if ( $is_noop ) {
+			return [ 'content' => $content, 'source' => $source, 'target' => $target, 'noop' => true ];
+		}
+
+		$source_siblings = &self::parser_siblings_at_path( $blocks, $source_parent_path );
+		if ( ! array_key_exists( $source_index, $source_siblings ) ) {
+			return new WP_Error( 'parse_error', 'Parser-backed source path no longer resolves.', [ 'status' => 500 ] );
+		}
+		$moved_block = $source_siblings[ $source_index ];
+		if ( ! empty( $source_parent_path ) ) {
+			$source_parent = &self::parser_block_at_path( $blocks, $source_parent_path );
+			$placeholder = self::parser_child_placeholder_offset( $source_parent['innerContent'] ?? [], $source_index );
+			if ( null === $placeholder ) {
+				return new WP_Error( 'parse_error', 'Parser-backed source parent has no matching innerContent placeholder.', [ 'status' => 500, 'reason' => 'malformed_parent' ] );
+			}
+			array_splice( $source_parent['innerContent'], $placeholder, 1 );
+		}
+		array_splice( $source_siblings, $source_index, 1 );
+		unset( $source_siblings, $source_parent );
+
+		// Removing a sibling shifts the first path component below that parent.
+		if ( self::parser_path_is_prefix( $source_parent_path, $target['path'] ) ) {
+			$depth = count( $source_parent_path );
+			if ( $target['path'][ $depth ] > $source_index ) {
+				$target['path'][ $depth ]--;
+			}
+		}
+
+		$target_parent_path = array_slice( $target['path'], 0, -1 );
+		$target_index       = (int) end( $target['path'] );
+		$insert_index       = $target_index + ( 'after' === $position ? 1 : 0 );
+		$target_siblings    = &self::parser_siblings_at_path( $blocks, $target_parent_path );
+		if ( ! array_key_exists( $target_index, $target_siblings ) ) {
+			return new WP_Error( 'parse_error', 'Parser-backed target path no longer resolves.', [ 'status' => 500 ] );
+		}
+		if ( ! empty( $target_parent_path ) ) {
+			$target_parent = &self::parser_block_at_path( $blocks, $target_parent_path );
+			if ( $insert_index < count( $target_siblings ) ) {
+				$placeholder = self::parser_child_placeholder_offset( $target_parent['innerContent'] ?? [], $insert_index );
+			} else {
+				$last_placeholder = self::parser_child_placeholder_offset( $target_parent['innerContent'] ?? [], count( $target_siblings ) - 1 );
+				$placeholder = null === $last_placeholder ? null : $last_placeholder + 1;
+			}
+			if ( null === $placeholder ) {
+				return new WP_Error( 'parse_error', 'Parser-backed target parent has no matching innerContent insertion point.', [ 'status' => 500, 'reason' => 'malformed_parent' ] );
+			}
+			array_splice( $target_parent['innerContent'], $placeholder, 0, [ null ] );
+		}
+		array_splice( $target_siblings, $insert_index, 0, [ $moved_block ] );
+
+		return [
+			'content' => serialize_blocks( self::restore_blocks_empty_objects( $blocks ) ),
+			'source'  => $source,
+			'target'  => $target,
+			'noop'    => false,
+		];
+	}
+
+	/** Preserve parser-fallback context when adapting a move helper failure. */
+	private static function envelope_parser_move_error( $error, int $post_id, array $source_target, array $target_target ) {
+		$code = (string) $error->get_error_code();
+		$data = array_merge(
+			(array) $error->get_error_data(),
+			[
+				'page_id'             => $post_id,
+				'parser_fallbackable' => true,
+				'source'              => [ 'mode' => $source_target['mode'], 'value' => $source_target['needle'] ],
+				'target'              => [ 'mode' => $target_target['mode'], 'value' => $target_target['needle'] ],
+			]
+		);
+		if ( 'module.overlap' === $code ) {
+			return self::envelope_error(
+				'module.overlap',
+				$error->get_error_message(),
+				'Pick distinct source and target modules; verify with diviops_page_get_layout.',
+				400,
+				$data
+			);
+		}
+		if ( 'parse_error' === $code ) {
+			return self::envelope_error(
+				'divi_error',
+				$error->get_error_message(),
+				'Re-save the page through the Visual Builder to regenerate canonical block markup, then retry.',
+				500,
+				$data
+			);
+		}
+		$error->add_data( $data );
+		return self::envelope_from_helper_error( $error, 'module', $post_id );
+	}
+
+	/**
 	 * Find a block by label, match_text, or auto_index and return its full bounds.
 	 *
 	 * Returns the block's start/end positions in the content string, including
@@ -2229,20 +2498,37 @@ trait DiviOps_Agent_Page {
 		// `error_data[$code]` rather than merging, so a bare `add_data([ 'context' => ... ])`
 		// would drop the helper's structured fields (received, total_matches, target_mode,
 		// target_value) onto `additional_data` where envelope_from_helper_error doesn't read.
-		$source = self::find_block( $content, $src_label, $src_match_text, $src_auto_index, $src_occurrence );
-		if ( is_wp_error( $source ) ) {
+		$parser_move = null;
+		$source      = self::find_block( $content, $src_label, $src_match_text, $src_auto_index, $src_occurrence );
+		if ( is_wp_error( $source ) && 'parse_error' === $source->get_error_code() && true === ( $source->get_error_data()['parser_fallbackable'] ?? false ) ) {
+			$parser_move = self::move_block_with_parser( $content, $source_target, $target_target, $position );
+			if ( is_wp_error( $parser_move ) ) {
+				return self::envelope_parser_move_error( $parser_move, $post_id, $source_target, $target_target );
+			}
+			$source = $parser_move['source'];
+			$target = $parser_move['target'];
+		} elseif ( is_wp_error( $source ) ) {
 			$source->add_data( array_merge( (array) $source->get_error_data(), [ 'context' => 'source' ] ) );
 			return self::envelope_from_helper_error( $source, 'module', $post_id );
 		}
 
-		$target = self::find_block( $content, $tgt_label, $tgt_match_text, $tgt_auto_index, $tgt_occurrence );
-		if ( is_wp_error( $target ) ) {
+		if ( null === $parser_move ) {
+			$target = self::find_block( $content, $tgt_label, $tgt_match_text, $tgt_auto_index, $tgt_occurrence );
+		}
+		if ( is_wp_error( $target ) && 'parse_error' === $target->get_error_code() && true === ( $target->get_error_data()['parser_fallbackable'] ?? false ) ) {
+			$parser_move = self::move_block_with_parser( $content, $source_target, $target_target, $position );
+			if ( is_wp_error( $parser_move ) ) {
+				return self::envelope_parser_move_error( $parser_move, $post_id, $source_target, $target_target );
+			}
+			$source = $parser_move['source'];
+			$target = $parser_move['target'];
+		} elseif ( is_wp_error( $target ) ) {
 			$target->add_data( array_merge( (array) $target->get_error_data(), [ 'context' => 'target' ] ) );
 			return self::envelope_from_helper_error( $target, 'module', $post_id );
 		}
 
 		// Validate: source and target must not overlap.
-		if ( $source['start'] < $target['end'] && $target['start'] < $source['end'] ) {
+		if ( null === $parser_move && $source['start'] < $target['end'] && $target['start'] < $source['end'] ) {
 			return self::envelope_error(
 				'module.overlap',
 				'Source and target blocks overlap — cannot move a block inside itself.',
@@ -2267,8 +2553,10 @@ trait DiviOps_Agent_Page {
 		// no-op through the standard plan envelope instead — callers expect
 		// uniform `{ ok, data: { dry_run, plan } }` regardless of whether the
 		// move would actually rewrite content.
-		$is_noop = ( 'before' === $position && $source['end'] === $target['start'] )
-			|| ( 'after' === $position && $target['end'] === $source['start'] );
+		$is_noop = null !== $parser_move
+			? $parser_move['noop']
+			: ( ( 'before' === $position && $source['end'] === $target['start'] )
+				|| ( 'after' === $position && $target['end'] === $source['start'] ) );
 
 		if ( $dry_run ) {
 			$extra = $backup ? [ 'backup' => self::rollback_snapshot_plan_for_post_write( $post, 'diviops_module_move', $operation ) ] : [];
@@ -2322,21 +2610,25 @@ trait DiviOps_Agent_Page {
 			], $snapshot ) );
 		}
 
-		// Extract source markup.
-		$source_markup = substr( $content, $source['start'], $source['end'] - $source['start'] );
-		$source_len    = $source['end'] - $source['start'];
+		if ( null !== $parser_move ) {
+			$content = $parser_move['content'];
+		} else {
+			// Extract source markup.
+			$source_markup = substr( $content, $source['start'], $source['end'] - $source['start'] );
+			$source_len    = $source['end'] - $source['start'];
 
-		// Determine raw insertion point.
-		$insert_pos = 'before' === $position ? $target['start'] : $target['end'];
+			// Determine raw insertion point.
+			$insert_pos = 'before' === $position ? $target['start'] : $target['end'];
 
-		// Remove source and adjust insertion point if source precedes it.
-		$content = substr( $content, 0, $source['start'] ) . substr( $content, $source['end'] );
-		if ( $source['start'] < $insert_pos ) {
-			$insert_pos -= $source_len;
+			// Remove source and adjust insertion point if source precedes it.
+			$content = substr( $content, 0, $source['start'] ) . substr( $content, $source['end'] );
+			if ( $source['start'] < $insert_pos ) {
+				$insert_pos -= $source_len;
+			}
+
+			// Insert source markup at adjusted position.
+			$content = substr( $content, 0, $insert_pos ) . $source_markup . substr( $content, $insert_pos );
 		}
-
-		// Insert source markup at adjusted position.
-		$content = substr( $content, 0, $insert_pos ) . $source_markup . substr( $content, $insert_pos );
 
 		$snapshot = null;
 		if ( $backup ) {

@@ -1,6 +1,6 @@
 # MCP Tool Reference
 
-Curated reference for the 58 Divi-builder-relevant tools (Read 27 + Write 29 + Utility 2) — the authoring surface this skill exercises. The full DiviOps server ships 90 always-on tools across all namespaces; see [`diviops-server/README.md`](../../../../diviops-server/README.md) for the complete inventory. SCF coverage lives in the [diviops-scf/](../../diviops-scf/SKILL.md) skill; cross-cutting harness conventions (response envelope, capability handshake, `dry_run` plan shape, idempotency) live in the [diviops/](../../diviops/SKILL.md) primer skill.
+Curated Divi-builder authoring subset. The full DiviOps server currently registers 114 tools: 91 always-on tools (80 plugin-routed + 11 local) and 23 conditional Pro tools. See [`diviops-server/README.md`](../../../../diviops-server/README.md) for the complete inventory. SCF coverage lives in the [diviops-scf/](../../diviops-scf/SKILL.md) skill; cross-cutting harness conventions (response envelope, capability handshake, `dry_run` plan shape, idempotency) live in the [diviops/](../../diviops/SKILL.md) primer skill.
 
 ## Response shape
 
@@ -89,7 +89,9 @@ All namespaces have adopted the envelope as of the last wave (`module_*` + `sect
 - `diviops_variable_list` — list design token variables, filter by type (`colors`, `numbers`, etc.) or ID prefix. `prefix` matches the stored ID only; it does not match `label`. For semantic token names such as `oa-*` labels on UUID-backed Divi variables, list by `type` and filter the returned `label` client-side.
 - `diviops_variable_scan_orphans` — find `gvid-`/`gcid-` refs with no backing Variable Manager entry (orphans render as invalid CSS when the `$variable()$` resolver falls through) plus variables defined but referenced nowhere (unused — deletion candidates). Scans pages, Theme Builder layouts (`et_header_layout` / `et_body_layout` / `et_footer_layout`), Divi Library items (`et_pb_layout`), canvas pages (`et_pb_canvas`), and the preset registry. Symmetric to `diviops_preset_scan_orphans`
 
-## Write Tools (29)
+## Write Tools (30)
+
+- `diviops_preset_registry_doctor` — audit canonical D5 preset timestamps and chunk transients; guarded repair converts only parseable ISO timestamps after backup, with dry-run support
 
 - `diviops_page_create` — create new page with Divi content
 - `diviops_page_update_content` — full page rewrite

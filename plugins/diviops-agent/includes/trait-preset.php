@@ -16,6 +16,195 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 trait DiviOps_Agent_Preset {
 
+	/** Audit and narrowly repair schema-sensitive metadata in the canonical D5 registry. */
+	public static function preset_registry_doctor( $request ) {
+		$repair           = (bool) $request->get_param( 'repair' );
+		$dry_run          = (bool) $request->get_param( 'dry_run' );
+		$clear_transients = (bool) $request->get_param( 'clear_chunk_transients' );
+		$limit            = max( 1, min( 500, (int) ( $request->get_param( 'limit' ) ?: 100 ) ) );
+		$option_name      = 'et_divi_builder_global_presets_d5';
+		$registry         = get_option( $option_name, [] );
+
+		if ( ! is_array( $registry ) ) {
+			return self::envelope_error( 'validation_failed', 'The canonical Divi 5 preset registry is not an array.', 'Repair the unsupported registry container shape manually before retrying.', 400, [ 'path' => $option_name, 'actual_type' => gettype( $registry ) ] );
+		}
+
+		$findings = self::preset_registry_timestamp_findings( $registry, $limit );
+		$chunks   = self::preset_registry_chunk_transients( $limit );
+		$changes  = [];
+		$timestamp_change_count = 0;
+		foreach ( $findings as $finding ) {
+			if ( $finding['repairable'] ) {
+				$changes[] = [ 'kind' => 'preset_registry.timestamp', 'target' => $finding['path'], 'before' => $finding['old_value'], 'after' => $finding['replacement'] ];
+				$timestamp_change_count++;
+			}
+		}
+		// Chunk cleanup is intentionally coupled to an actual supported repair.
+		if ( $clear_transients && $timestamp_change_count > 0 ) {
+			foreach ( $chunks['cleanup_candidates'] as $row ) {
+				$changes[] = [ 'kind' => 'preset_registry.chunk_transient_delete', 'target' => $row['option_name'], 'before' => $row['value'], 'after' => null ];
+				if ( $row['timeout_option_name'] ) {
+					$changes[] = [ 'kind' => 'preset_registry.chunk_timeout_delete', 'target' => $row['timeout_option_name'], 'before' => $row['timeout'], 'after' => null ];
+				}
+			}
+		}
+
+		$base = [
+			'option_name' => $option_name,
+			'findings' => $findings,
+			'finding_count' => count( $findings ),
+			'repairable_count' => count( array_filter( $findings, static fn( $row ) => $row['repairable'] ) ),
+			'chunk_transients' => $chunks['rows'],
+			'chunk_transient_count' => count( $chunks['rows'] ),
+			'truncated' => count( $findings ) >= $limit || count( $chunks['rows'] ) >= $limit,
+		];
+
+		// Audit mode is always read-only, regardless of dry_run.
+		if ( ! $repair ) {
+			return self::envelope_success( array_merge( $base, [ 'repair' => false, 'mutated' => false ] ) );
+		}
+
+		$plan = [
+			'summary' => sprintf( 'Repair %d parseable preset timestamp(s)%s.', $timestamp_change_count, $clear_transients && $timestamp_change_count > 0 ? ' and clear stale/failed chunk transients' : '' ),
+			'changes' => $changes,
+			'warnings' => array_values( array_map( static fn( $row ) => 'Unsupported timestamp at ' . $row['path'] . ' will not be changed.', array_filter( $findings, static fn( $row ) => ! $row['repairable'] ) ) ),
+		];
+		if ( $dry_run ) {
+			return self::envelope_success( array_merge( $base, [ 'repair' => true, 'dry_run' => true, 'mutated' => false, 'plan' => $plan ] ) );
+		}
+		if ( empty( $changes ) ) {
+			return self::envelope_success( array_merge( $base, [ 'repair' => true, 'dry_run' => false, 'mutated' => false, 'noop' => true, 'plan' => $plan ] ) );
+		}
+
+		$backup_name = 'diviops_preset_registry_backup_' . gmdate( 'Ymd_His' ) . '_' . wp_generate_password( 8, false, false );
+		if ( ! add_option( $backup_name, $registry, '', false ) ) {
+			return self::envelope_error( 'wp_error', 'Could not create the non-autoloaded preset registry backup; no mutation was attempted.', null, 500 );
+		}
+
+		$updated = self::preset_registry_deep_copy( $registry );
+		foreach ( $findings as $finding ) {
+			if ( $finding['repairable'] ) {
+				self::preset_registry_set_path( $updated, $finding['segments'], $finding['replacement'] );
+			}
+		}
+		if ( ! self::preset_registry_values_equal( $updated, $registry ) && ! update_option( $option_name, $updated, false ) ) {
+			return self::envelope_error( 'wp_error', 'The preset registry write failed after backup creation.', 'The backup remains available for recovery.', 500, [ 'backup_option_name' => $backup_name ] );
+		}
+		if ( ! self::preset_registry_values_equal( get_option( $option_name, [] ), $updated ) ) {
+			$restored = update_option( $option_name, $registry, false ) || self::preset_registry_values_equal( get_option( $option_name, [] ), $registry );
+			return self::envelope_error( 'wp_error', 'Preset registry readback did not match the planned timestamp-only repair.', 'The handler attempted to restore the exact backup payload.', 500, [ 'backup_option_name' => $backup_name, 'original_restored' => $restored ] );
+		}
+
+		$cleared = [];
+		if ( $clear_transients && $timestamp_change_count > 0 ) {
+			foreach ( $chunks['cleanup_candidates'] as $row ) {
+				delete_option( $row['option_name'] );
+				if ( $row['timeout_option_name'] ) delete_option( $row['timeout_option_name'] );
+				$cleared[] = $row['option_name'];
+			}
+		}
+
+		return self::envelope_success( array_merge( $base, [
+			'repair' => true, 'dry_run' => false, 'mutated' => true,
+			'backup_option_name' => $backup_name, 'changes' => $changes,
+			'cleared_chunk_transients' => $cleared,
+			'readback_verified' => true,
+		] ) );
+	}
+
+	private static function preset_registry_timestamp_findings( array $registry, int $limit ): array {
+		$rows = [];
+		foreach ( [ 'module', 'group' ] as $type ) {
+			$type_data = (array) ( $registry[ $type ] ?? [] );
+			foreach ( $type_data as $bucket_key => $bucket ) {
+				$bucket = (array) $bucket;
+				$items  = (array) ( $bucket['items'] ?? [] );
+				foreach ( $items as $preset_id => $preset ) {
+					$preset = (array) $preset;
+					foreach ( [ 'created', 'updated' ] as $field ) {
+						if ( ! array_key_exists( $field, $preset ) || is_int( $preset[ $field ] ) ) continue;
+						$replacement = is_string( $preset[ $field ] ) ? self::preset_registry_iso_milliseconds( $preset[ $field ] ) : null;
+						$rows[] = [
+							'type' => $type, 'bucket_key' => (string) $bucket_key, 'preset_id' => (string) $preset_id,
+							'preset_name' => (string) ( $preset['name'] ?? '' ),
+							'path' => $type . '.' . $bucket_key . '.items.' . $preset_id . '.' . $field,
+							'segments' => [ $type, $bucket_key, 'items', $preset_id, $field ],
+							'field' => $field, 'old_value' => $preset[ $field ], 'actual_type' => gettype( $preset[ $field ] ),
+							'expected_shape' => 'integer milliseconds since Unix epoch',
+							'repairable' => null !== $replacement, 'replacement' => $replacement,
+						];
+						if ( count( $rows ) >= $limit ) return $rows;
+					}
+				}
+			}
+		}
+		return $rows;
+	}
+
+	private static function preset_registry_iso_milliseconds( string $value ): ?int {
+		$value = trim( $value );
+		if ( ! preg_match( '/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?(?:Z|[+-]\d{2}:\d{2})$/', $value ) ) return null;
+		try { $date = new DateTimeImmutable( $value ); } catch ( Exception $e ) { return null; }
+		$errors = DateTimeImmutable::getLastErrors();
+		if ( is_array( $errors ) && ( $errors['warning_count'] > 0 || $errors['error_count'] > 0 ) ) return null;
+		return ( (int) $date->format( 'U' ) * 1000 ) + (int) floor( (int) $date->format( 'u' ) / 1000 );
+	}
+
+	private static function preset_registry_set_path( array &$registry, array $segments, int $value ): void {
+		$cursor =& $registry;
+		foreach ( $segments as $segment ) {
+			if ( is_object( $cursor ) ) {
+				$cursor =& $cursor->{$segment};
+			} else {
+				$cursor =& $cursor[ $segment ];
+			}
+		}
+		$cursor = $value;
+	}
+
+	/** Recursively copy registry containers without normalizing object shapes. */
+	private static function preset_registry_deep_copy( $value ) {
+		if ( is_array( $value ) ) {
+			$copy = [];
+			foreach ( $value as $key => $item ) {
+				$copy[ $key ] = self::preset_registry_deep_copy( $item );
+			}
+			return $copy;
+		}
+		if ( is_object( $value ) ) {
+			$copy = clone $value;
+			foreach ( get_object_vars( $copy ) as $key => $item ) {
+				$copy->{$key} = self::preset_registry_deep_copy( $item );
+			}
+			return $copy;
+		}
+		return $value;
+	}
+
+	/** Compare registry values independent of nested object identity. */
+	private static function preset_registry_values_equal( $left, $right ): bool {
+		return serialize( $left ) === serialize( $right );
+	}
+
+	private static function preset_registry_chunk_transients( int $limit ): array {
+		global $wpdb;
+		$rows = [];
+		if ( ! isset( $wpdb->options ) || ! method_exists( $wpdb, 'get_col' ) ) return [ 'rows' => [], 'cleanup_candidates' => [] ];
+		$like = $wpdb->esc_like( '_transient_et_global_preset_chunks_' ) . '%';
+		$names = $wpdb->get_col( $wpdb->prepare( "SELECT option_name FROM {$wpdb->options} WHERE option_name LIKE %s ORDER BY option_name LIMIT %d", $like, $limit ) );
+		foreach ( (array) $names as $name ) {
+			$value = get_option( $name, null );
+			$timeout_name = '_transient_timeout_' . substr( $name, strlen( '_transient_' ) );
+			$missing_timeout = new stdClass();
+			$timeout = get_option( $timeout_name, $missing_timeout );
+			$timeout_exists = $missing_timeout !== $timeout;
+			$stale = is_numeric( $timeout ) && (int) $timeout < time();
+			$failed = null === $value || false === $value || '' === $value || ( is_wp_error( $value ) );
+			$rows[] = [ 'option_name' => $name, 'value' => $value, 'timeout_option_name' => $timeout_exists ? $timeout_name : null, 'timeout' => $timeout_exists ? $timeout : null, 'stale' => $stale, 'failed' => $failed, 'cleanup_candidate' => $stale || $failed ];
+		}
+		return [ 'rows' => $rows, 'cleanup_candidates' => array_values( array_filter( $rows, static fn( $row ) => $row['cleanup_candidate'] ) ) ];
+	}
+
 	/**
 	 * Get all presets (Divi 5 + legacy Divi 4).
 	 *

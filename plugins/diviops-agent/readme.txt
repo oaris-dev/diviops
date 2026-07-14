@@ -3,7 +3,7 @@ Contributors: davidricardo
 Tags: divi, mcp, ai, rest-api, site-builder
 Requires at least: 6.5
 Tested up to: 7.0
-Stable tag: 1.5.7
+Stable tag: 1.5.8
 Requires PHP: 7.4
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -68,6 +68,12 @@ No. The Free plugin backs the core useful surface. Some higher-leverage workflow
 
 == Changelog ==
 
+= 1.5.8 =
+
+* Adds a guarded preset-registry doctor for diagnosing and repairing duplicate or stale preset registry entries.
+* Improves nested module moves with a parser-backed fallback when direct block parsing cannot preserve the requested placement.
+* Rejects foreign CSS variable references recursively across supported Divi content and design writers.
+
 = 1.5.7 =
 
 * Adds guarded rollback snapshots for Divi content writes, including snapshot list/get/delete surfaces and restore support with checksum drift checks.
@@ -88,6 +94,6 @@ No. The Free plugin backs the core useful surface. Some higher-leverage workflow
 
 == Upgrade Notice ==
 
-= 1.5.7 =
+= 1.5.8 =
 
-Recommended for beta users who want guarded rollback snapshot backup and restore support for Divi content writes.
+Recommended for beta users who want guarded preset-registry repair, more reliable nested module moves, and stronger CSS variable validation.

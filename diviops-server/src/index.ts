@@ -20,6 +20,10 @@ import {
   proToolGatesSatisfied,
 } from "./compatibility.js";
 import {
+  missingCapabilityEnvelope,
+  type MissingCapabilityMcpResult,
+} from "./capability-envelope.js";
+import {
   type DiviopsResponse,
   ErrorCodes,
   envelopeMap,
@@ -42,9 +46,9 @@ import { optimizeSchema } from "./schema-optimizer.js";
 import { schemaModuleRoute } from "./schema-route.js";
 import { createWpCli } from "./wp-cli.js";
 import {
-  findForeignVarRefs,
-  scanAttrsForForeignVarRefs,
-  isolationErrorResult,
+  isolationFailure,
+  scanValueForForeignVarRefs,
+  writerIsolationErrorResult,
 } from "./validate-attrs.js";
 import { readFileSync, readdirSync } from "fs";
 import { join, dirname } from "path";
@@ -403,17 +407,21 @@ function requireCapability(key: string): void {
   }
 }
 
-function backupCapabilityError(toolName: string, backup: boolean | undefined): { content: Array<{ type: "text"; text: string }>; isError: true } | null {
+function backupCapabilityError(
+  toolName: string,
+  backup: boolean | undefined,
+): MissingCapabilityMcpResult | null {
   if (!backup) return null;
   const key = toolName.replace(/^diviops_/, "") + "_backup";
   try {
     requireCapability(key);
   } catch (e) {
     if (e instanceof MissingCapabilityError) {
-      return {
-        content: [{ type: "text" as const, text: e.message }],
-        isError: true,
-      };
+      return missingCapabilityEnvelope(
+        e,
+        toolName,
+        "Update the diviops-agent WP plugin to a version that supports rollback snapshot backup, or omit backup:true from this call.",
+      );
     }
     throw e;
   }
@@ -446,10 +454,7 @@ function registerPluginTool<H extends (args: any) => Promise<any>>(
       requireCapability(key);
     } catch (e) {
       if (e instanceof MissingCapabilityError) {
-        return {
-          content: [{ type: "text" as const, text: e.message }],
-          isError: true,
-        };
+        return missingCapabilityEnvelope(e, name);
       }
       throw e;
     }
@@ -945,17 +950,11 @@ registerPluginTool(
           "schema_get_module_dump_all",
           handshakeState.pluginVersion,
         );
-        const failure: DiviopsResponse<never> = {
-          ok: false,
-          error: {
-            code: ErrorCodes.CAPABILITY_MISSING,
-            message: err.message,
-            hint: "Update the diviops-agent WP plugin to a version that exposes the dump-all surface.",
-          },
-        };
-        return {
-          content: [{ type: "text" as const, text: serializeEnvelope(failure, "diviops_schema_get_module") }],
-        };
+        return missingCapabilityEnvelope(
+          err,
+          "diviops_schema_get_module",
+          "Update the diviops-agent WP plugin to a version that exposes the dump-all surface, or use mode:'single'.",
+        );
       }
       const result = await wp.requestEnveloped("/schema/module/dump-all");
       return {
@@ -1416,8 +1415,11 @@ registerPluginTool(
   async ({ page_id, content, dry_run, backup }) => {
     const backupGate = backupCapabilityError("diviops_page_update_content", backup);
     if (backupGate) return backupGate;
-    const hits = findForeignVarRefs(content, "content");
-    if (hits.length > 0) return isolationErrorResult("diviops_page_update_content", hits);
+    const isolationGate = writerIsolationErrorResult(
+      "diviops_page_update_content",
+      { content },
+    );
+    if (isolationGate) return isolationGate;
     const body: Record<string, unknown> = { content };
     if (dry_run) body.dry_run = true;
     if (backup) body.backup = true;
@@ -1521,10 +1523,11 @@ registerPluginTool(
         requireCapability("validate_render_by_page_id");
       } catch (e) {
         if (e instanceof MissingCapabilityError) {
-          return {
-            content: [{ type: "text" as const, text: e.message }],
-            isError: true,
-          };
+          return missingCapabilityEnvelope(
+            e,
+            "diviops_render_preview",
+            "Update the diviops-agent WP plugin to a version that supports page_id rendering, or provide inline content instead.",
+          );
         }
         throw e;
       }
@@ -1570,10 +1573,11 @@ registerPluginTool(
         requireCapability("validate_render_by_page_id");
       } catch (e) {
         if (e instanceof MissingCapabilityError) {
-          return {
-            content: [{ type: "text" as const, text: e.message }],
-            isError: true,
-          };
+          return missingCapabilityEnvelope(
+            e,
+            "diviops_validate_blocks",
+            "Update the diviops-agent WP plugin to a version that supports page_id validation, or provide inline content instead.",
+          );
         }
         throw e;
       }
@@ -1617,8 +1621,10 @@ registerPluginTool(
   async ({ page_id, content, position, dry_run, backup }) => {
     const backupGate = backupCapabilityError("diviops_section_append", backup);
     if (backupGate) return backupGate;
-    const hits = findForeignVarRefs(content, "content");
-    if (hits.length > 0) return isolationErrorResult("diviops_section_append", hits);
+    const isolationGate = writerIsolationErrorResult("diviops_section_append", {
+      content,
+    });
+    if (isolationGate) return isolationGate;
     const body: Record<string, unknown> = { content, position: position ?? "end" };
     if (dry_run) body.dry_run = true;
     if (backup) body.backup = true;
@@ -1671,8 +1677,10 @@ registerPluginTool(
   async ({ page_id, label, match_text, content, occurrence, dry_run, backup }) => {
     const backupGate = backupCapabilityError("diviops_section_replace", backup);
     if (backupGate) return backupGate;
-    const hits = findForeignVarRefs(content, "content");
-    if (hits.length > 0) return isolationErrorResult("diviops_section_replace", hits);
+    const isolationGate = writerIsolationErrorResult("diviops_section_replace", {
+      content,
+    });
+    if (isolationGate) return isolationGate;
     const body: Record<string, any> = { content, occurrence };
     if (label) body.label = label;
     if (match_text) body.match_text = match_text;
@@ -1828,8 +1836,10 @@ registerPluginTool(
   async ({ page_id, label, match_text, auto_index, occurrence, attrs, dry_run, backup }) => {
     const backupGate = backupCapabilityError("diviops_module_update", backup);
     if (backupGate) return backupGate;
-    const hits = scanAttrsForForeignVarRefs(attrs);
-    if (hits.length > 0) return isolationErrorResult("diviops_module_update", hits);
+    const isolationGate = writerIsolationErrorResult("diviops_module_update", {
+      attrs,
+    });
+    if (isolationGate) return isolationGate;
     const body: Record<string, any> = { attrs };
     if (auto_index) body.auto_index = auto_index;
     if (label) body.label = label;
@@ -2076,10 +2086,10 @@ registerPluginTool(
     _meta: { idempotent: "false" },
   },
   async ({ title, content, status, dry_run }) => {
-    if (content) {
-      const hits = findForeignVarRefs(content, "content");
-      if (hits.length > 0) return isolationErrorResult("diviops_page_create", hits);
-    }
+    const isolationGate = writerIsolationErrorResult("diviops_page_create", {
+      content: content ?? "",
+    });
+    if (isolationGate) return isolationGate;
     const body: Record<string, unknown> = { title, content: content ?? "", status: status ?? "draft" };
     if (dry_run) body.dry_run = true;
     const result = await wp.requestEnveloped("/page/create", {
@@ -2236,6 +2246,29 @@ registerPluginTool(
         { type: "text" as const, text: serializeEnvelope(result, "diviops_preset_inspect") },
       ],
     };
+  },
+);
+
+registerPluginTool(
+  "diviops_preset_registry_doctor",
+  {
+    description:
+      "Audit the canonical Divi 5 preset registry for non-integer created/updated metadata and stale or failed preset chunk transients. repair=false is always read-only. repair=true only converts parseable ISO timestamps to integer milliseconds, creates a non-autoloaded backup before mutation, preserves unrelated preset payloads, and can optionally clear stale/failed matching chunk transients after a successful repair. Unsupported timestamp values are reported but never normalized." +
+      DRY_RUN_DESC_SUFFIX,
+    inputSchema: {
+      repair: z.boolean().optional().default(false).describe("Enable the narrow ISO timestamp repair path."),
+      clear_chunk_transients: z.boolean().optional().default(false).describe("After successful repair, clear only stale or failed matching Divi preset chunk transients."),
+      dry_run: z.boolean().optional().default(true).describe("Preview repair and transient cleanup without mutation."),
+      limit: z.number().int().min(1).max(500).optional().default(100).describe("Maximum findings and transient rows to return."),
+    },
+    _meta: { idempotent: "conditional" },
+  },
+  async ({ repair, clear_chunk_transients, dry_run, limit }) => {
+    const result = await wp.requestEnveloped("/preset/registry-doctor", {
+      method: "POST",
+      body: { repair, clear_chunk_transients, dry_run, limit },
+    });
+    return { content: [{ type: "text" as const, text: serializeEnvelope(result, "diviops_preset_registry_doctor") }] };
   },
 );
 
@@ -2430,6 +2463,10 @@ registerPluginTool(
     _meta: { idempotent: "conditional" },
   },
   async ({ preset_id, name, attrs, priority, dry_run }) => {
+    const isolationGate = writerIsolationErrorResult("diviops_preset_update", {
+      attrs,
+    });
+    if (isolationGate) return isolationGate;
     const body: Record<string, any> = { preset_id };
     if (name) body.name = name;
     if (attrs) body.attrs = attrs;
@@ -2545,6 +2582,10 @@ registerPluginTool(
         'type="group" requires both group_name and group_id. Example: group_name="divi/font", group_id="designTitleText".',
       );
     }
+    const isolationGate = writerIsolationErrorResult("diviops_preset_create", {
+      attrs,
+    });
+    if (isolationGate) return isolationGate;
     const body: Record<string, any> = { module_name, name, attrs, type };
     if (group_name) body.group_name = group_name;
     if (group_id) body.group_id = group_id;
@@ -2791,6 +2832,10 @@ registerPluginTool(
     _meta: { idempotent: "conditional" },
   },
   async ({ title, content, layout_type, scope, dry_run }) => {
+    const isolationGate = writerIsolationErrorResult("diviops_library_save", {
+      content,
+    });
+    if (isolationGate) return isolationGate;
     const body: Record<string, unknown> = { title, content, layout_type, scope };
     if (dry_run) body.dry_run = true;
     const result = await wp.requestEnveloped("/library/save", {
@@ -3003,6 +3048,11 @@ registerPluginTool(
   async ({ layout_id, content, dry_run, backup }) => {
     const backupGate = backupCapabilityError("diviops_tb_layout_update", backup);
     if (backupGate) return backupGate;
+    const isolationGate = writerIsolationErrorResult(
+      "diviops_tb_layout_update",
+      { content },
+    );
+    if (isolationGate) return isolationGate;
     const body: Record<string, unknown> = { content };
     if (dry_run) body.dry_run = true;
     if (backup) body.backup = true;
@@ -3049,6 +3099,11 @@ registerPluginTool(
   async ({ layout_id, parent_selector, parent_path, position, content, dry_run, backup }) => {
     const backupGate = backupCapabilityError("diviops_tb_layout_block_insert", backup);
     if (backupGate) return backupGate;
+    const isolationGate = writerIsolationErrorResult(
+      "diviops_tb_layout_block_insert",
+      { content },
+    );
+    if (isolationGate) return isolationGate;
     const body: Record<string, unknown> = {
       content,
       position: position ?? "append",
@@ -3105,6 +3160,11 @@ registerPluginTool(
     _meta: { idempotent: "false" },
   },
   async ({ title, condition, header_content, footer_content, dry_run }) => {
+    const isolationGate = writerIsolationErrorResult(
+      "diviops_tb_template_create",
+      { header_content, footer_content },
+    );
+    if (isolationGate) return isolationGate;
     const body: Record<string, unknown> = { title, condition, header_content, footer_content };
     if (dry_run) body.dry_run = true;
     const result = await wp.requestEnveloped("/theme-builder/template/create", {
@@ -3207,6 +3267,10 @@ registerPluginTool(
     z_index,
     dry_run,
   }) => {
+    const isolationGate = writerIsolationErrorResult("diviops_canvas_create", {
+      content: content ?? "",
+    });
+    if (isolationGate) return isolationGate;
     const body: Record<string, unknown> = {
       title,
       parent_page_id,
@@ -3362,6 +3426,10 @@ registerPluginTool(
     _meta: { idempotent: "conditional" },
   },
   async ({ canvas_post_id, content, title, append_to_main, z_index, dry_run }) => {
+    const isolationGate = writerIsolationErrorResult("diviops_canvas_update", {
+      content,
+    });
+    if (isolationGate) return isolationGate;
     const body: Record<string, unknown> = {};
     if (content !== undefined) body.content = content;
     if (title !== undefined) body.title = title;
@@ -4910,6 +4978,17 @@ function registerProTools(): void {
           }
         }
 
+        const isolationHits = scanValueForForeignVarRefs(
+          resolvedSourcePayload.markup,
+          "source_payload.markup",
+        );
+        if (isolationHits.length > 0) {
+          return isolationFailure(
+            "diviops_cross_env_header_apply",
+            isolationHits,
+          );
+        }
+
         const targetBody: Record<string, unknown> = {
           destination_id,
           destination_kind: destination_kind ?? "tb_header_layout",
@@ -5700,25 +5779,11 @@ function registerProTools(): void {
           "fluentcart_license_update_file_set",
           handshakeState.pluginVersion,
         );
-        const failure: DiviopsResponse<never> = {
-          ok: false,
-          error: {
-            code: ErrorCodes.CAPABILITY_MISSING,
-            message: err.message,
-            hint: "Update the diviops-agent-pro WP plugin to a version that supports authoring the global_update_file pointer, or omit global_update_file from this call.",
-          },
-        };
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: serializeEnvelope(
-                failure,
-                "diviops_fc_license_settings_update",
-              ),
-            },
-          ],
-        };
+        return missingCapabilityEnvelope(
+          err,
+          "diviops_fc_license_settings_update",
+          "Update the diviops-agent-pro WP plugin to a version that supports authoring the global_update_file pointer, or omit global_update_file from this call.",
+        );
       }
       const body: Record<string, unknown> = {};
       if (enabled !== undefined) body.enabled = enabled;

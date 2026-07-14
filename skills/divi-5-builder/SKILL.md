@@ -5,7 +5,7 @@ compatibility: Requires diviops-mcp MCP server connected to a WordPress site wit
 metadata:
   author: oaris-dev
   version: "1.0"
-  divi-version: "5.2.0"
+  divi-version: "5.8.0"
 ---
 
 # Divi 5 Builder Skill

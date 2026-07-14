@@ -95,7 +95,7 @@ See the [DiviOps MCP Server README](../../../diviops-server/) for full setup and
 
 ## Capabilities
 
-The plugin exposes these capability surfaces (full per-endpoint reference, 74 always-on tools: [docs/server-reference.md](../../../docs/server-reference.md)):
+The plugin advertises 98 capability keys through the handshake (full MCP endpoint reference, 91 always-on tools: [docs/server-reference.md](../../../docs/server-reference.md)):
 
 - **Page building** — Divi page/section/module/canvas CRUD; Theme Builder layouts + templates
 - **SCF setup + management** — field group provisioning, sync, export/import

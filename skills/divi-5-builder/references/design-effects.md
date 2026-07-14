@@ -59,6 +59,8 @@ Each attribute entry needs: `id` (unique), `name` ("class"), `value` (space-sepa
 | `ddl-gradient-animated` | Animated background gradient (set `background-size: 200%`) |
 | `ddl-hover-lift` | Lift + shadow on hover |
 | `ddl-pulse-dot` | Pulsing indicator dot |
+| `ddl-text-stroke` | Light text outline (stroke) |
+| `ddl-text-stroke-dark` | Dark text outline (stroke) |
 
 ### Marquee (continuous scrolling)
 | Class | Where | Purpose |
@@ -117,7 +119,7 @@ Skip: `role="marquee"` (deprecated), `aria-live="off"` (default, noise), `role="
 ## Three.js Integration
 
 ### Setup
-Three.js r128 is bundled locally in the plugin. Auto-loaded when page content contains keywords: `THREE`, `shader`, `webgl`, `three.js`, `canvas`.
+Three.js r128 is bundled locally in the plugin. It loads when post meta `_divi_design_threejs` is exactly `'1'`, or when page content contains one of these case-sensitive markers: `webgl`, `THREE`, `shader`, `three.js`.
 
 ### One canonical pattern: canvas absolute-scoped to its section <!-- VB-verified 2026-06-03 -->
 
