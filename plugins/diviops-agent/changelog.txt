@@ -9,6 +9,12 @@ Policy:
 - Keep entries customer-facing. Avoid internal issue numbers unless they are needed to explain a user-visible change.
 - Do not include secrets, credentials, customer data, or environment-specific URLs.
 
+## 1.5.9
+
+- Extends read-only cross-environment source export and target-context evidence to existing Theme Builder headers and footers when the connected capability supports footer evidence, including checksums, dependency/linkage evidence, and preflight/refusal data.
+- Adds metadata-only local storage sequence evidence to the Free-owned rollback snapshot inventory so Pro retention can order same-second records safely without exposing snapshot payloads.
+- Keeps basic one-site snapshot capture, list, get, delete, dashboard inspection, and guarded restore in Free; snapshot payload, viability, and exact deletion ownership remain Free/core responsibilities.
+
 ## 1.5.8
 
 - Adds a guarded preset-registry doctor with inspection-first behavior and explicit mutation safeguards for duplicate or stale registry entries.

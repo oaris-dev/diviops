@@ -38,6 +38,11 @@ import {
   type TargetLayoutContext,
 } from "./cross-env-preflight/header-preflight.js";
 import {
+  preflightCrossEnvThemeBuilderLayoutSync,
+  type CrossEnvThemeBuilderLayoutKind,
+} from "./cross-env-preflight/layout-preflight.js";
+import { crossEnvEvidenceLayoutKinds } from "./cross-env-preflight/layout-capability.js";
+import {
   createSourcePayloadRef,
   loadSourcePayloadRef,
   type SourcePayloadRef,
@@ -318,6 +323,7 @@ function buildPluginVersionSummary() {
 function buildMetaInfo() {
   const fluentCartCapabilityKeys = enabledCapabilityKeys("fluentcart_");
   const crossEnvCapabilityKeys = enabledCapabilityKeys("cross_env_");
+  const managedRecoveryCapabilityKeys = enabledCapabilityKeys("managed_recovery_");
   const fluentCartTarget =
     handshakeState.kind === "ok"
       ? handshakeState.availableTargets.fluentcart ?? null
@@ -325,6 +331,10 @@ function buildMetaInfo() {
   const crossEnvTarget =
     handshakeState.kind === "ok"
       ? handshakeState.availableTargets.cross_env ?? null
+      : null;
+  const managedRecoveryTarget =
+    handshakeState.kind === "ok"
+      ? handshakeState.availableTargets.managed_recovery ?? null
       : null;
   const fluentCartActive =
     handshakeState.kind === "ok" &&
@@ -338,10 +348,17 @@ function buildMetaInfo() {
     crossEnvTarget?.present === true &&
     handshakeState.activeModules.cross_env === true &&
     crossEnvCapabilityKeys.length > 0;
+  const managedRecoveryActive =
+    handshakeState.kind === "ok" &&
+    handshakeState.proActive === true &&
+    managedRecoveryTarget?.present === true &&
+    handshakeState.activeModules.managed_recovery === true &&
+    managedRecoveryCapabilityKeys.length > 0;
   const capabilities = fluentCartActive
     ? [...BASE_META_CAPABILITIES, "fluentcart"]
     : [...BASE_META_CAPABILITIES];
   if (crossEnvActive) capabilities.push("cross_env");
+  if (managedRecoveryActive) capabilities.push("managed_recovery");
   const tools = buildToolCatalogSummary();
 
   return {
@@ -390,6 +407,15 @@ function buildMetaInfo() {
             ? handshakeState.activeModules.cross_env === true
             : false,
         tool_capabilities: crossEnvCapabilityKeys,
+      },
+      managed_recovery: {
+        target: managedRecoveryTarget,
+        active: managedRecoveryActive,
+        module_active:
+          handshakeState.kind === "ok"
+            ? handshakeState.activeModules.managed_recovery === true
+            : false,
+        tool_capabilities: managedRecoveryCapabilityKeys,
       },
     },
     wp_cli: wpCli ? wpCli.getAllowedCommands() : false,
@@ -2907,128 +2933,144 @@ registerPluginTool(
   },
 );
 
-registerPluginTool(
-  "diviops_cross_env_target_context_get",
-  {
-    description:
-      "Export read-only, secret-free target-site context for the offline cross-environment Theme Builder header preflight. Produces JSON suitable for `diviops-cross-env-preflight --target`: target origin derived from WordPress, destination header layout metadata, a sha256 checksum of current target layout post_content without exposing raw content, target global colors, built-in customizer color IDs, sha256 value evidence for user/customizer global colors, defensible attachment candidates/remaps from optional source asset hints, and cache_scope. This Free/core tool does not write layouts, upload media, create global colors, or expose cookies, nonces, app passwords, signed URLs, query strings, fragments, or local filesystem paths. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }; unsupported destination_kind returns invalid_input, and missing/non-header layouts return not_found.",
-    inputSchema: {
-      destination_id: z
-        .number()
-        .int()
-        .positive()
-        .describe("Existing target Theme Builder header layout post ID."),
-      destination_kind: z
-        .enum(["tb_header_layout"])
-        .optional()
-        .default("tb_header_layout")
-        .describe("Destination kind. Only tb_header_layout is supported in this read-only slice."),
-      source_asset_hints: z
-        .array(z.string())
-        .optional()
-        .describe("Optional source upload paths, asset URLs, or basenames used to search target media candidates. Query strings, fragments, and credentials are stripped from output."),
-      source_attachment_ids: z
-        .array(z.number())
-        .optional()
-        .describe("Optional numeric source attachment IDs found in source markup. A remap is emitted only when exactly one source ID and one exact target candidate are present."),
-      dry_run: z
-        .boolean()
-        .optional()
-        .default(true)
-        .describe("Accepted for workflow symmetry; the tool is always read-only and never mutates state."),
-    },
-    annotations: { idempotentHint: true },
-    _meta: { idempotent: "true" },
-  },
-  async ({
-    destination_id,
-    destination_kind,
-    source_asset_hints,
-    source_attachment_ids,
-  }) => {
-    const body: Record<string, unknown> = {
-      destination_id,
-      destination_kind: destination_kind ?? "tb_header_layout",
-    };
-    if (source_asset_hints && source_asset_hints.length > 0) {
-      body.source_asset_hints = source_asset_hints;
-    }
-    if (source_attachment_ids && source_attachment_ids.length > 0) {
-      body.source_attachment_ids = source_attachment_ids;
-    }
-    const result = await wp.requestEnveloped("/cross-env/target-context", {
-      method: "POST",
-      body,
-    });
-    return {
-      content: [
-        {
-          type: "text" as const,
-          text: serializeEnvelope(result, "diviops_cross_env_target_context_get"),
-        },
-      ],
-    };
-  },
-);
+function registerCrossEnvEvidenceTools(): void {
+  const capabilities =
+    handshakeState.kind === "ok" ? handshakeState.capabilities : {};
+  const layoutKinds = crossEnvEvidenceLayoutKinds(capabilities);
+  const supportsFooter = layoutKinds.length === 2;
+  const layoutLabel = supportsFooter ? "header or footer" : "header";
 
-registerPluginTool(
-  "diviops_cross_env_source_export_get",
-  {
-    description:
-      "Export read-only, secret-free source-site payload for the offline cross-environment Theme Builder header preflight. Produces JSON suitable for `diviops-cross-env-preflight --source`: source origin, `tb_header_layout` metadata, sanitized markup, bare sha256 checksum of that exported markup, export timestamp, DiviOps plugin version, and best-effort attachment inventory from markup media URLs and attachment IDs. The MCP server also writes the exported payload to a bounded local artifact under `.diviops-tmp/cross-env-source-payloads/` and returns `source_payload_ref` so large real headers can be applied later without inlining full markup through the model. This Free/core tool does not write WordPress layouts, upload media, create global colors, reconcile references, expose cookies, nonces, app passwords, signed URLs, query strings, fragments, admin URLs, or arbitrary local filesystem paths. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }; unsupported source_kind returns invalid_input, and missing/non-header source layouts return not_found.",
-    inputSchema: {
-      source_id: z
-        .number()
-        .int()
-        .positive()
-        .describe("Existing source Theme Builder header layout post ID."),
-      source_kind: z
-        .enum(["tb_header_layout"])
-        .optional()
-        .default("tb_header_layout")
-        .describe("Source kind. Only tb_header_layout is supported in this read-only slice."),
-      dry_run: z
-        .boolean()
-        .optional()
-        .default(true)
-        .describe("Accepted for workflow symmetry; the tool is always read-only and never mutates state."),
+  registerPluginTool(
+    "diviops_cross_env_target_context_get",
+    {
+      description:
+        `Export read-only, secret-free target-site context for an offline cross-environment Theme Builder ${supportsFooter ? "header/footer" : "header"} preflight. Returns exact kind/post-type identity, the current post_content checksum without content exposure, canonical template-linkage evidence/digest, dependency evidence, and cache scope. Free/core and read-only: no content, assignment, dependency, or cache mutation.`,
+      inputSchema: {
+        destination_id: z
+          .number()
+          .int()
+          .positive()
+          .describe(`Existing target Theme Builder ${layoutLabel} layout post ID.`),
+        destination_kind: z
+          .enum(layoutKinds)
+          .optional()
+          .default("tb_header_layout")
+          .describe(
+            supportsFooter
+              ? "Destination kind. Header and footer existing-layout evidence is supported."
+              : "Destination kind. This connected plugin proves header evidence only; update it to expose footer support.",
+          ),
+        source_asset_hints: z
+          .array(z.string())
+          .optional()
+          .describe("Optional source upload paths, asset URLs, or basenames used to search target media candidates. Query strings, fragments, and credentials are stripped from output."),
+        source_attachment_ids: z
+          .array(z.number())
+          .optional()
+          .describe("Optional numeric source attachment IDs found in source markup. A remap is emitted only when exactly one source ID and one exact target candidate are present."),
+        dry_run: z
+          .boolean()
+          .optional()
+          .default(true)
+          .describe("Accepted for workflow symmetry; the tool is always read-only and never mutates state."),
+      },
+      annotations: { idempotentHint: true },
+      _meta: { idempotent: "true" },
     },
-    annotations: { idempotentHint: true },
-    _meta: { idempotent: "true" },
-  },
-  async ({ source_id, source_kind }) => {
-    const withRef = await wrapResponse(async () => {
+    async ({
+      destination_id,
+      destination_kind,
+      source_asset_hints,
+      source_attachment_ids,
+    }) => {
       const body: Record<string, unknown> = {
-        source_id,
-        source_kind: source_kind ?? "tb_header_layout",
+        destination_id,
+        destination_kind: destination_kind ?? "tb_header_layout",
       };
-      const result = await wp.requestEnveloped<SourceLayoutPayload>("/cross-env/source-export", {
+      if (source_asset_hints && source_asset_hints.length > 0) {
+        body.source_asset_hints = source_asset_hints;
+      }
+      if (source_attachment_ids && source_attachment_ids.length > 0) {
+        body.source_attachment_ids = source_attachment_ids;
+      }
+      const result = await wp.requestEnveloped("/cross-env/target-context", {
         method: "POST",
         body,
       });
-      return envelopeMap(result, (data) => ({
-        ...data,
-        source_payload_ref: createSourcePayloadRef(data),
-        _meta: {
-          ...(typeof (data as { _meta?: unknown })._meta === "object" &&
-          (data as { _meta?: unknown })._meta !== null
-            ? ((data as { _meta?: Record<string, unknown> })._meta ?? {})
-            : {}),
-          source_payload_ref:
-            "server-local artifact handle for diviops_cross_env_header_apply; stores the same source payload under .diviops-tmp/cross-env-source-payloads and is bounded by handle + checksum + TTL",
-        },
-      }));
-    });
-    return {
-      content: [
-        {
-          type: "text" as const,
-          text: serializeEnvelope(withRef, "diviops_cross_env_source_export_get"),
-        },
-      ],
-    };
-  },
-);
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: serializeEnvelope(result, "diviops_cross_env_target_context_get"),
+          },
+        ],
+      };
+    },
+  );
+
+  registerPluginTool(
+    "diviops_cross_env_source_export_get",
+    {
+      description:
+        `Export read-only, secret-free source-site payload for an offline cross-environment Theme Builder ${supportsFooter ? "header/footer" : "header"} preflight. Returns exact kind/post-type identity, sanitized markup and checksum, dependency inventories, and a bounded source_payload_ref. Free/core and read-only: no WordPress content, assignment, dependency, or cache mutation.`,
+      inputSchema: {
+        source_id: z
+          .number()
+          .int()
+          .positive()
+          .describe(`Existing source Theme Builder ${layoutLabel} layout post ID.`),
+        source_kind: z
+          .enum(layoutKinds)
+          .optional()
+          .default("tb_header_layout")
+          .describe(
+            supportsFooter
+              ? "Source kind. Header and footer existing-layout evidence is supported."
+              : "Source kind. This connected plugin proves header evidence only; update it to expose footer support.",
+          ),
+        dry_run: z
+          .boolean()
+          .optional()
+          .default(true)
+          .describe("Accepted for workflow symmetry; the tool is always read-only and never mutates state."),
+      },
+      annotations: { idempotentHint: true },
+      _meta: { idempotent: "true" },
+    },
+    async ({ source_id, source_kind }) => {
+      const withRef = await wrapResponse(async () => {
+        const body: Record<string, unknown> = {
+          source_id,
+          source_kind: source_kind ?? "tb_header_layout",
+        };
+        const result = await wp.requestEnveloped<SourceLayoutPayload>("/cross-env/source-export", {
+          method: "POST",
+          body,
+        });
+        return envelopeMap(result, (data) => ({
+          ...data,
+          source_payload_ref: createSourcePayloadRef(data),
+          _meta: {
+            ...(typeof (data as { _meta?: unknown })._meta === "object" &&
+            (data as { _meta?: unknown })._meta !== null
+              ? ((data as { _meta?: Record<string, unknown> })._meta ?? {})
+              : {}),
+            source_payload_ref:
+              "server-local artifact handle for the Pro cross-env layout apply tools; stores the same source payload under .diviops-tmp/cross-env-source-payloads and is bounded by handle + checksum + TTL",
+          },
+        }));
+      });
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: serializeEnvelope(withRef, "diviops_cross_env_source_export_get"),
+          },
+        ],
+      };
+    },
+  );
+}
 
 registerPluginTool(
   "diviops_tb_layout_update",
@@ -4831,11 +4873,12 @@ const CrossEnvSourcePayloadSchema = z
   .object({
     origin: z.string().describe("Source site origin, e.g. https://source.example."),
     object_kind: z
-      .enum(["tb_header_layout"])
-      .describe("Source object kind. MVP supports tb_header_layout only."),
+      .enum(["tb_header_layout", "tb_footer_layout"])
+      .describe("Source object kind. Existing header and footer layouts are supported."),
     object_id: z.union([z.number(), z.string()]).optional(),
     object_title: z.string().optional(),
-    markup: z.string().describe("Sanitized source header layout block markup."),
+    object_post_type: z.enum(["et_header_layout", "et_footer_layout"]).optional(),
+    markup: z.string().describe("Sanitized source Theme Builder layout block markup."),
     checksum: z
       .string()
       .regex(/^(sha256:)?[a-fA-F0-9]{64}$/)
@@ -4847,6 +4890,10 @@ const CrossEnvSourcePayloadSchema = z
       .describe("Referenced attrs.modulePreset IDs from source export; definitions are not included."),
   })
   .passthrough();
+
+const CrossEnvHeaderSourcePayloadSchema = CrossEnvSourcePayloadSchema.extend({
+  object_kind: z.literal("tb_header_layout"),
+});
 
 const CrossEnvSourcePayloadRefSchema = z
   .object({
@@ -4888,7 +4935,156 @@ function sourceHintsFromPayload(source: SourceLayoutPayload): {
   };
 }
 
+const ManagedRecoveryPolicySchema = z
+  .object({
+    version: z.literal(1),
+    enabled: z.boolean(),
+    max_age_days: z.number().int().min(1).max(365),
+    max_snapshots_per_target: z.number().int().min(1).max(100),
+    max_site_snapshots: z.number().int().min(1).max(1000),
+    max_site_bytes: z.number().int().min(1048576).max(536870912),
+    preserve_newest_viable_per_target: z.literal(true),
+    protected_snapshot_ids: z
+      .array(z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_-]{2,127}$/))
+      .max(50),
+    audit_retention_days: z.number().int().min(30).max(2555),
+  })
+  .strict();
+
+const ManagedRecoveryRequestIdSchema = z
+  .string()
+  .regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{2,127}$/)
+  .describe("Caller-stable request ID used for confirmation binding and exact replay/conflict detection.");
+
+const ManagedRecoveryConfirmationSchema = {
+  confirmation_fingerprint: z
+    .string()
+    .regex(/^sha256:[a-f0-9]{64}$/)
+    .describe("Exact fingerprint returned by the matching preview operation."),
+  confirmation_token: z
+    .string()
+    .min(32)
+    .describe("Short-lived signed token returned by the matching preview operation."),
+};
+
 function registerProTools(): void {
+  registerProTool(
+    "diviops_managed_recovery_policy_get",
+    {
+      description:
+        "Inspect the effective/default one-site managed recovery policy and complete metadata-only rollback snapshot inventory (Pro Phase 1A; managed_recovery module). Returns policy checksum/version, inventory checksum/count/bytes, corruption/readiness warnings, and the entitlement-independent Free recovery-data promise. Never returns snapshot payload content, raw historical post-meta, credentials, or confirmation material and never mutates state.",
+      inputSchema: {},
+      annotations: { idempotentHint: true },
+      _meta: { idempotent: "true" },
+    },
+    async () => {
+      const result = await wp.requestEnveloped("/pro/managed-recovery/policy");
+      return { content: [{ type: "text" as const, text: serializeEnvelope(result, "diviops_managed_recovery_policy_get") }] };
+    },
+    { target: "managed_recovery", capabilityKey: "managed_recovery_policy_v1" },
+  );
+
+  registerProTool(
+    "diviops_managed_recovery_policy_preview",
+    {
+      description:
+        "Pure-read preview of a complete managed-recovery-policy-v1 proposal (Pro Phase 1A). Validates hard limits, canonicalizes types/ID ordering, recomputes complete inventory, returns deterministic keep/prune/refuse effects with stable reasons and exact byte/count deltas, and issues a maximum-15-minute actor/site/policy/inventory/body-bound confirmation for policy_update. Preview writes no policy, snapshot, cache, or audit state.",
+      inputSchema: {
+        request_id: ManagedRecoveryRequestIdSchema,
+        policy: ManagedRecoveryPolicySchema,
+      },
+      annotations: { idempotentHint: true },
+      _meta: { idempotent: "true" },
+    },
+    async ({ request_id, policy }) => {
+      const result = await wp.requestEnveloped("/pro/managed-recovery/policy/preview", { method: "POST", body: { request_id, policy } });
+      return { content: [{ type: "text" as const, text: serializeEnvelope(result, "diviops_managed_recovery_policy_preview") }] };
+    },
+    { target: "managed_recovery", capabilityKey: "managed_recovery_policy_v1" },
+  );
+
+  registerProTool(
+    "diviops_managed_recovery_policy_update",
+    {
+      description:
+        "Apply exactly the one-site managed recovery policy reviewed by policy_preview (Pro Phase 1A). Recomputes current policy and complete inventory, verifies the short-lived actor/site/body/policy/inventory binding, rechecks manage_options immediately before mutation, stores the versioned policy with autoload=no, verifies readback, and appends metadata-only immutable audit evidence. It never prunes snapshots. Exact request replay returns the prior redacted result; conflicting request_id reuse refuses. " +
+        DRY_RUN_DESC_SUFFIX,
+      inputSchema: {
+        request_id: ManagedRecoveryRequestIdSchema,
+        policy: ManagedRecoveryPolicySchema,
+        ...ManagedRecoveryConfirmationSchema,
+        dry_run: DRY_RUN_FIELD,
+      },
+      annotations: { idempotentHint: true },
+      _meta: { idempotent: "conditional" },
+    },
+    async ({ request_id, policy, confirmation_fingerprint, confirmation_token, dry_run }) => {
+      const body: Record<string, unknown> = { request_id, policy, confirmation_fingerprint, confirmation_token };
+      if (dry_run) body.dry_run = true;
+      const result = await wp.requestEnveloped("/pro/managed-recovery/policy/update", { method: "POST", body });
+      return { content: [{ type: "text" as const, text: serializeEnvelope(result, "diviops_managed_recovery_policy_update") }] };
+    },
+    { target: "managed_recovery", capabilityKey: "managed_recovery_policy_v1" },
+  );
+
+  registerProTool(
+    "diviops_managed_recovery_retention_preview",
+    {
+      description:
+        "Pure-read deterministic retention plan for the active one-site managed recovery policy (Pro Phase 1A). Requires complete non-truncated Free-owned inventory; preserves explicit protections and the newest viable recovery point per target; returns ordered keep/prune/refuse rows, stable reasons, exact IDs and byte/count deltas, and a short-lived retention-only confirmation. Snapshot expiry is advisory evidence, and preview performs zero writes.",
+      inputSchema: { request_id: ManagedRecoveryRequestIdSchema },
+      annotations: { idempotentHint: true },
+      _meta: { idempotent: "true" },
+    },
+    async ({ request_id }) => {
+      const result = await wp.requestEnveloped("/pro/managed-recovery/retention/preview", { method: "POST", body: { request_id } });
+      return { content: [{ type: "text" as const, text: serializeEnvelope(result, "diviops_managed_recovery_retention_preview") }] };
+    },
+    { target: "managed_recovery", capabilityKey: "managed_recovery_retention_v1" },
+  );
+
+  registerProTool(
+    "diviops_managed_recovery_retention_apply",
+    {
+      description:
+        "Delete only the exact ordered snapshot IDs reviewed by retention_preview (Pro Phase 1A). Rechecks manage_options, policy, complete inventory, protections, viability, signature, actor/site/body binding, and plan before the first delete, then delegates exact-ID deletion to Free/core. Stops on first failure and reports exact deleted/failed/unattempted byte/count evidence without claiming transaction rollback. Exact request replay is non-mutating; conflicting reuse refuses. " +
+        DRY_RUN_DESC_SUFFIX,
+      inputSchema: {
+        request_id: ManagedRecoveryRequestIdSchema,
+        ...ManagedRecoveryConfirmationSchema,
+        dry_run: DRY_RUN_FIELD,
+      },
+      annotations: { idempotentHint: true },
+      _meta: { idempotent: "conditional" },
+    },
+    async ({ request_id, confirmation_fingerprint, confirmation_token, dry_run }) => {
+      const body: Record<string, unknown> = { request_id, confirmation_fingerprint, confirmation_token };
+      if (dry_run) body.dry_run = true;
+      const result = await wp.requestEnveloped("/pro/managed-recovery/retention/apply", { method: "POST", body });
+      return { content: [{ type: "text" as const, text: serializeEnvelope(result, "diviops_managed_recovery_retention_apply") }] };
+    },
+    { target: "managed_recovery", capabilityKey: "managed_recovery_retention_v1" },
+  );
+
+  registerProTool(
+    "diviops_managed_recovery_audit_list",
+    {
+      description:
+        "List immutable checksummed metadata-only managed recovery policy/prune audit events (Pro Phase 1A), newest first with bounded pagination. Corrupt events are reported as redacted corruption evidence. Never returns snapshot payload/content, raw post-meta, credentials, signing material, confirmation tokens, or unnecessary URLs/logins.",
+      inputSchema: {
+        page: z.number().int().min(1).max(1000).optional().default(1),
+        per_page: z.number().int().min(1).max(100).optional().default(20),
+      },
+      annotations: { idempotentHint: true },
+      _meta: { idempotent: "true" },
+    },
+    async ({ page, per_page }) => {
+      const result = await wp.requestEnveloped("/pro/managed-recovery/audit", { params: { page: String(page), per_page: String(per_page) } });
+      return { content: [{ type: "text" as const, text: serializeEnvelope(result, "diviops_managed_recovery_audit_list") }] };
+    },
+    { target: "managed_recovery", capabilityKey: "managed_recovery_audit_v1" },
+  );
+
   // diviops_cross_env_header_apply — guarded Pro apply for reviewed header preflight
   registerProTool(
     "diviops_cross_env_header_apply",
@@ -4896,7 +5092,7 @@ function registerProTools(): void {
       description:
         "Apply a reviewed cross-environment Theme Builder header payload into an existing target header layout (Pro tier; requires the cross_env Pro module). This first MVP is intentionally narrow: it requires `confirm_apply: true`, either an inline source export payload or a bounded `source_payload_ref` returned by diviops_cross_env_source_export_get, an existing target `destination_id`, and the reviewed `confirmation_binding.fingerprint` from `diviops-cross-env-preflight`. Large real headers should use `source_payload_ref`; inline `source_payload` remains supported for small/disposable tests. The server loads referenced payload bytes from its own `.diviops-tmp/cross-env-source-payloads/` artifact store, verifies checksum, re-exports current target context, reruns the TypeScript preflight engine, refuses fingerprint mismatch, unsafe verdicts, destination checksum drift, missing/ambiguous attachment remaps, missing global-color value evidence, missing target module preset definitions, and off-canvas/canvas references, then calls the Pro route with the verified plan. The Pro route re-loads the destination post, verifies the current checksum again, builds content only from source-origin upload URL rewrites and proven attachment-ID remaps, writes with readback/rollback evidence, and runs Divi static-resource cleanup plus explicit _divi_dynamic_assets_cached_feature_used cleanup. No media upload/import, global-color creation/import, preset import/clone, new layout creation, off-canvas reconcile, public/store/license change, or live-site smoke is performed by this tool. Returns the standardized envelope { ok, data?, error: { code, message, hint?, data? } }. Error codes include cross_env.confirmation_required, cross_env.source_payload_ref_invalid, cross_env.fingerprint_mismatch, cross_env.preflight_not_safe, cross_env.destination_checksum_drift, cross_env.source_checksum_mismatch, cross_env.content_write_corruption, invalid_input, not_found, forbidden, and wp_error.",
       inputSchema: {
-        source_payload: CrossEnvSourcePayloadSchema.optional().describe(
+        source_payload: CrossEnvHeaderSourcePayloadSchema.optional().describe(
           "The `data` object returned by diviops_cross_env_source_export_get on the source site. Use source_payload_ref instead for large real headers.",
         ),
         source_payload_ref: CrossEnvSourcePayloadRefSchema.optional().describe(
@@ -4967,7 +5163,10 @@ function registerProTools(): void {
           resolvedSourcePayload = source_payload;
         } else {
           try {
-            resolvedSourcePayload = loadSourcePayloadRef(source_payload_ref);
+            resolvedSourcePayload = loadSourcePayloadRef(
+              source_payload_ref,
+              "tb_header_layout",
+            );
           } catch (err) {
             withCode(
               "cross_env.source_payload_ref_invalid",
@@ -5054,6 +5253,189 @@ function registerProTools(): void {
       };
     },
     { target: "cross_env", capabilityKey: "cross_env_header_apply" },
+  );
+
+  registerProTool(
+    "diviops_cross_env_layout_apply",
+    {
+      description:
+        "Apply one reviewed Theme Builder header or footer payload to one existing same-kind target layout (Pro tier; cross_env module). Requires fresh Free source/target evidence, the generic versioned confirmation fingerprint, and confirm_apply: true. Independently refuses kind/post-type mismatch, checksum or template-linkage drift, unsafe dependency evidence, off-canvas wiring, foreign CSS variables, invalid serialization, and readback mismatch before claiming success. A converged target returns already_converged without a write or cache mutation; successful mutation returns rollout_applied with readback, checksums, rollback, supported-meta, and cache evidence. Never creates layouts, mutates template assignment, or reconciles dependencies.",
+      inputSchema: {
+        source_payload: CrossEnvSourcePayloadSchema.optional().describe(
+          "Free source export payload. Use source_payload_ref for large layouts.",
+        ),
+        source_payload_ref: CrossEnvSourcePayloadRefSchema.optional().describe(
+          "Bounded server-local artifact reference from diviops_cross_env_source_export_get.",
+        ),
+        destination_id: z.number().int().positive().describe(
+          "Existing target Theme Builder layout post ID.",
+        ),
+        destination_kind: z
+          .enum(["tb_header_layout", "tb_footer_layout"])
+          .describe("Exact target kind; must match source_payload.object_kind."),
+        reviewed_fingerprint: z
+          .string()
+          .regex(/^(sha256:)?[a-fA-F0-9]{64}$/)
+          .describe("Reviewed generic confirmation_binding fingerprint."),
+        confirm_apply: z.boolean().describe(
+          "Must be true. Missing/false refuses before any target mutation.",
+        ),
+      },
+      annotations: { idempotentHint: false },
+      _meta: { idempotent: "conditional" },
+    },
+    async ({
+      source_payload,
+      source_payload_ref,
+      destination_id,
+      destination_kind,
+      reviewed_fingerprint,
+      confirm_apply,
+    }: {
+      source_payload?: SourceLayoutPayload;
+      source_payload_ref?: SourcePayloadRef;
+      destination_id: number;
+      destination_kind: CrossEnvThemeBuilderLayoutKind;
+      reviewed_fingerprint: string;
+      confirm_apply: boolean;
+    }) => {
+      const result = await wrapResponse(async () => {
+        if (confirm_apply !== true) {
+          withCode(
+            "cross_env.confirmation_required",
+            "confirm_apply: true is required before a Theme Builder layout rollout can mutate content.",
+            "Review the generic preflight report, then retry with confirm_apply: true.",
+          );
+        }
+        if (source_payload && source_payload_ref) {
+          withCode(
+            "invalid_input",
+            "Provide either source_payload or source_payload_ref, not both.",
+            "Use source_payload_ref for large layouts and inline source_payload only for small fixtures.",
+            { fields: ["source_payload", "source_payload_ref"] },
+          );
+        }
+        if (!source_payload && !source_payload_ref) {
+          withCode(
+            "invalid_input",
+            "Either source_payload or source_payload_ref is required.",
+            "Run diviops_cross_env_source_export_get and pass its fresh payload or reference.",
+            { fields: ["source_payload", "source_payload_ref"] },
+          );
+        }
+
+        let resolvedSourcePayload: SourceLayoutPayload;
+        if (source_payload) {
+          resolvedSourcePayload = source_payload;
+        } else {
+          try {
+            resolvedSourcePayload = loadSourcePayloadRef(
+              source_payload_ref,
+              destination_kind,
+            );
+          } catch (err) {
+            withCode(
+              "cross_env.source_payload_ref_invalid",
+              err instanceof Error ? err.message : String(err),
+              "Re-run diviops_cross_env_source_export_get and pass the fresh source_payload_ref.",
+              { source_payload_ref },
+            );
+          }
+        }
+
+        if (resolvedSourcePayload.object_kind !== destination_kind) {
+          withCode(
+            "cross_env.layout_kind_mismatch",
+            "Source and target Theme Builder layout kinds must match.",
+            "Export and target the same header or footer kind.",
+            {
+              source_kind: resolvedSourcePayload.object_kind,
+              destination_kind,
+            },
+          );
+        }
+
+        const isolationHits = scanValueForForeignVarRefs(
+          resolvedSourcePayload.markup,
+          "source_payload.markup",
+        );
+        if (isolationHits.length > 0) {
+          return isolationFailure("diviops_cross_env_layout_apply", isolationHits);
+        }
+
+        const targetEnvelope = await wp.requestEnveloped<TargetLayoutContext>(
+          "/cross-env/target-context",
+          {
+            method: "POST",
+            body: {
+              destination_id,
+              destination_kind,
+              ...sourceHintsFromPayload(resolvedSourcePayload),
+            },
+          },
+        );
+        if (!targetEnvelope.ok) return targetEnvelope;
+
+        const report = preflightCrossEnvThemeBuilderLayoutSync({
+          source: resolvedSourcePayload,
+          target: targetEnvelope.data,
+        });
+        const reviewed = normalizeReviewedFingerprint(reviewed_fingerprint);
+        if (report.confirmation_binding.fingerprint !== reviewed) {
+          withCode(
+            "cross_env.fingerprint_mismatch",
+            "Reviewed confirmation fingerprint does not match the recomputed current generic preflight report.",
+            "Re-run preflight against the latest target context and confirm the new generic fingerprint.",
+            {
+              reviewed_fingerprint: reviewed,
+              recomputed_fingerprint: report.confirmation_binding.fingerprint,
+              current_destination_checksum: report.target.destination_checksum ?? null,
+              current_template_linkage_digest:
+                report.target.template_linkage_digest ?? null,
+            },
+          );
+        }
+        if (report.verdict !== "safe_dry_run") {
+          withCode(
+            "cross_env.preflight_not_safe",
+            "Recomputed generic preflight verdict is not safe for layout rollout.",
+            "Resolve blockers/operator actions, then re-run and re-confirm preflight.",
+            {
+              verdict: report.verdict,
+              blockers: report.blockers,
+              operator_actions: report.operator_actions,
+            },
+          );
+        }
+
+        return wp.requestEnveloped(
+          "/pro/cross-env/theme-builder/layout/apply",
+          {
+            method: "POST",
+            body: {
+              confirm_apply: true,
+              destination_id,
+              destination_kind,
+              source_payload: resolvedSourcePayload,
+              source_checksum: resolvedSourcePayload.checksum,
+              destination_checksum: report.target.destination_checksum,
+              template_linkage_digest: report.target.template_linkage_digest,
+              reviewed_fingerprint: reviewed,
+              preflight_report: report,
+            },
+          },
+        );
+      });
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: serializeEnvelope(result, "diviops_cross_env_layout_apply"),
+          },
+        ],
+      };
+    },
+    { target: "cross_env", capabilityKey: "cross_env_layout_apply" },
   );
 
   // diviops_fc_product_list — bridges /diviops/v1/pro/fluentcart/products
@@ -6701,6 +7083,11 @@ async function main() {
     handshakeState = { kind: "failed" };
     console.error(`Handshake warning (gate disabled): ${msg}`);
   }
+
+  // The cross-env evidence schema is additive-capability aware: older Free
+  // plugins retain the existing header-only enum, while current plugins prove
+  // footer support through cross_env_footer_layout_evidence.
+  registerCrossEnvEvidenceTools();
 
   // Pro coverage-slice registration must run AFTER the handshake so the
   // gates (`pro_active`, `available_targets`, `active_modules`,

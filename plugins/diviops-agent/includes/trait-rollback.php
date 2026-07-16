@@ -41,6 +41,31 @@ trait DiviOps_Agent_Rollback {
 		return self::rollback_snapshot_validate_id( substr( $option_name, strlen( $prefix ) ) );
 	}
 
+	/**
+	 * Normalize the database-local options insertion sequence without relying on
+	 * the platform integer width.
+	 *
+	 * @return string|null Canonical unsigned BIGINT decimal, or null when unsafe.
+	 */
+	private static function rollback_snapshot_storage_sequence( $option_id ): ?string {
+		if ( ! is_int( $option_id ) && ! is_string( $option_id ) ) {
+			return null;
+		}
+		$sequence = (string) $option_id;
+		if ( ! preg_match( '/^[0-9]+$/', $sequence ) ) {
+			return null;
+		}
+		$sequence = ltrim( $sequence, '0' );
+		if ( '' === $sequence ) {
+			return null;
+		}
+		$maximum = '18446744073709551615';
+		if ( strlen( $sequence ) > strlen( $maximum ) || ( strlen( $sequence ) === strlen( $maximum ) && 0 < strcmp( $sequence, $maximum ) ) ) {
+			return null;
+		}
+		return $sequence;
+	}
+
 	private static function rollback_snapshot_current_user_id(): int {
 		return function_exists( 'get_current_user_id' ) ? (int) get_current_user_id() : 0;
 	}
@@ -359,6 +384,49 @@ trait DiviOps_Agent_Rollback {
 		return function_exists( 'get_post' ) ? get_post( (int) $summary['target']['id'] ) : null;
 	}
 
+	/**
+	 * Batch-load managed-inventory targets and prime their post-meta caches.
+	 *
+	 * @param int[] $target_ids Snapshot target post IDs.
+	 * @return array<int,object> Posts keyed by ID.
+	 */
+	private static function rollback_snapshot_managed_target_posts( array $target_ids ): array {
+		$target_ids = array_values( array_unique( array_filter( array_map( 'absint', $target_ids ) ) ) );
+		if ( empty( $target_ids ) ) {
+			return [];
+		}
+
+		$posts = [];
+		if ( function_exists( 'get_posts' ) ) {
+			$loaded = get_posts( [
+				'post__in'               => $target_ids,
+				'post_type'              => 'any',
+				'post_status'            => 'any',
+				'numberposts'             => count( $target_ids ),
+				'orderby'                 => 'post__in',
+				'suppress_filters'        => true,
+				'no_found_rows'           => true,
+				'update_post_meta_cache'  => true,
+				'update_post_term_cache'  => false,
+			] );
+			foreach ( is_array( $loaded ) ? $loaded : [] as $post ) {
+				if ( is_object( $post ) && ! empty( $post->ID ) ) {
+					$posts[ (int) $post->ID ] = $post;
+				}
+			}
+			return $posts;
+		}
+
+		// Standalone fixtures and unusually small hosts may not expose get_posts().
+		foreach ( $target_ids as $target_id ) {
+			$post = function_exists( 'get_post' ) ? get_post( $target_id ) : null;
+			if ( $post ) {
+				$posts[ $target_id ] = $post;
+			}
+		}
+		return $posts;
+	}
+
 	private static function rollback_snapshot_target_access( array $summary ): array {
 		$post = self::rollback_snapshot_target_post( $summary );
 		if ( $post ) {
@@ -388,9 +456,8 @@ trait DiviOps_Agent_Rollback {
 
 		$like = $wpdb->esc_like( self::rollback_snapshot_option_prefix() ) . '%';
 		$scan_limit = max( 1, min( 1000, $scan_limit ) );
-		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- `$wpdb->options` is the WP options table name; values remain prepared.
-		$sql = $wpdb->prepare( "SELECT option_name, option_value, autoload FROM {$wpdb->options} WHERE option_name LIKE %s ORDER BY option_id DESC LIMIT %d", $like, $scan_limit );
-		$rows = $wpdb->get_results( $sql );
+		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- `$wpdb->options` is the WordPress options table; this bounded snapshot scan prepares both values and has no stable cache API equivalent.
+		$rows = $wpdb->get_results( $wpdb->prepare( "SELECT option_name, option_value, autoload FROM {$wpdb->options} WHERE option_name LIKE %s ORDER BY option_id DESC LIMIT %d", $like, $scan_limit ) );
 		if ( ! is_array( $rows ) ) {
 			return [];
 		}
@@ -418,6 +485,205 @@ trait DiviOps_Agent_Rollback {
 		);
 
 		return $records;
+	}
+
+	/**
+	 * Return the complete metadata-only snapshot inventory used by trusted
+	 * site-local recovery orchestration.
+	 *
+	 * This is deliberately a PHP service seam, not a REST route. The Pro
+	 * caller must pass the site-wide administrator gate before it can inspect
+	 * viability, and this method repeats that gate before touching records.
+	 * Snapshot payload bytes and raw post-meta values never leave this method.
+	 *
+	 * @return array|WP_Error Complete inventory evidence or a refusal.
+	 */
+	public static function rollback_snapshot_managed_inventory() {
+		if ( ! current_user_can( 'manage_options' ) ) {
+			return new WP_Error( 'forbidden', 'Managed rollback inventory requires manage_options.', [ 'status' => 403 ] );
+		}
+
+		global $wpdb;
+		if ( ! isset( $wpdb ) || ! is_object( $wpdb ) || empty( $wpdb->options ) ) {
+			return new WP_Error( 'rollback_snapshot.inventory_unavailable', 'Rollback snapshot inventory is unavailable.', [ 'status' => 500 ] );
+		}
+
+		$maximum = 1000;
+		$like    = $wpdb->esc_like( self::rollback_snapshot_option_prefix() ) . '%';
+		// Fetch one sentinel row beyond the supported ceiling so orchestration
+		// can fail closed instead of planning from a silently truncated subset.
+		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- bounded internal inventory has no stable cache API equivalent.
+		$rows = $wpdb->get_results( $wpdb->prepare( "SELECT option_id, option_name, option_value, autoload FROM {$wpdb->options} WHERE option_name LIKE %s ORDER BY option_name ASC LIMIT %d", $like, $maximum + 1 ) );
+		if ( ! is_array( $rows ) ) {
+			return new WP_Error( 'rollback_snapshot.inventory_unavailable', 'Rollback snapshot inventory query failed.', [ 'status' => 500 ] );
+		}
+
+		$truncated = count( $rows ) > $maximum;
+		$rows      = array_slice( $rows, 0, $maximum );
+		$records   = [];
+		$target_ids = [];
+		foreach ( $rows as $row ) {
+			$option_value = is_array( $row ) ? ( $row['option_value'] ?? null ) : ( $row->option_value ?? null );
+			$value = maybe_unserialize( $option_value );
+			if ( is_array( $value ) ) {
+				$target = self::rollback_snapshot_as_array( $value['target'] ?? [] );
+				if ( ! empty( $target['id'] ) ) {
+					$target_ids[] = absint( $target['id'] );
+				}
+			}
+		}
+		$target_posts = self::rollback_snapshot_managed_target_posts( $target_ids );
+		$target_side_effects = [];
+		foreach ( $rows as $row ) {
+			$option_name       = is_array( $row ) ? (string) ( $row['option_name'] ?? '' ) : (string) ( $row->option_name ?? '' );
+			$option_value      = is_array( $row ) ? ( $row['option_value'] ?? null ) : ( $row->option_value ?? null );
+			$autoload          = is_array( $row ) ? ( $row['autoload'] ?? null ) : ( $row->autoload ?? null );
+			$storage_option_id = is_array( $row ) ? ( $row['option_id'] ?? null ) : ( $row->option_id ?? null );
+			$storage_sequence  = self::rollback_snapshot_storage_sequence( $storage_option_id );
+			$value             = maybe_unserialize( $option_value );
+			$snapshot_id_from_option_name = self::rollback_snapshot_id_from_option_name( $option_name );
+			$byte_size         = is_string( $option_value ) ? strlen( $option_value ) : ( is_array( $value ) ? self::rollback_snapshot_raw_byte_size( $option_value, $value ) : 0 );
+
+			if ( ! is_array( $value ) ) {
+				$records[] = [
+					'snapshot_id'      => false === $snapshot_id_from_option_name ? '' : $snapshot_id_from_option_name,
+					'storage_sequence' => $storage_sequence,
+					'malformed'        => true,
+					'viable'           => false,
+					'viability_reasons' => [ 'record_not_array' ],
+					'option'           => [ 'autoload' => null === $autoload ? null : sanitize_key( (string) $autoload ), 'byte_size' => $byte_size ],
+				];
+				continue;
+			}
+
+			$summary = self::rollback_snapshot_normalize_record( $value, $option_name, $option_value, null === $autoload ? null : (string) $autoload );
+			if ( null === $summary ) {
+				$records[] = [
+					'snapshot_id'      => false === $snapshot_id_from_option_name ? '' : $snapshot_id_from_option_name,
+					'storage_sequence' => $storage_sequence,
+					'malformed'        => true,
+					'viable'           => false,
+					'viability_reasons' => [ 'record_identity_invalid' ],
+					'option'           => [ 'autoload' => null === $autoload ? null : sanitize_key( (string) $autoload ), 'byte_size' => $byte_size ],
+				];
+				continue;
+			}
+
+			$reasons = [];
+			if ( 1 !== (int) $summary['schema_version'] ) {
+				$reasons[] = 'schema_unsupported';
+			}
+			if ( empty( $summary['before']['has_value'] ) ) {
+				$reasons[] = 'payload_missing';
+			}
+			if ( ! preg_match( '/^sha256:[a-f0-9]{64}$/', (string) $summary['before']['checksum'] ) || ! preg_match( '/^sha256:[a-f0-9]{64}$/', (string) $summary['after']['checksum'] ) ) {
+				$reasons[] = 'checksum_evidence_missing';
+			}
+			if ( empty( $summary['restore']['restorable'] ) || 'write_applied' !== $summary['status'] ) {
+				$reasons[] = 'status_not_restorable';
+			}
+
+			$target_id = (int) $summary['target']['id'];
+			$post = $target_posts[ $target_id ] ?? null;
+			if ( ! $post ) {
+				$reasons[] = 'target_missing';
+			} elseif ( ! self::rollback_snapshot_supported_target( $post ) ) {
+				$reasons[] = 'target_unsupported';
+			} elseif ( ! self::can_inspect_post_object( $post ) ) {
+				$reasons[] = 'permission_uncertain';
+			} else {
+				$current_checksum = self::rollback_snapshot_checksum( (string) ( $post->post_content ?? '' ) );
+				if ( ! hash_equals( (string) $summary['after']['checksum'], $current_checksum ) ) {
+					$reasons[] = 'content_drift';
+				}
+				$after = self::rollback_snapshot_as_array( $value['after'] ?? [] );
+				$expected_side_effects = self::rollback_snapshot_as_array( $after['side_effects'] ?? [] );
+				if ( ! empty( $expected_side_effects ) && ! isset( $target_side_effects[ $target_id ] ) ) {
+					$target_side_effects[ $target_id ] = self::rollback_snapshot_capture_side_effects( $target_id );
+				}
+				if ( ! empty( $expected_side_effects ) && ! self::rollback_snapshot_side_effects_equal( $expected_side_effects, $target_side_effects[ $target_id ] ) ) {
+					$reasons[] = 'side_effect_drift';
+				}
+			}
+
+			$records[] = [
+				'snapshot_id'      => $summary['snapshot_id'],
+				'storage_sequence' => $storage_sequence,
+				'schema_version'   => $summary['schema_version'],
+				'serializer'       => 'wordpress_divi_full_content.v1',
+				'status'           => $summary['status'],
+				'created_at'       => $summary['created_at'],
+				'expires_at'       => $summary['expires_at'],
+				'expired'          => $summary['expired'],
+				'interrupted'      => $summary['interrupted'],
+				'target'           => array_merge( $summary['target'], [ 'exists' => (bool) $post ] ),
+				'before_checksum'  => $summary['before']['checksum'],
+				'after_checksum'   => $summary['after']['checksum'],
+				'restorable'       => $summary['restore']['restorable'],
+				'malformed'        => false,
+				'viable'           => empty( $reasons ),
+				'viability_reasons' => $reasons,
+				'option'           => [
+					'autoload'  => $summary['option']['autoload'],
+					'byte_size' => $summary['option']['byte_size'],
+				],
+			];
+		}
+
+		usort( $records, static function ( $a, $b ) { return strcmp( (string) ( $a['snapshot_id'] ?? '' ), (string) ( $b['snapshot_id'] ?? '' ) ); } );
+		return [
+			'complete'        => ! $truncated,
+			'truncated'       => $truncated,
+			'limit'           => $maximum,
+			'count'           => count( $records ),
+			'bytes'           => array_sum( array_map( static function ( $record ) { return (int) ( $record['option']['byte_size'] ?? 0 ); }, $records ) ),
+			'malformed_count' => count( array_filter( $records, static function ( $record ) { return ! empty( $record['malformed'] ); } ) ),
+			'records'         => $records,
+		];
+	}
+
+	/**
+	 * Delete one exact snapshot ID for trusted managed-retention code.
+	 * Existing target permission and missing-target administrator cleanup
+	 * semantics remain owned here in Free/core.
+	 *
+	 * @return array|WP_Error Deletion/readback evidence or a refusal.
+	 */
+	public static function rollback_snapshot_managed_delete_exact( $snapshot_id ) {
+		if ( ! current_user_can( 'manage_options' ) ) {
+			return new WP_Error( 'forbidden', 'Managed rollback deletion requires manage_options.', [ 'status' => 403 ] );
+		}
+		$snapshot_id = self::rollback_snapshot_validate_id( $snapshot_id );
+		if ( false === $snapshot_id ) {
+			return new WP_Error( 'invalid_input', 'Invalid rollback snapshot id.', [ 'status' => 400 ] );
+		}
+
+		$option_name = self::rollback_snapshot_option_name( $snapshot_id );
+		$record      = get_option( $option_name, null );
+		if ( ! is_array( $record ) ) {
+			return [ 'snapshot_id' => $snapshot_id, 'deleted' => false, 'already_absent' => true, 'byte_size' => 0 ];
+		}
+		$summary = self::rollback_snapshot_normalize_record( $record, $option_name, $record );
+		if ( null === $summary ) {
+			return new WP_Error( 'rollback_snapshot.malformed', 'Rollback snapshot record is malformed.', [ 'status' => 409, 'snapshot_id' => $snapshot_id ] );
+		}
+		$access = self::rollback_snapshot_target_access( $summary );
+		if ( ! $access['allowed'] ) {
+			return new WP_Error( 'forbidden', 'You cannot delete this rollback snapshot.', [ 'status' => 403, 'snapshot_id' => $snapshot_id ] );
+		}
+
+		$deleted = delete_option( $option_name );
+		$absent  = null === get_option( $option_name, null );
+		if ( ! $deleted || ! $absent ) {
+			return new WP_Error( 'rollback_snapshot.delete_failed', 'Rollback snapshot deletion did not verify.', [ 'status' => 500, 'snapshot_id' => $snapshot_id, 'deleted' => (bool) $deleted, 'absent' => $absent ] );
+		}
+		return [
+			'snapshot_id' => $snapshot_id,
+			'deleted'     => true,
+			'already_absent' => false,
+			'byte_size'   => (int) $summary['option']['byte_size'],
+			'target'      => [ 'kind' => $summary['target']['kind'], 'id' => $summary['target']['id'], 'exists' => $access['exists'] ],
+		];
 	}
 
 	private static function rollback_snapshot_filtered_summaries( $request ): array {

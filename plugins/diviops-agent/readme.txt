@@ -1,9 +1,9 @@
 === DiviOps Agent ===
-Contributors: davidricardo
+Contributors: diviops
 Tags: divi, mcp, ai, rest-api, site-builder
 Requires at least: 6.5
 Tested up to: 7.0
-Stable tag: 1.5.8
+Stable tag: 1.5.9
 Requires PHP: 7.4
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -68,6 +68,12 @@ No. The Free plugin backs the core useful surface. Some higher-leverage workflow
 
 == Changelog ==
 
+= 1.5.9 =
+
+* Extends read-only cross-environment source and target evidence to existing Theme Builder headers and footers when the connected capability supports footer evidence.
+* Adds metadata-only local storage sequence evidence so Pro retention workflows can order same-second rollback snapshots safely without exposing stored payloads.
+* Keeps basic one-site snapshot capture, list, get, delete, dashboard inspection, and guarded restore in Free.
+
 = 1.5.8 =
 
 * Adds a guarded preset-registry doctor for diagnosing and repairing duplicate or stale preset registry entries.
@@ -94,6 +100,6 @@ No. The Free plugin backs the core useful surface. Some higher-leverage workflow
 
 == Upgrade Notice ==
 
-= 1.5.8 =
+= 1.5.9 =
 
-Recommended for beta users who want guarded preset-registry repair, more reliable nested module moves, and stronger CSS variable validation.
+Recommended for beta users who want header/footer rollout evidence and safer same-second rollback snapshot chronology for managed recovery workflows.

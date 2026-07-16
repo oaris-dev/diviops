@@ -112,7 +112,8 @@ Additional **conditionally-registered Pro tools** appear only on sites that have
 | FluentCart order readback + guarded mark-paid (V3.1) | Pro plugin + FluentCart installed + module enabled | `diviops_fc_order_list`, `diviops_fc_order_get`, `diviops_fc_order_mark_paid` |
 | FluentCart license readback (V3.1) | Pro plugin + FluentCart Pro installed + module enabled | `diviops_fc_license_list`, `diviops_fc_license_get`, `diviops_fc_license_activations_list` |
 | FluentCart checkout readiness / gateway inspection (V3.2) | Pro plugin + FluentCart installed + module enabled | `diviops_fc_status`, `diviops_fc_gateway_list`, `diviops_fc_gateway_get` |
-| Cross-env guarded apply | Pro plugin + `cross_env` module enabled | `diviops_cross_env_header_apply` |
+| Cross-env reviewed layout rollout | Pro plugin + `cross_env` module enabled | `diviops_cross_env_header_apply`, `diviops_cross_env_layout_apply` |
+| Managed recovery Phase 1A | Pro plugin + opt-in `managed_recovery` module enabled | `diviops_managed_recovery_policy_get`, `diviops_managed_recovery_policy_preview`, `diviops_managed_recovery_policy_update`, `diviops_managed_recovery_retention_preview`, `diviops_managed_recovery_retention_apply`, `diviops_managed_recovery_audit_list` |
 
 When the gates are not satisfied, the tools simply don't appear on the MCP surface — no error envelope, no missing-capability hint. See the `diviops-fluentcart` skill bundle for the operator-side guide.
 
@@ -172,8 +173,13 @@ diviops-cross-env-preflight --source source.json --target target.json --dry-run
 
 This command reads two secret-free JSON files and prints a report. It does not
 connect to WordPress, does not accept credentials, and has no write/apply path.
-The MVP supports `tb_header_layout` source payloads preflighted against an
-existing `tb_header_layout` target context. It reports source-domain upload URL
+The CLI supports `tb_header_layout` and `tb_footer_layout` source payloads
+preflighted against existing same-kind targets. Header-only inputs retain the
+shipped header-v1 report/fingerprint; footer inputs use the generic layout-v1
+binding by default. Pass `--contract layout-v1` to emit the generic binding for
+a header rollout through `diviops_cross_env_layout_apply`; `--contract
+header-v1` explicitly selects the compatibility contract and accepts header
+inputs only. It reports source-domain upload URL
 rewrites, attachment remap status, `gcid-*` target resolution including Divi
 built-in customizer colors, resolved target global-color value evidence,
 referenced `modulePreset` target-presence status, off-canvas/canvas refusal, and
@@ -183,8 +189,14 @@ target identity/current target checksum, rewrite plan, cache plan,
 blocker/operator-action codes, reference-resolution summaries, target module
 preset resolution, and the per-`gcid` value evidence for target colors
 referenced by the source layout.
-The fingerprint is reviewed-plan evidence for the Pro-gated
-`diviops_cross_env_header_apply` tool. The CLI itself still has no apply path.
+The fingerprint is reviewed-plan evidence for the Pro-gated compatibility
+`diviops_cross_env_header_apply` or generic `diviops_cross_env_layout_apply`
+tool. The CLI itself still has no apply path.
+
+The Free plugin advertises `cross_env_footer_layout_evidence` when its source
+export and target-context routes support footer kinds. The server selects those
+two tools' public enums only after handshake: older or unproven plugins retain
+the shipped header-only schemas instead of advertising unsupported footer input.
 
 To collect the source JSON from the source WordPress site, call the Free/core
 read-only MCP tool `diviops_cross_env_source_export_get` and save the returned
@@ -198,8 +210,8 @@ filesystem paths.
 
 The MCP server also writes the same source payload to a bounded local artifact
 under `.diviops-tmp/cross-env-source-payloads/` and returns
-`data.source_payload_ref`. Use that reference for large real headers when
-calling the Pro `diviops_cross_env_header_apply` tool; it avoids asking an LLM
+`data.source_payload_ref`. Use that reference for large real layouts when
+calling a Pro layout apply tool; it avoids asking an LLM
 to re-emit large markup byte-for-byte. The reference is a server-created handle
 plus checksum, not an arbitrary filesystem path.
 
@@ -218,6 +230,11 @@ entries that are referenced by source markup.
 It also includes target D5 module preset IDs, without preset definitions, so the
 preflight can fail closed when source markup references a module preset the
 target site does not have.
+For header/footer generic preflight it also includes exact target post type and
+a canonical template-linkage digest over the active Theme Builder master ID,
+its exact `_et_template` order, and linked-template slot, enabled, condition,
+and exclusion evidence. Empty linkage uses `master_template_ids: []` and
+`links: []`; assignment state is evidence only and is never mutated by rollout.
 
 Workflow:
 
@@ -225,12 +242,15 @@ Workflow:
    returned `data` object as `source.json`.
 2. Call `diviops_cross_env_target_context_get` on the target site and save the
    returned `data` object as `target.json`.
-3. Run `diviops-cross-env-preflight --source source.json --target target.json --dry-run`.
+3. Run `diviops-cross-env-preflight --source source.json --target target.json --dry-run --contract layout-v1`
+   for `diviops_cross_env_layout_apply`. Omit the contract flag (or select
+   `header-v1`) only for the compatibility header apply tool.
 
 `--apply` is intentionally refused. To mutate a target, use the separate
-Pro-gated `diviops_cross_env_header_apply` tool with the reviewed fingerprint
-and either inline `source_payload` for small/disposable tests or
-`source_payload_ref` for large real headers. That MVP still refuses media
+Pro-gated `diviops_cross_env_layout_apply` tool with the generic reviewed
+fingerprint and either inline `source_payload` for small/disposable tests or
+`source_payload_ref` for large layouts. The existing header tool remains the
+header-v1 compatibility path. Both refuse media
 upload/import, global color creation/import, off-canvas reconcile, and new
 target layout creation.
 

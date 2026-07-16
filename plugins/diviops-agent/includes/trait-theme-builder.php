@@ -208,7 +208,7 @@ trait DiviOps_Agent_ThemeBuilder {
 	}
 
 	/**
-	 * Export read-only target context for the offline cross-env header preflight.
+	 * Export read-only target context for offline cross-env header/footer preflight.
 	 *
 	 * This route intentionally does not read source markup and does not write target
 	 * content. It returns the secret-free target JSON consumed by
@@ -217,6 +217,8 @@ trait DiviOps_Agent_ThemeBuilder {
 	public static function cross_env_target_context_get( $request ) {
 		$destination_id   = absint( $request->get_param( 'destination_id' ) );
 		$destination_kind = sanitize_key( (string) ( $request->get_param( 'destination_kind' ) ?: 'tb_header_layout' ) );
+		$kind_map         = self::cross_env_layout_kind_map();
+		$expected_type    = $kind_map[ $destination_kind ] ?? '';
 
 		if ( $destination_id <= 0 ) {
 			return self::envelope_error(
@@ -228,22 +230,22 @@ trait DiviOps_Agent_ThemeBuilder {
 			);
 		}
 
-		if ( 'tb_header_layout' !== $destination_kind ) {
+		if ( '' === $expected_type ) {
 			return self::envelope_error(
 				'invalid_input',
-				'Only destination_kind=tb_header_layout is supported for this read-only target context export.',
-				'Use the existing target Theme Builder header layout ID.',
+				'Only destination_kind=tb_header_layout or tb_footer_layout is supported for this read-only target context export.',
+				'Use an existing same-kind Theme Builder header or footer layout ID.',
 				400,
 				[ 'received' => $destination_kind ]
 			);
 		}
 
 		$post = get_post( $destination_id );
-		if ( ! $post || 'et_header_layout' !== $post->post_type ) {
+		if ( ! $post || $expected_type !== $post->post_type ) {
 			return self::envelope_error(
 				'not_found',
-				"Theme Builder header layout #{$destination_id} not found.",
-				'Run diviops_tb_template_list and use a valid header_layout_id.',
+				"Theme Builder {$destination_kind} #{$destination_id} not found.",
+				'Run diviops_tb_template_list and use a valid same-kind layout ID.',
 				404,
 				[
 					'destination_id'   => $destination_id,
@@ -254,7 +256,7 @@ trait DiviOps_Agent_ThemeBuilder {
 		if ( ! current_user_can( 'edit_post', $destination_id ) ) {
 			return self::envelope_error(
 				'forbidden',
-				"Cannot inspect Theme Builder header layout #{$destination_id}.",
+				"Cannot inspect Theme Builder layout #{$destination_id}.",
 				'Authenticate as a user with edit rights to this layout.',
 				403,
 				[ 'destination_id' => $destination_id ]
@@ -267,12 +269,14 @@ trait DiviOps_Agent_ThemeBuilder {
 		);
 		$attachments = self::cross_env_attachment_candidates( $hints['assets'], $hints['source_ids'] );
 		$remaps      = self::cross_env_attachment_remaps( $attachments, $hints['source_ids'] );
+		$linkage     = self::cross_env_template_linkage( $destination_id, $destination_kind, $expected_type );
 
 		return self::envelope_success( [
 			'origin'                       => self::cross_env_site_origin(),
-			'destination_kind'             => 'tb_header_layout',
+			'destination_kind'             => $destination_kind,
 			'destination_id'               => $destination_id,
 			'destination_title'            => (string) $post->post_title,
+			'destination_post_type'        => $expected_type,
 			'destination_checksum'         => [
 				'algorithm' => 'sha256',
 				'input'     => 'post_content',
@@ -285,9 +289,12 @@ trait DiviOps_Agent_ThemeBuilder {
 			'attachments'                  => $attachments,
 			'attachment_remaps'            => (object) $remaps,
 			'cache_scope'                  => 'theme_builder_global',
+			'template_linkage'             => $linkage['evidence'],
+			'template_linkage_digest'      => $linkage['digest'],
 			'_meta'                        => [
 				'read_only'                   => true,
 				'destination_checksum'        => 'sha256 hex of current target layout post_content; raw post_content is not exported',
+				'template_linkage_digest'     => 'sha256 over canonical versioned target kind/post-type/id plus active Theme Builder master ID, exact master template order, and linked-template slot/enabled/condition/exclusion evidence; empty linkage is represented by master_template_ids=[] and links=[]',
 				'global_color_value_evidence' => 'sha256 hex of resolved target color values for user global colors and WP Customizer-backed built-ins; raw values are not exported here',
 				'module_preset_inventory'     => 'target D5 module preset IDs only; preset definitions are not exported',
 				'attachment_matching'         => 'basename_or_upload_path_exact',
@@ -300,15 +307,17 @@ trait DiviOps_Agent_ThemeBuilder {
 	}
 
 	/**
-	 * Export read-only source payload for the offline cross-env header preflight.
+	 * Export read-only source payload for offline cross-env header/footer preflight.
 	 *
-	 * This route is a Free/core primitive: it reads one source header layout and
+	 * This route is a Free/core primitive: it reads one source header/footer layout and
 	 * returns secret-free JSON suitable for diviops-cross-env-preflight --source.
 	 * It has no apply, reconcile, media import, global color import, or cache path.
 	 */
 	public static function cross_env_source_export_get( $request ) {
 		$source_id   = absint( $request->get_param( 'source_id' ) );
 		$source_kind = sanitize_key( (string) ( $request->get_param( 'source_kind' ) ?: 'tb_header_layout' ) );
+		$kind_map    = self::cross_env_layout_kind_map();
+		$expected_type = $kind_map[ $source_kind ] ?? '';
 
 		if ( $source_id <= 0 ) {
 			return self::envelope_error(
@@ -320,22 +329,22 @@ trait DiviOps_Agent_ThemeBuilder {
 			);
 		}
 
-		if ( 'tb_header_layout' !== $source_kind ) {
+		if ( '' === $expected_type ) {
 			return self::envelope_error(
 				'invalid_input',
-				'Only source_kind=tb_header_layout is supported for this read-only source export.',
-				'Use an existing source Theme Builder header layout ID.',
+				'Only source_kind=tb_header_layout or tb_footer_layout is supported for this read-only source export.',
+				'Use an existing source Theme Builder header or footer layout ID.',
 				400,
 				[ 'received' => $source_kind ]
 			);
 		}
 
 		$post = get_post( $source_id );
-		if ( ! $post || 'et_header_layout' !== $post->post_type ) {
+		if ( ! $post || $expected_type !== $post->post_type ) {
 			return self::envelope_error(
 				'not_found',
-				"Theme Builder header layout #{$source_id} not found.",
-				'Run diviops_tb_template_list and use a valid header_layout_id.',
+				"Theme Builder {$source_kind} #{$source_id} not found.",
+				'Run diviops_tb_template_list and use a valid same-kind layout ID.',
 				404,
 				[
 					'source_id'   => $source_id,
@@ -346,7 +355,7 @@ trait DiviOps_Agent_ThemeBuilder {
 		if ( ! current_user_can( 'edit_post', $source_id ) ) {
 			return self::envelope_error(
 				'forbidden',
-				"Cannot inspect Theme Builder header layout #{$source_id}.",
+				"Cannot inspect Theme Builder layout #{$source_id}.",
 				'Authenticate as a user with edit rights to this layout.',
 				403,
 				[ 'source_id' => $source_id ]
@@ -358,9 +367,10 @@ trait DiviOps_Agent_ThemeBuilder {
 
 		return self::envelope_success( [
 			'origin'          => self::cross_env_site_origin(),
-			'object_kind'     => 'tb_header_layout',
+			'object_kind'     => $source_kind,
 			'object_id'       => $source_id,
 			'object_title'    => (string) $post->post_title,
+			'object_post_type'=> $expected_type,
 			'markup'          => $markup,
 			'checksum'        => hash( 'sha256', $markup ),
 			'attachments'     => self::cross_env_source_attachments_from_markup( $markup ),
@@ -378,6 +388,97 @@ trait DiviOps_Agent_ThemeBuilder {
 				'free_pro_placement'         => 'free_core',
 			],
 		] );
+	}
+
+	private static function cross_env_layout_kind_map(): array {
+		return [
+			'tb_header_layout' => 'et_header_layout',
+			'tb_footer_layout' => 'et_footer_layout',
+		];
+	}
+
+	private static function cross_env_template_linkage( int $layout_id, string $kind, string $post_type ): array {
+		$slot = 'tb_header_layout' === $kind ? 'header' : 'footer';
+		$id_key = '_et_' . $slot . '_layout_id';
+		$enabled_key = '_et_' . $slot . '_layout_enabled';
+		$master_id = self::find_active_master();
+		$master_template_ids = self::get_master_template_ids( $master_id );
+		$links = [];
+		foreach ( $master_template_ids as $master_position => $template_id ) {
+			$template = get_post( $template_id );
+			if ( ! $template || 'et_template' !== $template->post_type || $layout_id !== absint( get_post_meta( $template_id, $id_key, true ) ) ) {
+				continue;
+			}
+			$links[] = [
+				'template_id'     => $template_id,
+				'master_position' => (int) $master_position,
+				'slot'            => $slot,
+				'layout_id'       => $layout_id,
+				'layout_enabled'  => '1' === (string) get_post_meta( $template_id, $enabled_key, true ),
+				'template_enabled'=> '1' === (string) get_post_meta( $template_id, '_et_enabled', true ),
+				'template_default'=> '1' === (string) get_post_meta( $template_id, '_et_default', true ),
+				'conditions'      => self::cross_env_sorted_template_meta( $template_id, '_et_use_on' ),
+				'exclusions'      => self::cross_env_sorted_template_meta( $template_id, '_et_exclude_from' ),
+			];
+		}
+		$input = [
+			'schema'                => 'diviops.cross_env.theme_builder_layout.linkage.v1',
+			'destination_kind'      => $kind,
+			'destination_id'        => $layout_id,
+			'destination_post_type' => $post_type,
+			'active_master_id'       => $master_id,
+			'master_template_ids'    => $master_template_ids,
+			'links'                 => $links,
+		];
+		return [
+			'evidence' => $input,
+			'digest'   => [
+				'algorithm' => 'sha256',
+				'input'     => 'canonical_template_linkage',
+				'computed'  => hash( 'sha256', self::cross_env_canonical_json( $input ) ),
+			],
+		];
+	}
+
+	private static function cross_env_sorted_template_meta( int $template_id, string $meta_key ): array {
+		$values = get_post_meta( $template_id, $meta_key, false );
+		if ( ! is_array( $values ) ) {
+			return [];
+		}
+		$normalized = [];
+		foreach ( $values as $value ) {
+			if ( null === $value || '' === $value ) {
+				continue;
+			}
+			$normalized[] = self::cross_env_canonicalize( $value );
+		}
+		usort( $normalized, static function ( $left, $right ): int {
+			return strcmp( self::cross_env_canonical_json( $left ), self::cross_env_canonical_json( $right ) );
+		} );
+		return $normalized;
+	}
+
+	private static function cross_env_canonical_json( $value ): string {
+		return (string) json_encode( self::cross_env_canonicalize( $value ), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE );
+	}
+
+	private static function cross_env_canonicalize( $value ) {
+		if ( is_array( $value ) ) {
+			$is_list = array_keys( $value ) === range( 0, count( $value ) - 1 );
+			if ( $is_list ) {
+				return array_map( [ __CLASS__, 'cross_env_canonicalize' ], $value );
+			}
+			$sorted = [];
+			foreach ( $value as $key => $nested ) {
+				$sorted[ $key ] = self::cross_env_canonicalize( $nested );
+			}
+			ksort( $sorted, SORT_STRING );
+			return $sorted;
+		}
+		if ( is_object( $value ) ) {
+			return self::cross_env_canonicalize( get_object_vars( $value ) );
+		}
+		return $value;
 	}
 
 	private static function cross_env_site_origin(): string {
