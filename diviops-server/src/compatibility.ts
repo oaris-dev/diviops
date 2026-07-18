@@ -6,12 +6,11 @@
  * `/handshake`. See `wp-client.ts` (handshake parse) and `index.ts`
  * (`requireCapability` gate at each plugin-touching tool entry).
  *
- * Implicit floor: pre-1.2.0 plugins emit `capabilities` as a string[] of
- * coarse namespace tags, not the per-tool map this server expects.
- * `wp-client.ts` normalizes that legacy shape to an empty map, which makes
- * every gated tool fail fast with the upgrade hint. So while there is no
- * declared `MIN_PLUGIN_VERSION` constant, the capability-map shape change
- * effectively sets a 1.2.0 floor for any tool that calls `requireCapability`.
+ * Legacy plugins may emit `capabilities` as a string[] of coarse namespace
+ * tags, not the per-tool map this server expects. `wp-client.ts` normalizes
+ * that legacy shape to an empty map, which makes every gated tool fail fast
+ * with capability-based upgrade guidance. No numeric plugin-version floor is
+ * inferred from that legacy response.
  *
  * `compareVersions` is kept exported because handshake helper code and
  * future per-tool soft-deprecation messages may want it.
@@ -113,7 +112,7 @@ export interface HandshakePluginInfo {
  */
 export interface HandshakeResult {
   compatible: boolean;
-  plugin_version: string;
+  plugin_version?: string | null;
   min_server: string;
   divi: {
     active: boolean;
@@ -158,12 +157,55 @@ export function proToolGatesSatisfied(
 export class MissingCapabilityError extends Error {
   constructor(
     public readonly capability: string,
-    public readonly pluginVersion: string,
+    public readonly pluginVersion?: string | null,
+    public readonly pluginComponent: "free" | "pro" = "free",
   ) {
-    super(
-      `Tool requires plugin capability "${capability}", which is not present in the active diviops-agent plugin (version ${pluginVersion}). ` +
-        'Upgrade the diviops-agent plugin to the version shipped alongside this MCP server release.',
-    );
+    super(capabilityMissingMessage(capability, pluginVersion, pluginComponent));
     this.name = 'MissingCapabilityError';
   }
+}
+
+export function observedVersion(version?: string | null): string | null {
+  if (typeof version !== "string") return null;
+  const normalized = version.trim();
+  return normalized && normalized.toLowerCase() !== "unknown"
+    ? normalized
+    : null;
+}
+
+export function capabilityMissingMessage(
+  capability: string,
+  pluginVersion?: string | null,
+  pluginComponent: "free" | "pro" = "free",
+): string {
+  const component =
+    pluginComponent === "pro"
+      ? "Pro WordPress plugin"
+      : "Free WordPress plugin";
+  const version = observedVersion(pluginVersion);
+  const versionEvidence = version ? ` (observed version ${version})` : "";
+  return (
+    `The connected ${component}${versionEvidence} does not advertise ` +
+    `the "${capability}" capability required by this operation. ` +
+    "MCP server and WordPress plugin versions are independent."
+  );
+}
+
+export function capabilityUpgradeHint(
+  capability: string,
+  pluginComponent: "free" | "pro" = "free",
+  alternative?: string,
+): string {
+  const component =
+    pluginComponent === "pro"
+      ? "Pro WordPress plugin"
+      : "Free WordPress plugin";
+  const fallback = alternative ? ` ${alternative}` : "";
+  return (
+    "MCP server and WordPress plugin versions are independent. " +
+    `Install a compatible ${component} from the same DiviOps suite release ` +
+    `or a newer supported component that advertises "${capability}", then ` +
+    "reconnect or restart the MCP session to refresh the capability handshake." +
+    fallback
+  );
 }

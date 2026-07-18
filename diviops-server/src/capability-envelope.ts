@@ -1,4 +1,8 @@
-import { MissingCapabilityError } from "./compatibility.js";
+import {
+  capabilityUpgradeHint,
+  MissingCapabilityError,
+  observedVersion,
+} from "./compatibility.js";
 import {
   type DiviopsResponse,
   ErrorCodes,
@@ -9,8 +13,11 @@ export type MissingCapabilityMcpResult = {
   content: Array<{ type: "text"; text: string }>;
 };
 
-const DEFAULT_HINT =
-  "Update the diviops-agent WP plugin to the version shipped with this MCP server release.";
+export type MissingCapabilityEnvelopeOptions = {
+  hint?: string;
+  serverVersion?: string | null;
+  releaseEvidence?: unknown;
+};
 
 /**
  * Convert a server-side capability gate failure into the canonical DiviOps
@@ -19,19 +26,31 @@ const DEFAULT_HINT =
 export function missingCapabilityEnvelope(
   error: MissingCapabilityError,
   toolName: string,
-  hint: string = DEFAULT_HINT,
+  options: MissingCapabilityEnvelopeOptions = {},
 ): MissingCapabilityMcpResult {
+  const pluginVersion = observedVersion(error.pluginVersion);
+  const serverVersion = observedVersion(options.serverVersion);
+  const diagnosticData: Record<string, unknown> = {
+    capability: error.capability,
+    plugin_component:
+      error.pluginComponent === "pro" ? "diviops-agent-pro" : "diviops-agent",
+    tool: toolName,
+  };
+  if (pluginVersion) diagnosticData.plugin_version = pluginVersion;
+  if (serverVersion) diagnosticData.server_version = serverVersion;
+  if (options.releaseEvidence !== undefined) {
+    diagnosticData.release_evidence = options.releaseEvidence;
+  }
+
   const failure: DiviopsResponse<never> = {
     ok: false,
     error: {
       code: ErrorCodes.CAPABILITY_MISSING,
       message: error.message,
-      hint,
-      data: {
-        capability: error.capability,
-        plugin_version: error.pluginVersion,
-        tool: toolName,
-      },
+      hint:
+        options.hint ??
+        capabilityUpgradeHint(error.capability, error.pluginComponent),
+      data: diagnosticData,
     },
   };
 

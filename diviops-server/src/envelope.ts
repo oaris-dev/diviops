@@ -60,7 +60,7 @@ export const ErrorCodes = {
   WP_ERROR: "wp_error",
   /** Divi-specific error (block parser, validator, etc.). HTTP 500. */
   DIVI_ERROR: "divi_error",
-  /** Plugin version below required for this tool (#486 handshake miss). HTTP 412. */
+  /** Connected plugin does not advertise the required capability. HTTP 412. */
   CAPABILITY_MISSING: "capability_missing",
   /** validate_blocks-detected shape error in submitted markup. HTTP 400. */
   VALIDATION_FAILED: "validation_failed",

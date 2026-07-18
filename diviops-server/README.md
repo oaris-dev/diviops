@@ -83,7 +83,7 @@ The skill enforces the Divi block format, the design system, and the response co
 
 ## Tools at a glance
 
-The server exposes **91 always-on tools** across the categories below. Each category links to representative tools; the full table lives in [server-reference.md](../docs/server-reference.md).
+The server exposes **94 always-on tools** across the categories below. Each category links to representative tools; the full table lives in [server-reference.md](../docs/server-reference.md).
 
 | Category | Use case | Tool prefixes |
 |----------|----------|---------------|
@@ -91,6 +91,7 @@ The server exposes **91 always-on tools** across the categories below. Each cate
 | Design system | Manage colors, fonts, variables, presets | `variable_*`, `global_color_*`, `global_font_*`, `preset_*` |
 | Library + templates | Reusable layouts + Theme Builder | `library_*`, `template_*`, `tb_*` |
 | WordPress menus | Author reusable nav menus and theme-location assignments | `menu_*` |
+| Semantic SEO metadata | Inspect provider support and author two explicit TSF text fields with checksum/readback guards | `seo_*` |
 | Schema introspection | Module attribute discovery | `schema_*` |
 | Canvas / off-canvas | Popups, modals, menus | `canvas_*` |
 | SCF integration | Secure Custom Fields sync | `scf_*` |
@@ -274,13 +275,13 @@ Tools return a standardized envelope. The shape lets clients branch on `ok` and 
 | `validation_failed` | 400 | `validate_blocks`-detected shape error |
 | `conflict` | 409 | Uniqueness collision |
 | `forbidden` | 403 | Row-level WordPress auth signal |
-| `capability_missing` | 412 | Plugin version below required for this tool |
+| `capability_missing` | 412 | Connected plugin does not advertise the capability required by this tool; component versions are independent |
 | `wp_error` | 500 | Underlying WordPress error |
 | `divi_error` | 500 | Divi-specific error (block parser, validator, etc.) |
 
 ### Namespace-specific codes
 
-Namespaces extend the vocabulary using the `<namespace>.<reason>` convention — e.g. `meta_wp_cli.command_failed`, `scf.not_configured`, `preset.bucket_mismatch`, `variable.customizer_default_immutable`. Namespace-prefixed codes carry structured `error.data` documenting the failure (exit codes, conflicting fields, reference counts, etc.). Per-tool descriptions name the codes each tool emits and the `error.data` shape that accompanies them.
+Namespaces extend the vocabulary using the `<namespace>.<reason>` convention — e.g. `meta_wp_cli.command_failed`, `scf.not_configured`, `preset.bucket_mismatch`, `variable.customizer_default_immutable`, `seo.provider_absent`, and `seo.metadata_drift`. Namespace-prefixed codes carry structured `error.data` documenting the failure (exit codes, conflicting fields, reference counts, checksums, rollback evidence, etc.). Per-tool descriptions name the codes each tool emits and the `error.data` shape that accompanies them.
 
 ### Per-tool `error.data` extensions
 
@@ -319,6 +320,13 @@ permission, refuses content or supported Divi post-meta drift before mutation,
 uses the same full-content integrity/readback guard, and has no force override
 or second pre-restore snapshot in this MVP.
 
+`diviops_seo_metadata_update` is a separate explicit-metadata-only path. It
+accepts no raw provider keys, requires the checksum from
+`diviops_seo_metadata_get`, validates plain text before TSF sanitization,
+verifies exact stored readback, and performs request-local restoration on a
+mismatch. It does not create a persistent rollback snapshot; effective
+provider output is verified through a follow-up get request.
+
 ### `_meta.idempotent` markers
 
 Every tool's `_meta.idempotent` field documents how it behaves under repeat calls with identical inputs. Some tools are silent-success idempotent (e.g. `page_trash` on an already-trashed post returns `ok: true` with `data.already_trashed = true`); others are side-effect-equivalent (re-running produces the same final state via different intermediate effects). See [idempotency-audit.md](../docs/idempotency-audit.md) for the per-tool record.
@@ -350,7 +358,7 @@ Common quick fixes — full reference in [troubleshooting.md](../docs/troublesho
 - **"Missing required environment variable(s)"** — ensure `WP_URL`, `WP_USER`, `WP_APP_PASSWORD` are all set on `claude mcp add`.
 - **`npx` fails with "could not determine executable to run"** — use `npx -y --package @diviops/mcp-server diviops-mcp`; this explicitly selects the MCP server bin.
 - **"Connection failed"** — verify the plugin is active by visiting `{WP_URL}/wp-json/diviops/v1/schema/settings`; test the credentials with `curl -u "user:pass" …`.
-- **"This tool requires plugin capability"** — the plugin doesn't advertise the capability this tool needs. Update the plugin to the latest release.
+- **"This tool requires plugin capability"** — the connected plugin does not advertise the capability this tool needs. Server and plugin versions are independent; install a compatible plugin from the same DiviOps suite release or a newer supported component, then reconnect or restart the MCP session to refresh the handshake.
 - **Preset edits not visible on the frontend** — Divi serves frontend CSS from `wp-content/et-cache/{post_id}/`, which `wp cache flush` doesn't touch. Use `diviops_meta_flush_cache` after preset writes; `post_id` mode also sweeps that exact directory and reports `post_dir_sweep` evidence.
 
 ## Learn more

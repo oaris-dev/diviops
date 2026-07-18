@@ -9,6 +9,12 @@ Policy:
 - Keep entries customer-facing. Avoid internal issue numbers unless they are needed to explain a user-visible change.
 - Do not include secrets, credentials, customer data, or environment-specific URLs.
 
+## 1.5.10
+
+- Adds provider-neutral discovery plus guarded get, set, and clear operations for explicit The SEO Framework `seo_title` and `meta_description` values on one editable post.
+- Requires exact target edit permission before exposing stored values or writing, and reports dry-run, checksum drift refusal, exact no-op, provider readback, lifecycle/cache, and verified request-local rollback evidence.
+- Keeps the caller contract semantic and explicit-metadata-only. Generic or caller-controlled postmeta, automatic Divi/dynamic-content/Theme Builder description extraction, and bulk, policy, cross-site, scheduled, managed, or fleet SEO workflows remain outside this Free/core primitive.
+
 ## 1.5.9
 
 - Extends read-only cross-environment source export and target-context evidence to existing Theme Builder headers and footers when the connected capability supports footer evidence, including checksums, dependency/linkage evidence, and preflight/refusal data.

@@ -3,7 +3,7 @@
  * Plugin Name: DiviOps Agent
  * Plugin URI: https://github.com/oaris-dev/diviops
  * Description: REST API bridge for DiviOps — connects Claude Code to your Divi 5 site for AI-powered page building and design management.
- * Version: 1.5.9
+ * Version: 1.5.10
  * Author: oaris.de
  * Author URI: https://oaris.de
  * Text Domain: diviops-agent
@@ -33,6 +33,7 @@ require_once __DIR__ . '/includes/trait-page.php';
 require_once __DIR__ . '/includes/trait-preset.php';
 require_once __DIR__ . '/includes/trait-render.php';
 require_once __DIR__ . '/includes/trait-rollback.php';
+require_once __DIR__ . '/includes/trait-seo.php';
 require_once __DIR__ . '/includes/trait-theme-builder.php';
 require_once __DIR__ . '/includes/trait-validate.php';
 require_once __DIR__ . '/includes/trait-variable.php';
@@ -56,6 +57,7 @@ class DiviOps_Agent {
 	use DiviOps_Agent_Preset;
 	use DiviOps_Agent_Render;
 	use DiviOps_Agent_Rollback;
+	use DiviOps_Agent_SEO;
 	use DiviOps_Agent_ThemeBuilder;
 	use DiviOps_Agent_Validate;
 	use DiviOps_Agent_Variable;
@@ -64,7 +66,7 @@ class DiviOps_Agent {
 	 * Plugin version — surfaced in /handshake for self-diagnosis only;
 	 * server no longer gates on it (capability map is the gate).
 	 */
-	const VERSION = '1.5.9';
+	const VERSION = '1.5.10';
 
 	/**
 	 * Minimum MCP server version this plugin is compatible with.
@@ -114,6 +116,8 @@ class DiviOps_Agent {
 		'render_preview',
 		// rollback snapshots
 		'rollback_snapshot_delete', 'rollback_snapshot_get', 'rollback_snapshot_list', 'rollback_snapshot_restore',
+		// semantic SEO metadata
+		'seo_provider_list', 'seo_metadata_get', 'seo_metadata_update',
 		// schema
 		'schema_get_module', 'schema_get_module_dump_all', 'schema_get_settings', 'schema_list_modules',
 		// section
@@ -366,6 +370,10 @@ class DiviOps_Agent {
 		return current_user_can( 'edit_pages' );
 	}
 
+	public static function check_authenticated_permission() {
+		return get_current_user_id() > 0;
+	}
+
 	public static function check_admin_permission() {
 		return current_user_can( 'manage_options' );
 	}
@@ -403,6 +411,66 @@ class DiviOps_Agent {
 		}
 
 		// ── Read Operations ──────────────────────────────────────────
+
+		register_rest_route( self::REST_NAMESPACE, '/seo/provider/list', [
+			'methods'             => 'GET',
+			'callback'            => [ __CLASS__, 'seo_provider_list' ],
+			'permission_callback' => [ __CLASS__, 'check_read_permission' ],
+		] );
+
+		register_rest_route( self::REST_NAMESPACE, '/seo/metadata/(?P<id>\d+)', [
+			'methods'             => 'GET',
+			'callback'            => [ __CLASS__, 'seo_metadata_get' ],
+			// Preserve the handler's canonical target-specific error envelope.
+			'permission_callback' => [ __CLASS__, 'check_authenticated_permission' ],
+			'args'                => [
+				'id'       => [ 'required' => true, 'type' => 'integer', 'minimum' => 1 ],
+				'provider' => [
+					'required' => false,
+					'type'     => 'string',
+					'enum'     => [ 'auto', 'tsf' ],
+					'default'  => 'auto',
+				],
+			],
+		] );
+
+		register_rest_route( self::REST_NAMESPACE, '/seo/metadata/(?P<id>\d+)', [
+			'methods'             => 'POST',
+			'callback'            => [ __CLASS__, 'seo_metadata_update' ],
+			// The handler enforces edit_post before any provider payload read.
+			'permission_callback' => [ __CLASS__, 'check_authenticated_permission' ],
+			'args'                => [
+				'id'                => [ 'required' => true, 'type' => 'integer', 'minimum' => 1 ],
+				'provider'          => [
+					'required' => false,
+					'type'     => 'string',
+					'enum'     => [ 'auto', 'tsf' ],
+					'default'  => 'auto',
+				],
+				'expected_checksum' => [
+					'required' => true,
+					'type'     => 'string',
+					'pattern'  => '^sha256:[a-f0-9]{64}$',
+				],
+				'changes'            => [
+					'required' => true,
+					'type'     => 'array',
+					'minItems' => 1,
+					'maxItems' => 2,
+					'items'    => [
+						'type'                 => 'object',
+						'required'             => [ 'field', 'action' ],
+						'additionalProperties' => false,
+						'properties'           => [
+							'field'  => [ 'type' => 'string', 'enum' => [ 'seo_title', 'meta_description' ] ],
+							'action' => [ 'type' => 'string', 'enum' => [ 'set', 'clear' ] ],
+							'value'  => [ 'type' => 'string' ],
+						],
+					],
+				],
+				'dry_run'            => [ 'required' => false, 'type' => 'boolean', 'default' => false ],
+			],
+		] );
 
 		register_rest_route( self::REST_NAMESPACE, '/page/list', [
 			'methods'             => 'GET',

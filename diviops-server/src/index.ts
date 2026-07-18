@@ -15,8 +15,10 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod";
 import { WPClient } from "./wp-client.js";
 import {
+  capabilityUpgradeHint,
   type HandshakePluginInfo,
   MissingCapabilityError,
+  observedVersion,
   proToolGatesSatisfied,
 } from "./compatibility.js";
 import {
@@ -160,7 +162,9 @@ type HandshakeState =
   | {
       kind: "ok";
       capabilities: Record<string, boolean>;
-      pluginVersion: string;
+      // Normalized to null so meta_info always retains version keys when an
+      // old or mixed plugin handshake omits the optional diagnostic.
+      pluginVersion: string | null;
       proVersion?: string;
       // ADR-003 / ADR-007 Pro-extension fields — present on `ok` only.
       // Free-only sites populate these as `false` / `{}` via wp-client
@@ -443,11 +447,14 @@ function backupCapabilityError(
     requireCapability(key);
   } catch (e) {
     if (e instanceof MissingCapabilityError) {
-      return missingCapabilityEnvelope(
-        e,
-        toolName,
-        "Update the diviops-agent WP plugin to a version that supports rollback snapshot backup, or omit backup:true from this call.",
-      );
+      return missingCapabilityEnvelope(e, toolName, {
+        serverVersion: SERVER_VERSION,
+        hint: capabilityUpgradeHint(
+          e.capability,
+          e.pluginComponent,
+          "Alternatively, omit backup:true from this call.",
+        ),
+      });
     }
     throw e;
   }
@@ -480,7 +487,9 @@ function registerPluginTool<H extends (args: any) => Promise<any>>(
       requireCapability(key);
     } catch (e) {
       if (e instanceof MissingCapabilityError) {
-        return missingCapabilityEnvelope(e, name);
+        return missingCapabilityEnvelope(e, name, {
+          serverVersion: SERVER_VERSION,
+        });
       }
       throw e;
     }
@@ -596,7 +605,80 @@ const BACKUP_FIELD = z
     "When true on supported content writes, capture a rollback snapshot before applying. dry_run + backup only reports the planned snapshot and does not create one.",
   );
 
+const SEO_FIELD = z.enum(["seo_title", "meta_description"]);
+const SEO_PROVIDER = z.enum(["auto", "tsf"]);
+const SEO_CHANGE = z.discriminatedUnion("action", [
+  z.strictObject({
+    field: SEO_FIELD,
+    action: z.literal("set"),
+    value: z.string(),
+  }),
+  z.strictObject({
+    field: SEO_FIELD,
+    action: z.literal("clear"),
+  }),
+]);
+const SEO_CHANGES = z
+  .array(SEO_CHANGE)
+  .min(1)
+  .max(2)
+  .superRefine((changes, context) => {
+    const seen = new Set<string>();
+    changes.forEach((change, index) => {
+      if (seen.has(change.field)) {
+        context.addIssue({
+          code: "custom",
+          message: `Duplicate operation for semantic field '${change.field}'.`,
+          path: [index, "field"],
+        });
+      }
+      seen.add(change.field);
+    });
+  });
+
 // ── Read Tools ───────────────────────────────────────────────────────
+
+registerPluginTool(
+  "diviops_seo_provider_list",
+  {
+    description:
+      "List the Free/core semantic SEO provider adapters and their installed, active, version, compatibility, field, and capability evidence. The first MVP reports only The SEO Framework and never loads an inactive provider. This is discovery only: it returns no post payload and provides no provider installation or activation path. Returns the standardized envelope.",
+    inputSchema: {},
+    annotations: { idempotentHint: true },
+    _meta: { idempotent: "true" },
+  },
+  async () => {
+    const result = await wp.requestEnveloped("/seo/provider/list");
+    return {
+      content: [
+        { type: "text" as const, text: serializeEnvelope(result, "diviops_seo_provider_list") },
+      ],
+    };
+  },
+);
+
+registerPluginTool(
+  "diviops_seo_metadata_get",
+  {
+    description:
+      "Read explicit and effective semantic SEO metadata for one provider-supported post. Free/core and explicit-metadata-only: caller-visible fields are fixed to seo_title and meta_description; no raw metadata keys or provider maps are accepted or returned. Requires edit_post before stored payload exposure. Returns exact explicit presence/value, effective provider output, deterministic checksum, provider lifecycle/capability evidence, canonical WordPress identity evidence, and cache status. Error codes include not_found, forbidden, seo.provider_absent, seo.provider_incompatible, seo.provider_unsupported, and seo.post_type_unsupported. Returns the standardized envelope.",
+    inputSchema: {
+      post_id: z.number().int().positive().describe("WordPress post/page ID to inspect. Requires edit_post on this exact target."),
+      provider: SEO_PROVIDER.optional().default("auto").describe("Provider selector. auto resolves only the active supported TSF adapter in V1."),
+    },
+    annotations: { idempotentHint: true },
+    _meta: { idempotent: "true" },
+  },
+  async ({ post_id, provider }) => {
+    const params = new URLSearchParams({ provider: provider ?? "auto" }).toString();
+    const result = await wp.requestEnveloped(`/seo/metadata/${post_id}?${params}`);
+    return {
+      content: [
+        { type: "text" as const, text: serializeEnvelope(result, "diviops_seo_metadata_get") },
+      ],
+    };
+  },
+);
 
 registerPluginTool(
   "diviops_page_list",
@@ -976,11 +1058,14 @@ registerPluginTool(
           "schema_get_module_dump_all",
           handshakeState.pluginVersion,
         );
-        return missingCapabilityEnvelope(
-          err,
-          "diviops_schema_get_module",
-          "Update the diviops-agent WP plugin to a version that exposes the dump-all surface, or use mode:'single'.",
-        );
+        return missingCapabilityEnvelope(err, "diviops_schema_get_module", {
+          serverVersion: SERVER_VERSION,
+          hint: capabilityUpgradeHint(
+            err.capability,
+            err.pluginComponent,
+            "Alternatively, use mode:'single'.",
+          ),
+        });
       }
       const result = await wp.requestEnveloped("/schema/module/dump-all");
       return {
@@ -1420,6 +1505,44 @@ registerPluginTool(
 // ── Write Tools ──────────────────────────────────────────────────────
 
 registerPluginTool(
+  "diviops_seo_metadata_update",
+  {
+    description:
+      "Update explicit TSF SEO metadata on one provider-supported post through the Free/core semantic contract. Explicit metadata only: changes is a strict one-or-two-item discriminated list for seo_title and meta_description; set requires a plain-text value and clear forbids one. Unknown properties, duplicate fields, HTML/markup, control or invalid UTF-8 bytes, serialized/non-scalar values, secret-like values, and unresolved Divi/global/provider/dynamic tokens are refused before mutation. Requires edit_post and expected_checksum; drift refuses before mutation with no force path. Uses TSF's public sanitize/write/clear lifecycle, exact stored readback, request-local rollback on error/mismatch, and reports before/after checksums, readback, lifecycle, cache, rollback, no-op, and write evidence. Effective output must be verified by a follow-up diviops_seo_metadata_get. No persistent snapshot, canonical override, robots, social, schema, redirect, bulk, cross-site, or automatic Divi extraction path exists." +
+      DRY_RUN_DESC_SUFFIX,
+    inputSchema: {
+      post_id: z.number().int().positive().describe("WordPress post/page ID to update. Requires edit_post on this exact target."),
+      provider: SEO_PROVIDER.optional().default("auto").describe("Provider selector. Use auto or tsf."),
+      expected_checksum: z
+        .string()
+        .regex(/^sha256:[a-f0-9]{64}$/)
+        .describe("Exact checksum returned by diviops_seo_metadata_get. Required; there is no force path."),
+      changes: SEO_CHANGES.describe("Strict semantic set/clear operations. Each field may appear at most once."),
+      dry_run: DRY_RUN_FIELD,
+    },
+    annotations: { idempotentHint: false },
+    _meta: { idempotent: "conditional" },
+  },
+  async ({ post_id, provider, expected_checksum, changes, dry_run }) => {
+    const body: Record<string, unknown> = {
+      provider: provider ?? "auto",
+      expected_checksum,
+      changes,
+    };
+    if (dry_run) body.dry_run = true;
+    const result = await wp.requestEnveloped(`/seo/metadata/${post_id}`, {
+      method: "POST",
+      body,
+    });
+    return {
+      content: [
+        { type: "text" as const, text: serializeEnvelope(result, "diviops_seo_metadata_update") },
+      ],
+    };
+  },
+);
+
+registerPluginTool(
   "diviops_page_update_content",
   {
     description:
@@ -1549,11 +1672,14 @@ registerPluginTool(
         requireCapability("validate_render_by_page_id");
       } catch (e) {
         if (e instanceof MissingCapabilityError) {
-          return missingCapabilityEnvelope(
-            e,
-            "diviops_render_preview",
-            "Update the diviops-agent WP plugin to a version that supports page_id rendering, or provide inline content instead.",
-          );
+          return missingCapabilityEnvelope(e, "diviops_render_preview", {
+            serverVersion: SERVER_VERSION,
+            hint: capabilityUpgradeHint(
+              e.capability,
+              e.pluginComponent,
+              "Alternatively, provide inline content instead.",
+            ),
+          });
         }
         throw e;
       }
@@ -1599,11 +1725,14 @@ registerPluginTool(
         requireCapability("validate_render_by_page_id");
       } catch (e) {
         if (e instanceof MissingCapabilityError) {
-          return missingCapabilityEnvelope(
-            e,
-            "diviops_validate_blocks",
-            "Update the diviops-agent WP plugin to a version that supports page_id validation, or provide inline content instead.",
-          );
+          return missingCapabilityEnvelope(e, "diviops_validate_blocks", {
+            serverVersion: SERVER_VERSION,
+            hint: capabilityUpgradeHint(
+              e.capability,
+              e.pluginComponent,
+              "Alternatively, provide inline content instead.",
+            ),
+          });
         }
         throw e;
       }
@@ -6159,12 +6288,20 @@ function registerProTools(): void {
       ) {
         const err = new MissingCapabilityError(
           "fluentcart_license_update_file_set",
-          handshakeState.pluginVersion,
+          handshakeState.proVersion,
+          "pro",
         );
         return missingCapabilityEnvelope(
           err,
           "diviops_fc_license_settings_update",
-          "Update the diviops-agent-pro WP plugin to a version that supports authoring the global_update_file pointer, or omit global_update_file from this call.",
+          {
+            serverVersion: SERVER_VERSION,
+            hint: capabilityUpgradeHint(
+              err.capability,
+              err.pluginComponent,
+              "Alternatively, omit global_update_file from this call.",
+            ),
+          },
         );
       }
       const body: Record<string, unknown> = {};
@@ -7043,7 +7180,7 @@ async function main() {
     handshakeState = {
       kind: "ok",
       capabilities: hs.capabilities,
-      pluginVersion: hs.plugin_version,
+      pluginVersion: observedVersion(hs.plugin_version),
       proVersion: hs.pro_version,
       proActive: hs.pro_active === true,
       availableTargets: hs.available_targets ?? {},
@@ -7060,11 +7197,11 @@ async function main() {
       ? `Pro active (${hs.pro_version ?? "version unknown"})`
       : "Pro inactive";
     console.error(
-      `Handshake OK: plugin ${hs.plugin_version}, ${diviInfo}, ${proInfo}, ${capCount} capabilities`,
+      `Handshake OK: plugin ${hs.plugin_version ?? "version unknown"}, ${diviInfo}, ${proInfo}, ${capCount} capabilities`,
     );
     if (capCount === 0) {
       console.error(
-        "Warning: plugin returned an empty capability map. Plugin-touching tools will fail with an upgrade hint. Update diviops-agent to ≥1.2.0.",
+        "Warning: plugin returned an empty capability map. Plugin-touching tools will refuse with capability-based upgrade guidance; install a compatible Free plugin component and reconnect the MCP session.",
       );
     }
   } catch (error) {

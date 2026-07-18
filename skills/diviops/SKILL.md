@@ -32,13 +32,13 @@ not_found            404  Target ID does not resolve
 invalid_input        400  Schema violation, malformed args
 validation_failed    400  validate_blocks-detected shape error
 conflict             409  Uniqueness collision (delete-with-references, default-preset delete, name collision, …)
-capability_missing   412  Plugin version below required for this tool
+capability_missing   412  Connected plugin does not advertise the required capability
 forbidden            403  Row-level WordPress permission denied
 wp_error             500  Underlying WordPress error
 divi_error           500  Divi-specific error (block parser, validator, …)
 ```
 
-`capability_missing` is the handshake-layer signal — the plugin on this site doesn't carry the capability flag the tool requires. Distinct from `forbidden` (the WP user lacks the capability on this row).
+`capability_missing` is the handshake-layer signal — the plugin on this site doesn't carry the capability flag the tool requires. MCP server and WordPress plugin versions are independent; install a compatible plugin component from the same DiviOps suite release or a newer supported component, then reconnect or restart the MCP session to refresh the handshake. Distinct from `forbidden` (the WP user lacks the capability on this row). Do not infer an exact required plugin version unless authoritative release-manifest evidence is actually supplied.
 
 ## Namespace-prefixed error codes
 

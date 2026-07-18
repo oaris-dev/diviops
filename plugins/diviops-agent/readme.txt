@@ -3,7 +3,7 @@ Contributors: diviops
 Tags: divi, mcp, ai, rest-api, site-builder
 Requires at least: 6.5
 Tested up to: 7.0
-Stable tag: 1.5.9
+Stable tag: 1.5.10
 Requires PHP: 7.4
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -68,6 +68,12 @@ No. The Free plugin backs the core useful surface. Some higher-leverage workflow
 
 == Changelog ==
 
+= 1.5.10 =
+
+* Adds provider discovery plus guarded get, set, and clear operations for explicit The SEO Framework title and description metadata on one editable post.
+* Adds dry-run, checksum drift refusal, exact no-op, provider readback, lifecycle/cache evidence, and request-local rollback verification for supported metadata changes.
+* Keeps the SEO surface semantic and explicit-metadata-only: generic postmeta and automatic Divi, dynamic-content, or Theme Builder description extraction are not included.
+
 = 1.5.9 =
 
 * Extends read-only cross-environment source and target evidence to existing Theme Builder headers and footers when the connected capability supports footer evidence.
@@ -100,6 +106,6 @@ No. The Free plugin backs the core useful surface. Some higher-leverage workflow
 
 == Upgrade Notice ==
 
-= 1.5.9 =
+= 1.5.10 =
 
-Recommended for beta users who want header/footer rollout evidence and safer same-second rollback snapshot chronology for managed recovery workflows.
+Recommended for beta users who want guarded, explicit The SEO Framework title and description metadata authoring on individual posts.
