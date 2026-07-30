@@ -251,7 +251,7 @@ trait DiviOps_Agent_Variable {
 		// registry size), walk the in-memory tree and strpos only string
 		// leaves, returning on first hit. Early-exit keeps the fast-path
 		// genuinely fast even on large preset registries.
-		$raw = get_option( 'et_divi_builder_global_presets_d5', '' );
+		$raw = self::read_canonical_d5_preset_registry( '' );
 		if ( self::value_contains_substring( $raw, $id ) ) {
 			return true;
 		}
@@ -335,7 +335,7 @@ trait DiviOps_Agent_Variable {
 		}
 
 		// Non-color types.
-		$vars = get_option( 'et_divi_global_variables', [] );
+		$vars = self::read_divi_global_variables_registry();
 		if ( is_array( $vars ) ) {
 			foreach ( [ 'numbers', 'strings', 'images', 'links', 'fonts', 'gradients' ] as $type ) {
 				if ( ! is_array( $vars[ $type ] ?? null ) ) {
@@ -467,7 +467,7 @@ trait DiviOps_Agent_Variable {
 		}
 
 		// Non-color types from et_divi_global_variables.
-		$vars      = get_option( 'et_divi_global_variables', [] );
+		$vars      = self::read_divi_global_variables_registry();
 		if ( ! is_array( $vars ) ) {
 			$vars = [];
 		}
@@ -1071,7 +1071,7 @@ trait DiviOps_Agent_Variable {
 			);
 		}
 
-		$vars = get_option( 'et_divi_global_variables', [] );
+		$vars = self::read_divi_global_variables_registry();
 		if ( ! is_array( $vars ) ) {
 			$vars = [];
 		}
@@ -1126,7 +1126,7 @@ trait DiviOps_Agent_Variable {
 			'type'        => $type,
 		];
 
-		update_option( 'et_divi_global_variables', $vars );
+		self::write_divi_global_variables_registry( $vars );
 
 		return self::envelope_success( [
 			'success' => true,
@@ -1721,7 +1721,7 @@ trait DiviOps_Agent_Variable {
 		}
 
 		// Inspect existing registry to compute skipped vs to-create.
-		$vars = get_option( 'et_divi_global_variables', [] );
+		$vars = self::read_divi_global_variables_registry();
 		if ( ! is_array( $vars ) ) {
 			$vars = [];
 		}
@@ -1825,7 +1825,7 @@ trait DiviOps_Agent_Variable {
 		}
 
 		if ( ! empty( $created ) ) {
-			update_option( 'et_divi_global_variables', $vars );
+			self::write_divi_global_variables_registry( $vars );
 		}
 
 		return self::envelope_success( [
@@ -1894,7 +1894,7 @@ trait DiviOps_Agent_Variable {
 				);
 			}
 		} else {
-			$vars = get_option( 'et_divi_global_variables', [] );
+			$vars = self::read_divi_global_variables_registry();
 			if ( ! is_array( $vars ) ) {
 				return self::envelope_error(
 					'not_found',
@@ -1970,7 +1970,7 @@ trait DiviOps_Agent_Variable {
 			et_update_option( 'et_global_data', $global_data );
 		} else {
 			unset( $vars[ $found_type ][ $id ] );
-			update_option( 'et_divi_global_variables', $vars );
+			self::write_divi_global_variables_registry( $vars );
 		}
 
 		return self::envelope_success( [ 'success' => true, 'deleted' => $id, 'forced' => $force ] );

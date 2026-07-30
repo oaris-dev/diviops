@@ -23,7 +23,7 @@ trait DiviOps_Agent_Preset {
 		$clear_transients = (bool) $request->get_param( 'clear_chunk_transients' );
 		$limit            = max( 1, min( 500, (int) ( $request->get_param( 'limit' ) ?: 100 ) ) );
 		$option_name      = 'et_divi_builder_global_presets_d5';
-		$registry         = get_option( $option_name, [] );
+		$registry         = self::read_canonical_d5_preset_registry( [] );
 
 		if ( ! is_array( $registry ) ) {
 			return self::envelope_error( 'validation_failed', 'The canonical Divi 5 preset registry is not an array.', 'Repair the unsupported registry container shape manually before retrying.', 400, [ 'path' => $option_name, 'actual_type' => gettype( $registry ) ] );
@@ -87,11 +87,11 @@ trait DiviOps_Agent_Preset {
 				self::preset_registry_set_path( $updated, $finding['segments'], $finding['replacement'] );
 			}
 		}
-		if ( ! self::preset_registry_values_equal( $updated, $registry ) && ! update_option( $option_name, $updated, false ) ) {
+		if ( ! self::preset_registry_values_equal( $updated, $registry ) && ! self::write_canonical_d5_preset_registry( $updated ) ) {
 			return self::envelope_error( 'wp_error', 'The preset registry write failed after backup creation.', 'The backup remains available for recovery.', 500, [ 'backup_option_name' => $backup_name ] );
 		}
-		if ( ! self::preset_registry_values_equal( get_option( $option_name, [] ), $updated ) ) {
-			$restored = update_option( $option_name, $registry, false ) || self::preset_registry_values_equal( get_option( $option_name, [] ), $registry );
+		if ( ! self::preset_registry_values_equal( self::read_canonical_d5_preset_registry( [] ), $updated ) ) {
+			$restored = self::write_canonical_d5_preset_registry( $registry ) || self::preset_registry_values_equal( self::read_canonical_d5_preset_registry( [] ), $registry );
 			return self::envelope_error( 'wp_error', 'Preset registry readback did not match the planned timestamp-only repair.', 'The handler attempted to restore the exact backup payload.', 500, [ 'backup_option_name' => $backup_name, 'original_restored' => $restored ] );
 		}
 
@@ -231,6 +231,7 @@ trait DiviOps_Agent_Preset {
 		// Legacy Divi 4 / out-of-band `_ng` store. Surfaced for visibility;
 		// per #719 banner this is NOT a D5 fallback — `audit_storage` tags
 		// it with `legacy_d4_ng` provenance for unambiguous classification.
+		// Divi-owned D4 legacy store; read-only diagnostic provenance.
 		$d4_raw = get_option( 'et_divi_builder_global_presets_ng', '' );
 		$d4     = ! empty( $d4_raw ) ? maybe_unserialize( $d4_raw ) : [];
 

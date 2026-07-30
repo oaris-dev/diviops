@@ -1766,6 +1766,17 @@ trait DiviOps_Agent_ThemeBuilder {
 				400
 			);
 		}
+		$post_types = [ 'et_theme_builder', 'et_template' ];
+		if ( '' !== $header_content ) {
+			$post_types[] = 'et_header_layout';
+		}
+		if ( '' !== $footer_content ) {
+			$post_types[] = 'et_footer_layout';
+		}
+		$permission = self::published_post_types_permission_result( $post_types );
+		if ( is_wp_error( $permission ) ) {
+			return self::post_type_permission_refusal( $permission );
+		}
 
 		// "default" (case-insensitive) and empty string are both treated as
 		// the catch-all Default Website Template — the Divi router gates

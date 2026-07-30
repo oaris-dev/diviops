@@ -3,7 +3,7 @@
  * Plugin Name: DiviOps Agent
  * Plugin URI: https://github.com/oaris-dev/diviops
  * Description: REST API bridge for DiviOps — connects Claude Code to your Divi 5 site for AI-powered page building and design management.
- * Version: 1.5.10
+ * Version: 1.5.11
  * Author: oaris.de
  * Author URI: https://oaris.de
  * Text Domain: diviops-agent
@@ -66,7 +66,7 @@ class DiviOps_Agent {
 	 * Plugin version — surfaced in /handshake for self-diagnosis only;
 	 * server no longer gates on it (capability map is the gate).
 	 */
-	const VERSION = '1.5.10';
+	const VERSION = '1.5.11';
 
 	/**
 	 * Minimum MCP server version this plugin is compatible with.
@@ -368,6 +368,242 @@ class DiviOps_Agent {
 
 	public static function check_write_permission() {
 		return current_user_can( 'edit_pages' );
+	}
+
+	/**
+	 * Statuses intentionally supported by DiviOps page create/status routes.
+	 *
+	 * WordPress core can register additional workflow statuses, but accepting
+	 * every non-internal status here would bypass the status-specific contract
+	 * enforced by WP_REST_Posts_Controller::handle_status_param().
+	 *
+	 * @return string[]
+	 */
+	private static function supported_page_statuses(): array {
+		return [ 'draft', 'pending', 'publish', 'future', 'private' ];
+	}
+
+	private static function page_status_requires_publish_capability( string $status ): bool {
+		return in_array( $status, [ 'publish', 'future', 'private' ], true );
+	}
+
+	/**
+	 * Convert a route-style capability error into the canonical DiviOps refusal.
+	 *
+	 * @param WP_Error $error Permission error from a request-aware guard.
+	 * @return WP_REST_Response
+	 */
+	private static function post_type_permission_refusal( $error ) {
+		$data = is_array( $error->get_error_data() ) ? $error->get_error_data() : [];
+		unset( $data['status'] );
+		return self::envelope_error(
+			'forbidden',
+			(string) $error->get_error_message(),
+			'Authenticate as a user with the required content capability, then retry.',
+			403,
+			empty( $data ) ? null : $data
+		);
+	}
+
+	/**
+	 * Require mapped creation and publishing capabilities for fixed-publish CPT writes.
+	 *
+	 * @param string[] $post_types Post types the operation will create.
+	 * @return true|WP_Error
+	 */
+	private static function published_post_types_permission_result( array $post_types ) {
+		foreach ( array_values( array_unique( $post_types ) ) as $post_type_name ) {
+			$post_type = get_post_type_object( $post_type_name );
+			if ( ! $post_type || ! isset( $post_type->cap->create_posts, $post_type->cap->publish_posts ) ) {
+				return new WP_Error(
+					'rest_cannot_create',
+					'Sorry, this content type does not expose the capabilities required for creation.',
+					[ 'status' => 403, 'post_type' => $post_type_name ]
+				);
+			}
+			foreach ( [ 'create_posts', 'publish_posts' ] as $cap_key ) {
+				$capability = (string) $post_type->cap->{$cap_key};
+				if ( '' === $capability || ! current_user_can( $capability ) ) {
+					return new WP_Error(
+						'create_posts' === $cap_key ? 'rest_cannot_create' : 'rest_cannot_publish',
+						'Sorry, you are not allowed to create published content of this type.',
+						[
+							'status'              => 403,
+							'post_type'           => $post_type_name,
+							'required_capability' => $capability,
+						]
+					);
+				}
+			}
+		}
+
+		return true;
+	}
+
+	private static function fixed_publish_route_permission( string $base_capability, array $post_types ) {
+		if ( ! current_user_can( $base_capability ) ) {
+			return new WP_Error( 'rest_forbidden', 'Sorry, you are not allowed to perform this operation.', [ 'status' => 403 ] );
+		}
+		return self::published_post_types_permission_result( $post_types );
+	}
+
+	public static function check_canvas_create_permission() {
+		return self::fixed_publish_route_permission( 'edit_pages', [ 'et_pb_canvas' ] );
+	}
+
+	public static function check_library_save_permission() {
+		return self::fixed_publish_route_permission( 'manage_options', [ 'et_pb_layout' ] );
+	}
+
+	public static function check_tb_template_create_permission( $request ) {
+		$post_types = [ 'et_theme_builder', 'et_template' ];
+		$header_content = $request->get_param( 'header_content' );
+		$footer_content = $request->get_param( 'footer_content' );
+		if ( is_string( $header_content ) && '' !== $header_content ) {
+			$post_types[] = 'et_header_layout';
+		}
+		if ( is_string( $footer_content ) && '' !== $footer_content ) {
+			$post_types[] = 'et_footer_layout';
+		}
+		return self::fixed_publish_route_permission( 'manage_options', $post_types );
+	}
+
+	/**
+	 * Resolve the request-aware page-create capability refusal, if any.
+	 *
+	 * @param WP_REST_Request|ArrayAccess $request REST-like request.
+	 * @return true|WP_Error
+	 */
+	private static function page_create_permission_result( $request ) {
+		$status = sanitize_key( (string) ( $request->get_param( 'status' ) ?? 'draft' ) );
+		if ( ! in_array( $status, self::supported_page_statuses(), true ) ) {
+			return new WP_Error(
+				'rest_invalid_param',
+				'Status is not supported for DiviOps page creation.',
+				[ 'status' => 400 ]
+			);
+		}
+
+		$post_type = get_post_type_object( 'page' );
+		if ( ! $post_type || ! isset( $post_type->cap->create_posts ) ) {
+			return new WP_Error(
+				'rest_cannot_create',
+				'The page post type does not expose the capabilities required for creation.',
+				[ 'status' => 403 ]
+			);
+		}
+
+		if ( ! current_user_can( $post_type->cap->create_posts ) ) {
+			return new WP_Error(
+				'rest_cannot_create',
+				'Sorry, you are not allowed to create pages.',
+				[
+					'status'              => 403,
+					'required_capability' => (string) $post_type->cap->create_posts,
+				]
+			);
+		}
+
+		$publish_capability = isset( $post_type->cap->publish_posts ) ? (string) $post_type->cap->publish_posts : '';
+		if (
+			self::page_status_requires_publish_capability( $status )
+			&& ( '' === $publish_capability || ! current_user_can( $publish_capability ) )
+		) {
+			return new WP_Error(
+				'rest_cannot_publish',
+				'Sorry, you are not allowed to publish pages or create private pages.',
+				[
+					'status'              => 403,
+					'required_capability' => $publish_capability,
+					'requested_status'    => $status,
+				]
+			);
+		}
+
+		return true;
+	}
+
+	/**
+	 * Request-aware REST permission callback for POST /page/create.
+	 *
+	 * @param WP_REST_Request $request Current REST request.
+	 * @return true|WP_Error
+	 */
+	public static function check_page_create_permission( $request ) {
+		return self::page_create_permission_result( $request );
+	}
+
+	/**
+	 * Resolve page status-transition authority before a plan or mutation.
+	 *
+	 * @param WP_REST_Request|ArrayAccess $request REST-like request.
+	 * @return true|WP_Error
+	 */
+	private static function page_update_status_permission_result( $request ) {
+		$post_id = absint( $request['id'] ?? 0 );
+		$status  = sanitize_key( (string) $request->get_param( 'status' ) );
+
+		if ( ! in_array( $status, self::supported_page_statuses(), true ) ) {
+			return new WP_Error(
+				'rest_invalid_param',
+				'Status is not supported for DiviOps page status updates.',
+				[ 'status' => 400 ]
+			);
+		}
+
+		$post = get_post( $post_id );
+		if ( ! $post || 'page' !== (string) $post->post_type ) {
+			return new WP_Error(
+				'rest_cannot_edit',
+				'Sorry, you are not allowed to edit this page.',
+				[ 'status' => 403 ]
+			);
+		}
+
+		if ( ! current_user_can( 'edit_post', $post_id ) ) {
+			return new WP_Error(
+				'rest_cannot_edit',
+				'Sorry, you are not allowed to edit this page.',
+				[ 'status' => 403 ]
+			);
+		}
+
+		$post_type = get_post_type_object( 'page' );
+		if ( ! $post_type ) {
+			return new WP_Error(
+				'rest_cannot_edit',
+				'The page post type does not expose the capability required for status updates.',
+				[ 'status' => 403 ]
+			);
+		}
+
+		$publish_capability = isset( $post_type->cap->publish_posts ) ? (string) $post_type->cap->publish_posts : '';
+		if (
+			self::page_status_requires_publish_capability( $status )
+			&& ( '' === $publish_capability || ! current_user_can( $publish_capability ) )
+		) {
+			return new WP_Error(
+				'rest_cannot_publish',
+				'Sorry, you are not allowed to publish pages or make pages private.',
+				[
+					'status'              => 403,
+					'required_capability' => $publish_capability,
+					'requested_status'    => $status,
+				]
+			);
+		}
+
+		return true;
+	}
+
+	/**
+	 * Request-aware REST permission callback for POST /page/update-status/{id}.
+	 *
+	 * @param WP_REST_Request $request Current REST request.
+	 * @return true|WP_Error
+	 */
+	public static function check_page_update_status_permission( $request ) {
+		return self::page_update_status_permission_result( $request );
 	}
 
 	public static function check_authenticated_permission() {
@@ -859,7 +1095,7 @@ class DiviOps_Agent {
 		register_rest_route( self::REST_NAMESPACE, '/library/save', [
 			'methods'             => 'POST',
 			'callback'            => [ __CLASS__, 'library_save' ],
-			'permission_callback' => [ __CLASS__, 'check_admin_permission' ],
+			'permission_callback' => [ __CLASS__, 'check_library_save_permission' ],
 			'args'                => [
 				'title'       => [ 'required' => true, 'type' => 'string' ],
 				'content'     => [ 'required' => true, 'type' => 'string' ],
@@ -937,7 +1173,7 @@ class DiviOps_Agent {
 		register_rest_route( self::REST_NAMESPACE, '/theme-builder/template/create', [
 			'methods'             => 'POST',
 			'callback'            => [ __CLASS__, 'tb_template_create' ],
-			'permission_callback' => [ __CLASS__, 'check_admin_permission' ],
+			'permission_callback' => [ __CLASS__, 'check_tb_template_create_permission' ],
 			'args'                => [
 				'title'          => [ 'required' => true, 'type' => 'string' ],
 				'condition'      => [ 'required' => true, 'type' => 'string' ],
@@ -1120,7 +1356,7 @@ class DiviOps_Agent {
 		register_rest_route( self::REST_NAMESPACE, '/page/update-status/(?P<id>\d+)', [
 			'methods'             => 'POST',
 			'callback'            => [ __CLASS__, 'page_update_status' ],
-			'permission_callback' => [ __CLASS__, 'check_write_permission' ],
+			'permission_callback' => [ __CLASS__, 'check_page_update_status_permission' ],
 			'args'                => [
 				'id'       => [ 'required' => true ],
 				'status'   => [
@@ -1484,11 +1720,17 @@ class DiviOps_Agent {
 		register_rest_route( self::REST_NAMESPACE, '/page/create', [
 			'methods'             => 'POST',
 			'callback'            => [ __CLASS__, 'page_create' ],
-			'permission_callback' => [ __CLASS__, 'check_write_permission' ],
+			'permission_callback' => [ __CLASS__, 'check_page_create_permission' ],
 			'args'                => [
 				'title'   => [ 'required' => true, 'type' => 'string' ],
 				'content' => [ 'required' => false, 'type' => 'string', 'default' => '' ],
-				'status'  => [ 'required' => false, 'type' => 'string', 'default' => 'draft' ],
+				'status'  => [
+					'required' => false,
+					'type'     => 'string',
+					'default'  => 'draft',
+					'enum'     => [ 'draft', 'pending', 'publish', 'future', 'private' ],
+				],
+				'dry_run' => [ 'required' => false, 'type' => 'boolean', 'default' => false ],
 			],
 		] );
 
@@ -1497,7 +1739,7 @@ class DiviOps_Agent {
 		register_rest_route( self::REST_NAMESPACE, '/canvas/create', [
 			'methods'             => 'POST',
 			'callback'            => [ __CLASS__, 'canvas_create' ],
-			'permission_callback' => [ __CLASS__, 'check_write_permission' ],
+			'permission_callback' => [ __CLASS__, 'check_canvas_create_permission' ],
 			'args'                => [
 				'title'          => [ 'required' => true, 'type' => 'string' ],
 				'parent_page_id' => [ 'required' => true, 'type' => 'integer' ],
@@ -1560,7 +1802,7 @@ class DiviOps_Agent {
 		register_rest_route( self::REST_NAMESPACE, '/canvas/duplicate/(?P<id>\d+)', [
 			'methods'             => 'POST',
 			'callback'            => [ __CLASS__, 'canvas_duplicate' ],
-			'permission_callback' => [ __CLASS__, 'check_write_permission' ],
+			'permission_callback' => [ __CLASS__, 'check_canvas_create_permission' ],
 			'args'                => [
 				'title'   => [ 'required' => false, 'type' => 'string' ],
 				'dry_run' => [ 'required' => false, 'type' => 'boolean', 'default' => false ],

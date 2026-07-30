@@ -614,11 +614,11 @@ trait DiviOps_Agent_Page {
 				[ 'field' => 'content', 'received_type' => gettype( $content ) ]
 			);
 		}
-		$allowed_statuses = get_post_stati( [ 'internal' => false ] );
+		$allowed_statuses = self::supported_page_statuses();
 		if ( ! in_array( $status, $allowed_statuses, true ) ) {
 			return self::envelope_error(
 				'invalid_input',
-				'status must be a valid public WordPress post status.',
+				'status is not supported for DiviOps page creation.',
 				'Pass status as one of the allowed values.',
 				400,
 				[
@@ -627,6 +627,11 @@ trait DiviOps_Agent_Page {
 					'received' => $status,
 				]
 			);
+		}
+
+		$permission = self::page_create_permission_result( $request );
+		if ( is_wp_error( $permission ) ) {
+			return self::post_type_permission_refusal( $permission );
 		}
 
 		if ( $dry_run ) {
@@ -3840,7 +3845,7 @@ trait DiviOps_Agent_Page {
 		$dry_run  = (bool) $request->get_param( 'dry_run' );
 
 		$post = get_post( $post_id );
-		if ( ! $post ) {
+		if ( ! $post || 'page' !== (string) $post->post_type ) {
 			return self::envelope_error(
 				'not_found',
 				"Page #{$post_id} not found.",
@@ -3849,17 +3854,7 @@ trait DiviOps_Agent_Page {
 				[ 'page_id' => $post_id ]
 			);
 		}
-		if ( ! current_user_can( 'edit_post', $post_id ) ) {
-			return self::envelope_error(
-				'forbidden',
-				"Cannot edit page #{$post_id}.",
-				'Authenticate as a user with edit rights to this post.',
-				403,
-				[ 'page_id' => $post_id ]
-			);
-		}
-
-		$allowed = [ 'publish', 'draft', 'private', 'pending', 'future' ];
+		$allowed = self::supported_page_statuses();
 		if ( ! in_array( $status, $allowed, true ) ) {
 			return self::envelope_error(
 				'invalid_input',
@@ -3868,6 +3863,11 @@ trait DiviOps_Agent_Page {
 				400,
 				[ 'field' => 'status', 'allowed' => $allowed, 'received' => $status ]
 			);
+		}
+
+		$permission = self::page_update_status_permission_result( $request );
+		if ( is_wp_error( $permission ) ) {
+			return self::post_type_permission_refusal( $permission );
 		}
 
 		$date_gmt = is_string( $date_gmt ) ? trim( $date_gmt ) : '';

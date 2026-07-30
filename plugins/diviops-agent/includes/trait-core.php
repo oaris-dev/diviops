@@ -713,6 +713,51 @@ trait DiviOps_Agent_Core {
 	// identical-empty across the transition (see #719 comment thread).
 
 	/**
+	 * Read Divi's raw non-color Global Variables registry without normalization.
+	 *
+	 * This exact upstream-owned option is written by Divi's
+	 * GlobalData::set_global_variables(). Its public getter adds customizer
+	 * defaults and runtime-only allowedActions fields, so it is not equivalent
+	 * for guarded read/modify/write operations that must preserve stored bytes.
+	 */
+	private static function read_divi_global_variables_registry(): array {
+		// Divi-owned integration state; do not rename to a DiviOps option.
+		$registry = get_option( 'et_divi_global_variables', [] );
+		return is_array( $registry ) ? $registry : [];
+	}
+
+	/**
+	 * Persist Divi's raw non-color Global Variables registry.
+	 */
+	private static function write_divi_global_variables_registry( array $registry ): bool {
+		// Divi-owned integration state; exact key required by Divi's option layer.
+		return update_option( 'et_divi_global_variables', $registry );
+	}
+
+	/**
+	 * Read the exact canonical Divi 5 preset registry.
+	 *
+	 * @param mixed $default Value returned when the option is absent.
+	 * @return mixed
+	 */
+	private static function read_canonical_d5_preset_registry( $default = [] ) {
+		// Divi-owned integration state; GlobalPreset::option_name() supplies the suffix.
+		return get_option( 'et_divi_builder_global_presets_d5', $default );
+	}
+
+	/**
+	 * Write the exact canonical Divi 5 preset registry.
+	 *
+	 * Direct access preserves doctor backup/readback/rollback semantics; Divi's
+	 * public preset controllers do not expose an equivalent whole-registry
+	 * transaction.
+	 */
+	private static function write_canonical_d5_preset_registry( $registry ): bool {
+		// Divi-owned integration state; do not create a prefixed parallel copy.
+		return update_option( 'et_divi_builder_global_presets_d5', $registry, false );
+	}
+
+	/**
 	 * Candidate storage paths for the D5 preset surface, in READ priority
 	 * order. `_ng` is OUT-OF-BAND and not listed here — AUDIT consults it
 	 * separately via `audit_d5_preset_storage()`.
@@ -754,7 +799,7 @@ trait DiviOps_Agent_Core {
 			$val = maybe_unserialize( $raw );
 			return self::normalize_storage_array( $val );
 		}
-		// Top-level option.
+		// Top-level candidates are documented Divi-owned integration stores.
 		$raw = get_option( $path_str, '' );
 		if ( empty( $raw ) ) {
 			return null;
@@ -877,7 +922,7 @@ trait DiviOps_Agent_Core {
 	 * implement deletion-sync in this PR.
 	 */
 	private static function save_d5_presets( $d5 ) {
-		update_option( 'et_divi_builder_global_presets_d5', $d5, false );
+		self::write_canonical_d5_preset_registry( $d5 );
 	}
 
 	/**

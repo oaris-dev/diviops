@@ -65,6 +65,13 @@ Then ask your AI client: **"List the pages on my site."** It calls `diviops_page
 
 For Claude Desktop JSON, use `"command": "npx"` with args `["-y", "--package", "@diviops/mcp-server", "diviops-mcp"]`. The package also ships `diviops-preset`, so the explicit package/bin form is required; shorthand package invocation cannot reliably infer which bin to run.
 
+The public npm package exposes exactly three supported CLIs:
+`diviops-mcp`, `diviops-preset`, and `diviops-cross-env-preflight`. The
+launcher-managed MCP sidecar is a separate future artifact identity; it is not
+a public npm bin or part of the npm tarball. Repository launcher development
+builds and supplies that private entrypoint explicitly. This boundary does not
+change direct npm/stdio support.
+
 For a deeper walkthrough (containerized environments, WP-CLI configuration, troubleshooting installation), see [setup-guide.md](../docs/setup-guide.md).
 
 ## Example workflow

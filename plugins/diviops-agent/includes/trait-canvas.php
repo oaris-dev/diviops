@@ -43,6 +43,11 @@ trait DiviOps_Agent_Canvas {
 	 * Create a canvas (et_pb_canvas post) linked to a parent page.
 	 */
 	public static function canvas_create( $request ) {
+		$permission = self::published_post_types_permission_result( [ 'et_pb_canvas' ] );
+		if ( is_wp_error( $permission ) ) {
+			return self::post_type_permission_refusal( $permission );
+		}
+
 		$title          = sanitize_text_field( $request->get_param( 'title' ) );
 		$parent_page_id = absint( $request->get_param( 'parent_page_id' ) );
 		$content        = $request->get_param( 'content' );
@@ -190,6 +195,11 @@ trait DiviOps_Agent_Canvas {
 	 * to silently sanitize away.
 	 */
 	public static function canvas_duplicate( $request ) {
+		$permission = self::published_post_types_permission_result( [ 'et_pb_canvas' ] );
+		if ( is_wp_error( $permission ) ) {
+			return self::post_type_permission_refusal( $permission );
+		}
+
 		$source_id = absint( $request['id'] );
 		$source    = get_post( $source_id );
 

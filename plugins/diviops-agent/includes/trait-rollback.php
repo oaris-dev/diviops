@@ -404,12 +404,24 @@ trait DiviOps_Agent_Rollback {
 				'post_status'            => 'any',
 				'numberposts'             => count( $target_ids ),
 				'orderby'                 => 'post__in',
-				'suppress_filters'        => true,
+				'suppress_filters'        => false,
 				'no_found_rows'           => true,
 				'update_post_meta_cache'  => true,
 				'update_post_term_cache'  => false,
 			] );
 			foreach ( is_array( $loaded ) ? $loaded : [] as $post ) {
+				if ( is_object( $post ) && ! empty( $post->ID ) ) {
+					$posts[ (int) $post->ID ] = $post;
+				}
+			}
+			// Query filters can scope the batch result (for example, to the
+			// current language). Backfill requested IDs individually so an
+			// existing recovery target is never misclassified as missing.
+			foreach ( $target_ids as $target_id ) {
+				if ( isset( $posts[ $target_id ] ) ) {
+					continue;
+				}
+				$post = function_exists( 'get_post' ) ? get_post( $target_id ) : null;
 				if ( is_object( $post ) && ! empty( $post->ID ) ) {
 					$posts[ (int) $post->ID ] = $post;
 				}

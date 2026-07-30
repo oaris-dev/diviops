@@ -3,7 +3,7 @@ Contributors: diviops
 Tags: divi, mcp, ai, rest-api, site-builder
 Requires at least: 6.5
 Tested up to: 7.0
-Stable tag: 1.5.10
+Stable tag: 1.5.11
 Requires PHP: 7.4
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -60,13 +60,19 @@ Yes. DiviOps Agent targets Divi 5 today. Authenticated requests return a `divi_u
 
 = How are permissions handled? =
 
-All endpoints require WordPress Application Password authentication. Read endpoints generally require `edit_posts`, write endpoints generally require `edit_pages`, and administrative surfaces such as preset and variable management require `manage_options`.
+All endpoints require WordPress Application Password authentication. Read endpoints generally require `edit_posts`, write endpoints generally require `edit_pages`, and administrative surfaces such as preset and variable management require `manage_options`. Content creation and status changes additionally require the mapped create/publish capabilities for the affected post type.
 
 = Is every DiviOps MCP tool included in this Free plugin? =
 
 No. The Free plugin backs the core useful surface. Some higher-leverage workflows and paid coverage slices require Pro plugin handlers. The MCP server checks the plugin capability handshake and only exposes or runs tools supported by the connected site.
 
 == Changelog ==
+
+= 1.5.11 =
+
+* Adds stronger handshake and target-identity evidence for connected MCP health diagnostics while preserving the existing direct MCP and WordPress REST workflows.
+* Enforces request-aware create and publish permissions before page status plans or mutations, including fixed-publish Canvas, Divi Library, and Theme Builder creation paths.
+* Hardens access to Divi-owned global variable and preset registries without changing their storage keys or behavior.
 
 = 1.5.10 =
 
@@ -106,6 +112,6 @@ No. The Free plugin backs the core useful surface. Some higher-leverage workflow
 
 == Upgrade Notice ==
 
-= 1.5.10 =
+= 1.5.11 =
 
-Recommended for beta users who want guarded, explicit The SEO Framework title and description metadata authoring on individual posts.
+Recommended for beta users who want stronger target evidence and request-aware create/publish permission enforcement.

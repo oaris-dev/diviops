@@ -9,6 +9,13 @@ Policy:
 - Keep entries customer-facing. Avoid internal issue numbers unless they are needed to explain a user-visible change.
 - Do not include secrets, credentials, customer data, or environment-specific URLs.
 
+## 1.5.11
+
+- Adds stronger handshake and target-identity evidence for connected MCP health diagnostics while preserving classic direct MCP/stdio and WordPress REST use; this does not publish or require the launcher.
+- Enforces mapped create permission for every page-create/status request and mapped publish permission for `publish`, `future`, and `private` before dry-run planning or mutation; fixed-publish Canvas, Divi Library, and Theme Builder creation paths use the same guard.
+- Consolidates access to the exact Divi-owned variable and preset registry options behind documented helpers without renaming or migrating those upstream-owned storage keys.
+- Keeps the WordPress.org review lane independent: the submitted replacement there remains Free 1.5.10 until reviewers request or authorize another package.
+
 ## 1.5.10
 
 - Adds provider-neutral discovery plus guarded get, set, and clear operations for explicit The SEO Framework `seo_title` and `meta_description` values on one editable post.

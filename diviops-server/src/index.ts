@@ -53,11 +53,17 @@ import { optimizeSchema } from "./schema-optimizer.js";
 import { schemaModuleRoute } from "./schema-route.js";
 import { createWpCli } from "./wp-cli.js";
 import {
+  META_INFO_CONFIG,
+  META_PING_CONFIG,
+  requestAbortSignal,
+} from "./health-tools.js";
+import { CanonicalToolRegistry } from "./canonical-tool-registry.js";
+import {
   isolationFailure,
   scanValueForForeignVarRefs,
   writerIsolationErrorResult,
 } from "./validate-attrs.js";
-import { readFileSync, readdirSync } from "fs";
+import { readFileSync, readdirSync, realpathSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 
@@ -69,7 +75,8 @@ const WP_URL = process.env.WP_URL ?? "";
 const WP_USER = process.env.WP_USER ?? "";
 const WP_APP_PASSWORD = process.env.WP_APP_PASSWORD ?? "";
 
-if (!WP_URL || !WP_USER || !WP_APP_PASSWORD) {
+function requireCredentials(): void {
+  if (WP_URL && WP_USER && WP_APP_PASSWORD) return;
   const missing = [
     !WP_URL && "WP_URL",
     !WP_USER && "WP_USER",
@@ -130,10 +137,7 @@ const SERVER_VERSION: string = (() => {
 
 // ── MCP Server ───────────────────────────────────────────────────────
 
-const server = new McpServer({
-  name: "diviops-mcp",
-  version: SERVER_VERSION,
-});
+const registry = new CanonicalToolRegistry();
 
 // ── Capability map (#486) ────────────────────────────────────────────
 
@@ -158,7 +162,7 @@ const server = new McpServer({
 //   - "pending" — handshake hasn't run yet (defensive; main() awaits it
 //                 before connecting transport, so this should not be
 //                 reachable in normal flow).
-type HandshakeState =
+export type HandshakeState =
   | {
       kind: "ok";
       capabilities: Record<string, boolean>;
@@ -496,7 +500,7 @@ function registerPluginTool<H extends (args: any) => Promise<any>>(
     return handler(args);
   }) as any;
   recordIdempotent(name, config?._meta);
-  server.registerTool(name, config, wrapped);
+  registry.registerTool(name, config, wrapped);
 }
 
 /**
@@ -506,14 +510,16 @@ function registerPluginTool<H extends (args: any) => Promise<any>>(
  * captured into the runtime table so `serializeEnvelope(result, name)`
  * can emit it on per-call responses (#597).
  */
-function registerLocalTool<H extends (args: any) => Promise<any>>(
+function registerLocalTool<
+  H extends (args: any, context?: any) => Promise<any>,
+>(
   name: string,
   config: any,
   handler: H,
 ): void {
   recordToolCatalog({ name, kind: "server_local", registered: true });
   recordIdempotent(name, config?._meta);
-  server.registerTool(name, config, handler);
+  registry.registerTool(name, config, handler);
 }
 
 /**
@@ -571,7 +577,7 @@ function registerProTool<H extends (args: any) => Promise<any>>(
 
   catalogEntry.registered = true;
   recordIdempotent(name, config?._meta);
-  server.registerTool(name, config, handler);
+  registry.registerTool(name, config, handler);
 }
 /* eslint-enable @typescript-eslint/no-explicit-any */
 
@@ -4244,14 +4250,16 @@ registerLocalTool(
 registerLocalTool(
   "diviops_meta_ping",
   {
-    description:
-      "Test the connection to the WordPress site and verify the Divi MCP plugin is active. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }; success payload is { connected: true, message: \"Connected to Divi <version>\" } and connection failure surfaces as { ok: false, error: { code: 'wp_error', message } } with the underlying transport message preserved.",
-    annotations: { idempotentHint: true },
+    ...META_PING_CONFIG,
     _meta: { idempotent: "true" },
   },
-  async () => {
+  async (
+    _args: unknown,
+    context?: { signal?: AbortSignal; mcpReq?: { signal?: AbortSignal } },
+  ) => {
+    const signal = requestAbortSignal(_args, context);
     const response = await wrapResponse(async () => {
-      const ping = await wp.testConnection();
+      const ping = await wp.testConnection(signal);
       if (!ping.ok) {
         withCode(ErrorCodes.WP_ERROR, ping.message);
       }
@@ -4268,9 +4276,7 @@ registerLocalTool(
 registerLocalTool(
   "diviops_meta_info",
   {
-    description:
-      "Returns DiviOps MCP server identity, server_version, license type, numeric tool_count, registered tool catalog summary, active plugin version summary, WP-CLI allowlist, and plugin handshake/slice state including Pro and FluentCart target readiness. Use as the S0 preflight before dogfooding or product work. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }.",
-    annotations: { idempotentHint: true },
+    ...META_INFO_CONFIG,
     _meta: { idempotent: "true" },
   },
   async () => {
@@ -4285,7 +4291,7 @@ registerLocalTool(
 
 // ── Resources ────────────────────────────────────────────────────────
 
-server.registerResource(
+registry.registerResource(
   "divi-block-format-guide",
   "divi://block-format-guide",
   {},
@@ -6592,9 +6598,9 @@ function registerProTools(): void {
   // ── V3.1 — order/license/activation read + guarded mark-paid ───────
   //
   // FluentCart commerce-artifact readback surface plus a single
-  // mutating tool: a guarded offline mark-paid that mirrors FCP's
-  // OrderController::markAsPaid. Lifts the local checkout/license
-  // smoke off of eval-file PHP probes.
+  // mutating tool: a guarded offline mark-paid that uses FluentCart 1.6's
+  // canonical charge + StatusHelper synchronization contract. Lifts the local
+  // checkout/license smoke off of eval-file PHP probes.
 
   // diviops_fc_order_list — POST /diviops/v1/pro/fluentcart/orders
   registerProTool(
@@ -6757,7 +6763,7 @@ function registerProTools(): void {
     "diviops_fc_order_mark_paid",
     {
       description:
-        "Guarded local/offline mark-paid for a FluentCart order (Pro tier; V3.1; requires FluentCart installed + activated). Mirrors the canonical `FluentCart\\App\\Http\\Controllers\\OrderController::markAsPaid` sequence — updates the pending offline transaction, flips payment_status to 'paid' (unless partially_refunded), flips order status to 'processing' (and 'completed' for digital fulfillment), then dispatches `OrderPaid` (which fires the `fluent_cart/order_paid` WordPress action, the listener `LicenseGenerationHandler::maybeGenerateLicensesOnPurchaseSuccess` hangs off of) plus `OrderStatusUpdated`. Does NOT directly insert license rows — license generation is a side effect of the dispatched event, exactly like the FCP admin path. Refuses non-offline gateways (anything other than `payment_method='offline_payment'`) with `fluentcart.unsupported_payment_method` (HTTP 422) — this slice is for local/test/COD smokes only. Refuses canceled orders with `fluentcart.order_canceled` (HTTP 422). Already-paid orders are repeat-safe: returns `ok:true` with `data.already_paid: true` (no second event fires). **dry_run defaults to TRUE** for safety; apply requires `dry_run:false` PLUS `confirm_order_id` + `confirm_payment_method` + `confirm_due_amount` matching current state. Dry-run payload: { dry_run:true, plan: { summary, changes[] (payment_status, status, total_paid, transaction), warnings[] }, events: ['fluent_cart/order_paid', 'fluent_cart/order_status_updated'], order_id, licenses_before }. Apply payload: { order: OrderSummary (post-mutation), transaction: TransactionSummary, events_fired: string[], licenses_before, licenses_after, licenses_created, license_ids: number[], licenses: LicenseRedactedSummary[] (no full keys). Error codes: invalid_input (400) when id/confirmation fields are wrong; not_found (404); fluentcart.order_canceled (422); fluentcart.unsupported_payment_method (422); fluentcart.module_inactive (412); fluentcart.command_failed (500). Idempotency: repeat-safe via already_paid sentinel." +
+        "Guarded local/offline mark-paid for a FluentCart order (Pro tier; V3.1; exact audited FluentCart 1.6.0 contract). DiviOps serializes apply on the FluentCart order row, creates or updates one canonical succeeded `transaction_type=charge` transaction, then delegates the atomic paid transition and every derived cart/event/subscription/license/fulfillment effect to `FluentCart\\App\\Helpers\\StatusHelper::syncOrderStatuses`; it never dispatches vendor events or mutates subscriptions/licenses directly. Initial payment/subscription orders use FluentCart's `order_paid` and initial-activation family; renewal invoices use `renewal_paid` and store-managed subscription advancement without replaying new-order effects. Exact Free/installed-Pro version, transaction-lock, and StatusHelper shapes are checked before querying or mutation; older, newer, mixed, and unsupported shapes fail closed with component evidence. Refuses real gateways, canceled orders, missing subscription context, non-manual/system subscription collection, and conflicting legacy/duplicate transaction candidates. Already-paid and concurrent retries are no-ops after locked readback, while interrupted retries reuse the single matching succeeded charge before synchronization. **dry_run defaults to TRUE**; apply requires `dry_run:false` plus matching `confirm_order_id`, `confirm_payment_method`, and `confirm_due_amount`. Dry-run returns the transaction action plus canonical sync effect scope. Apply returns exact order/charge readback, initial-vs-renewal transition evidence, redacted license readback, and subscription before/after summaries. Exceptions after transaction mutation starts return `fluentcart.mutation_uncertain` with best-effort readback and explicitly require manual inspection instead of a blind retry. Error codes include invalid_input (400), not_found (404), fluentcart.unsupported_version (412), fluentcart.order_canceled / fluentcart.unsupported_payment_method / fluentcart.unsupported_order_shape / fluentcart.missing_subscription_context / fluentcart.unsupported_subscription_shape (422), fluentcart.transaction_conflict / fluentcart.concurrent_state_changed (409), fluentcart.readback_failed / fluentcart.mutation_uncertain (500), fluentcart.module_inactive (412), and fluentcart.command_failed (500). Idempotency is conditional and retry-safe only when the response says so." +
         " Pass dry_run: false plus the confirm_* fields to apply.",
       inputSchema: {
         id: z
@@ -7168,9 +7174,32 @@ function registerProTools(): void {
   );
 }
 
+let productionRegistryFinalized = false;
+
+/**
+ * Complete the canonical registry after the connected site's handshake has
+ * settled. Production startup and the credential-free dual-era compatibility
+ * fixture deliberately share this seam so the v2 proof materializes the real
+ * Free/Pro-gated catalog instead of maintaining a second set of definitions.
+ */
+export function finalizeProductionRegistryForHandshake(
+  state: HandshakeState,
+): CanonicalToolRegistry {
+  if (productionRegistryFinalized) {
+    throw new Error("Production MCP registry has already been finalized");
+  }
+  handshakeState = state;
+  registerCrossEnvEvidenceTools();
+  registerProTools();
+  productionRegistryFinalized = true;
+  return registry;
+}
+
 // ── Start ────────────────────────────────────────────────────────────
 
 async function main() {
+  requireCredentials();
+
   // Capability handshake — populate the per-tool gate map (#486)
   // and the ADR-003 / ADR-007 Pro-extension surface (target presence,
   // module activation). On Free-only sites the Pro fields are
@@ -7224,21 +7253,34 @@ async function main() {
   // The cross-env evidence schema is additive-capability aware: older Free
   // plugins retain the existing header-only enum, while current plugins prove
   // footer support through cross_env_footer_layout_evidence.
-  registerCrossEnvEvidenceTools();
+  // Cross-env evidence and Pro coverage-slice registration must run AFTER
+  // the handshake so capability and tier gates reflect the connected site.
+  const finalizedRegistry =
+    finalizeProductionRegistryForHandshake(handshakeState);
 
-  // Pro coverage-slice registration must run AFTER the handshake so the
-  // gates (`pro_active`, `available_targets`, `active_modules`,
-  // capability map) reflect the connected site's actual state. On Free
-  // sites — or when the handshake failed — registerProTool's internal
-  // gates short-circuit so no Pro tools register.
-  registerProTools();
-
+  const server = new McpServer({
+    name: "diviops-mcp",
+    version: SERVER_VERSION,
+  });
+  finalizedRegistry.install(server);
   const transport = new StdioServerTransport();
   await server.connect(transport);
   console.error("Divi MCP Server running on stdio");
 }
 
-main().catch((error) => {
-  console.error("Fatal error:", error);
-  process.exit(1);
-});
+function isDirectEntryPoint(): boolean {
+  const entryPoint = process.argv[1];
+  if (!entryPoint) return false;
+  try {
+    return realpathSync(entryPoint) === fileURLToPath(import.meta.url);
+  } catch {
+    return false;
+  }
+}
+
+if (isDirectEntryPoint()) {
+  main().catch((error) => {
+    console.error("Fatal error:", error);
+    process.exit(1);
+  });
+}

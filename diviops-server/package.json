@@ -1,6 +1,6 @@
 {
   "name": "@diviops/mcp-server",
-  "version": "1.5.38",
+  "version": "1.5.39",
   "description": "MCP server exposing Divi 5 Visual Builder as tools for Claude",
   "type": "module",
   "main": "dist/index.js",
@@ -12,6 +12,10 @@
   "files": [
     "dist/**/*",
     "!dist/**/__tests__/**",
+    "!dist/launcher-bootstrap.js",
+    "!dist/launcher-bootstrap.d.ts",
+    "!dist/launcher-sidecar.js",
+    "!dist/launcher-sidecar.d.ts",
     "templates",
     "data/verified-attrs.json",
     "data/verified-attrs-backlog.json",
@@ -21,7 +25,7 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "dev": "tsc --watch",
-    "test": "npm run build && node --test dist/__tests__/*.test.js dist/preset-cli/__tests__/*.test.js dist/cross-env-preflight/__tests__/*.test.js",
+    "test": "npm run build && node --test dist/__tests__/*.test.js dist/preset-cli/__tests__/*.test.js dist/cross-env-preflight/__tests__/*.test.js && node scripts/check-release-boundary.mjs",
     "prepublishOnly": "npm run build",
     "regen:skill": "node scripts/regen-module-formats.mjs"
   },
@@ -51,6 +55,9 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
+    "@modelcontextprotocol/client": "2.0.0",
+    "@modelcontextprotocol/core": "2.0.0",
+    "@modelcontextprotocol/server": "2.0.0",
     "@types/node": "^22.0.0",
     "typescript": "^5.7.0"
   }

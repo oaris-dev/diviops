@@ -135,15 +135,18 @@ export interface WPClientConfig {
   siteUrl: string;
   username: string;
   applicationPassword: string;
+  fetch?: typeof globalThis.fetch;
 }
 
 export class WPClient {
   private baseUrl: string;
   private authHeader: string;
+  private fetchImpl: typeof globalThis.fetch;
 
   constructor(config: WPClientConfig) {
     // Strip trailing slash.
     this.baseUrl = config.siteUrl.replace(/\/+$/, '');
+    this.fetchImpl = config.fetch ?? globalThis.fetch.bind(globalThis);
 
     // WP Application Passwords use Basic Auth.
     const credentials = Buffer.from(
@@ -161,9 +164,10 @@ export class WPClient {
       method?: string;
       body?: Record<string, unknown>;
       params?: Record<string, string>;
+      signal?: AbortSignal;
     } = {}
   ): Promise<T> {
-    const { method = 'GET', body, params } = options;
+    const { method = 'GET', body, params, signal } = options;
 
     let url = `${this.baseUrl}/wp-json/diviops/v1${endpoint}`;
 
@@ -179,6 +183,7 @@ export class WPClient {
         'Content-Type': 'application/json',
         Accept: 'application/json',
       },
+      signal,
     };
 
     if (body && method !== 'GET') {
@@ -186,7 +191,7 @@ export class WPClient {
       fetchOptions.body = JSON.stringify(normalized);
     }
 
-    const response = await fetch(url, fetchOptions);
+    const response = await this.fetchImpl(url, fetchOptions);
 
     if (!response.ok) {
       const errorBody = await response.text();
@@ -244,9 +249,10 @@ export class WPClient {
       method?: string;
       body?: Record<string, unknown>;
       params?: Record<string, string>;
+      signal?: AbortSignal;
     } = {},
   ): Promise<DiviopsResponse<T>> {
-    const { method = 'GET', body, params } = options;
+    const { method = 'GET', body, params, signal } = options;
 
     let url = `${this.baseUrl}/wp-json/diviops/v1${endpoint}`;
     if (params) {
@@ -261,13 +267,14 @@ export class WPClient {
         'Content-Type': 'application/json',
         Accept: 'application/json',
       },
+      signal,
     };
     if (body && method !== 'GET') {
       const normalized = endpointSkipsNormalization(endpoint) ? body : normalizeBody(body);
       fetchOptions.body = JSON.stringify(normalized);
     }
 
-    const response = await fetch(url, fetchOptions);
+    const response = await this.fetchImpl(url, fetchOptions);
     const rawBody = await response.text();
 
     // Try to parse the body as JSON. Failure is recoverable for non-2xx
@@ -376,11 +383,11 @@ export class WPClient {
    * silently regresses meta_ping to "Connected to Divi unknown" on
    * healthy sites.
    */
-  async testConnection(): Promise<{ ok: boolean; message: string }> {
+  async testConnection(signal?: AbortSignal): Promise<{ ok: boolean; message: string }> {
     try {
       const response = await this.requestEnveloped<{
         builder?: { version?: string };
-      }>('/schema/settings');
+      }>('/schema/settings', { signal });
       if (!response.ok) {
         return {
           ok: false,
@@ -392,6 +399,7 @@ export class WPClient {
         message: `Connected to Divi ${response.data.builder?.version ?? 'unknown'}`,
       };
     } catch (error) {
+      if (signal?.aborted) throw signal.reason ?? error;
       return {
         ok: false,
         message: `Connection failed: ${error instanceof Error ? error.message : String(error)}`,
@@ -414,10 +422,12 @@ export class WPClient {
    */
   async handshake(
     serverVersion: string,
+    signal?: AbortSignal,
   ): Promise<HandshakeResult> {
     const result = await this.request<HandshakeResult>('/handshake', {
       method: 'POST',
       body: { mcp_server_version: serverVersion },
+      signal,
     });
 
     // Pre-1.2.0 plugins emit `capabilities` as a string[] of coarse

@@ -168,6 +168,11 @@ trait DiviOps_Agent_Library {
 	 * Save block markup to Divi Library.
 	 */
 	public static function library_save( $request ) {
+		$permission = self::published_post_types_permission_result( [ 'et_pb_layout' ] );
+		if ( is_wp_error( $permission ) ) {
+			return self::post_type_permission_refusal( $permission );
+		}
+
 		$title       = sanitize_text_field( $request->get_param( 'title' ) );
 		$content     = $request->get_param( 'content' );
 		$layout_type = sanitize_text_field( $request->get_param( 'layout_type' ) );

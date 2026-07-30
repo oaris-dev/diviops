@@ -129,6 +129,10 @@ export interface HandshakeResult {
   active_modules?: Record<string, boolean>;
   /** Advisory installed-plugin versions for S0 preflight reports. */
   plugins?: Record<string, HandshakePluginInfo>;
+  /** Permission-gated non-secret identity of the authenticated App Password owner. */
+  authenticated_user?: { id: number; login: string };
+  /** Observed WordPress site URL; normalized and pinned by launcher mode. */
+  site_url?: string;
 }
 
 export function proToolGatesSatisfied(
