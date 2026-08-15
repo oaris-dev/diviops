@@ -3,7 +3,7 @@
  * Plugin Name: DiviOps Agent
  * Plugin URI: https://github.com/oaris-dev/diviops
  * Description: REST API bridge for DiviOps — connects Claude Code to your Divi 5 site for AI-powered page building and design management.
- * Version: 1.5.11
+ * Version: 1.5.12
  * Author: oaris.de
  * Author URI: https://oaris.de
  * Text Domain: diviops-agent
@@ -22,6 +22,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 // the class declares `use ...;`. Each trait file has its own
 // ABSPATH guard, so direct loading is rejected.
 require_once __DIR__ . '/includes/trait-canvas.php';
+require_once __DIR__ . '/includes/trait-compatibility.php';
 require_once __DIR__ . '/includes/trait-core.php';
 require_once __DIR__ . '/includes/trait-global-color.php';
 require_once __DIR__ . '/includes/trait-global-font.php';
@@ -46,6 +47,7 @@ class DiviOps_Agent {
 	// are required in the file-scope bootstrap below; methods on each
 	// trait are mixed into this class.
 	use DiviOps_Agent_Canvas;
+	use DiviOps_Agent_Compatibility;
 	use DiviOps_Agent_Core;
 	use DiviOps_Agent_GlobalColor;
 	use DiviOps_Agent_GlobalFont;
@@ -66,7 +68,7 @@ class DiviOps_Agent {
 	 * Plugin version — surfaced in /handshake for self-diagnosis only;
 	 * server no longer gates on it (capability map is the gate).
 	 */
-	const VERSION = '1.5.11';
+	const VERSION = '1.5.12';
 
 	/**
 	 * Minimum MCP server version this plugin is compatible with.
@@ -193,6 +195,7 @@ class DiviOps_Agent {
 
 	public static function init() {
 		add_action( 'rest_api_init', [ __CLASS__, 'register_routes' ] );
+		add_filter( 'rest_endpoints', [ __CLASS__, 'repair_divi_post_filter_price_permission' ] );
 		add_filter( 'rest_pre_dispatch', [ __CLASS__, 'check_rate_limit' ], 10, 3 );
 		add_filter( 'rest_post_dispatch', [ __CLASS__, 'wrap_rest_framework_validation_errors' ], 10, 3 );
 		add_action( 'admin_menu', [ __CLASS__, 'register_admin_page' ] );
@@ -1130,6 +1133,7 @@ class DiviOps_Agent {
 				'destination_id'        => [ 'required' => false ],
 				'destination_kind'      => [ 'required' => false, 'type' => 'string', 'default' => 'tb_header_layout' ],
 				'source_asset_hints'    => [ 'required' => false ],
+				'source_upload_paths'   => [ 'required' => false ],
 				'source_attachment_ids' => [ 'required' => false ],
 			],
 		] );

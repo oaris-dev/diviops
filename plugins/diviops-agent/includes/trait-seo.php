@@ -194,8 +194,11 @@ final class DiviOps_SEO_TSF_Adapter {
 	}
 
 	private static function plugin_path(): string {
-		$root = defined( 'WP_PLUGIN_DIR' ) ? WP_PLUGIN_DIR : ABSPATH . 'wp-content/plugins';
-		return rtrim( (string) $root, '/\\' ) . '/' . self::PLUGIN_FILE;
+		if ( ! defined( 'WP_PLUGIN_DIR' ) || '' === (string) WP_PLUGIN_DIR ) {
+			return '';
+		}
+
+		return rtrim( (string) WP_PLUGIN_DIR, '/\\' ) . '/' . self::PLUGIN_FILE;
 	}
 
 	/**

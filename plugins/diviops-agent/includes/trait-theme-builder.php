@@ -265,7 +265,8 @@ trait DiviOps_Agent_ThemeBuilder {
 
 		$hints       = self::cross_env_normalize_asset_hints(
 			$request->get_param( 'source_asset_hints' ),
-			$request->get_param( 'source_attachment_ids' )
+			$request->get_param( 'source_attachment_ids' ),
+			$request->get_param( 'source_upload_paths' )
 		);
 		$attachments = self::cross_env_attachment_candidates( $hints['assets'], $hints['source_ids'] );
 		$remaps      = self::cross_env_attachment_remaps( $attachments, $hints['source_ids'] );
@@ -755,10 +756,39 @@ trait DiviOps_Agent_ThemeBuilder {
 			if ( self::cross_env_is_media_attachment_id_key( (string) $key ) ) {
 				return true;
 			}
-			if ( is_string( $nested ) && false !== strpos( $nested, '/wp-content/uploads/' ) ) {
+			if ( is_string( $nested ) && null !== self::cross_env_upload_path_from_url( $nested ) ) {
 				return true;
 			}
 		}
+		return self::cross_env_has_attachment_path_evidence( $value );
+	}
+
+	private static function cross_env_has_attachment_path_evidence( object $value ): bool {
+		$id   = self::cross_env_numeric_source_id( $value->id ?? null );
+		$post = $id > 0 ? get_post( $id ) : null;
+		if ( ! $post || 'attachment' !== $post->post_type ) {
+			return false;
+		}
+
+		$attached_file = (string) get_post_meta( $id, '_wp_attached_file', true );
+		$attached_file = ltrim( str_replace( '\\', '/', $attached_file ), '/' );
+		if ( '' === $attached_file ) {
+			return false;
+		}
+
+		$suffix = '/' . $attached_file;
+		foreach ( get_object_vars( $value ) as $nested ) {
+			if ( ! is_string( $nested ) ) {
+				continue;
+			}
+			$parsed = wp_parse_url( $nested );
+			$path   = is_array( $parsed ) ? (string) ( $parsed['path'] ?? '' ) : '';
+			$path   = ltrim( str_replace( '\\', '/', $path ), '/' );
+			if ( $path === $attached_file || ( strlen( $path ) > strlen( $suffix ) && substr( $path, -strlen( $suffix ) ) === $suffix ) ) {
+				return true;
+			}
+		}
+
 		return false;
 	}
 
@@ -802,7 +832,7 @@ trait DiviOps_Agent_ThemeBuilder {
 
 		$attached_file = (string) get_post_meta( $attachment_id, '_wp_attached_file', true );
 		$attached_file = ltrim( str_replace( '\\', '/', $attached_file ), '/' );
-		$path          = '' !== $attached_file ? '/wp-content/uploads/' . $attached_file : null;
+		$path          = '' !== $attached_file ? $attached_file : null;
 		$url           = '' !== $attached_file ? self::cross_env_attachment_url( $attachment_id, $attached_file ) : null;
 		$mime          = isset( $post->post_mime_type ) ? (string) $post->post_mime_type : '';
 
@@ -840,16 +870,92 @@ trait DiviOps_Agent_ThemeBuilder {
 	}
 
 	private static function cross_env_upload_path_from_url( string $url ): ?string {
-		$parsed = wp_parse_url( $url );
-		$path   = is_array( $parsed ) && ! empty( $parsed['path'] ) ? (string) $parsed['path'] : '';
-		$needle = '/wp-content/uploads/';
-		$pos    = strpos( $path, $needle );
-		if ( false === $pos ) {
+		if ( ! function_exists( 'wp_upload_dir' ) ) {
 			return null;
 		}
 
-		$upload_path = substr( $path, $pos );
-		return '' !== $upload_path ? $upload_path : null;
+		$uploads = wp_upload_dir( null, false );
+		$baseurl = is_array( $uploads ) && empty( $uploads['error'] ) ? (string) ( $uploads['baseurl'] ?? '' ) : '';
+		$base    = '' !== $baseurl ? self::cross_env_url_parts_with_site_origin( $baseurl ) : null;
+		$parsed  = self::cross_env_url_parts_with_site_origin( $url );
+		if ( ! is_array( $base ) || ! is_array( $parsed ) ) {
+			return null;
+		}
+
+		$base_scheme = strtolower( (string) ( $base['scheme'] ?? '' ) );
+		$url_scheme  = strtolower( (string) ( $parsed['scheme'] ?? '' ) );
+		if ( ! in_array( $base_scheme, [ 'http', 'https' ], true ) || ! in_array( $url_scheme, [ 'http', 'https' ], true ) ) {
+			return null;
+		}
+
+		foreach ( [ 'host', 'port' ] as $part ) {
+			if ( strtolower( (string) ( $base[ $part ] ?? '' ) ) !== strtolower( (string) ( $parsed[ $part ] ?? '' ) ) ) {
+				return null;
+			}
+		}
+
+		$base_path = rtrim( (string) ( $base['path'] ?? '' ), '/' );
+		$path      = (string) ( $parsed['path'] ?? '' );
+		if ( '' !== $base_path && 0 !== strpos( $path, $base_path . '/' ) ) {
+			return null;
+		}
+
+		$relative = ltrim( substr( $path, strlen( $base_path ) ), '/' );
+		return '' !== $relative ? $relative : null;
+	}
+
+	private static function cross_env_url_parts_with_site_origin( string $url ): ?array {
+		$parsed = wp_parse_url( $url );
+		if ( ! is_array( $parsed ) ) {
+			return null;
+		}
+		if ( ! empty( $parsed['scheme'] ) && ! empty( $parsed['host'] ) ) {
+			return $parsed;
+		}
+		if ( ! function_exists( 'get_site_url' ) ) {
+			return null;
+		}
+
+		$site = wp_parse_url( (string) get_site_url() );
+		if ( ! is_array( $site ) || empty( $site['scheme'] ) || empty( $site['host'] ) ) {
+			return null;
+		}
+
+		if ( ! empty( $parsed['host'] ) && 0 === strpos( $url, '//' ) ) {
+			$parsed['scheme'] = $site['scheme'];
+			return $parsed;
+		}
+		if ( empty( $parsed['host'] ) && 0 === strpos( $url, '/' ) ) {
+			$parsed['scheme'] = $site['scheme'];
+			$parsed['host']   = $site['host'];
+			if ( ! empty( $site['port'] ) ) {
+				$parsed['port'] = $site['port'];
+			}
+			return $parsed;
+		}
+
+		return null;
+	}
+
+	private static function cross_env_upload_path_from_rooted_path( string $path ): ?string {
+		if ( ! function_exists( 'wp_upload_dir' ) || 0 !== strpos( $path, '/' ) ) {
+			return null;
+		}
+
+		$uploads = wp_upload_dir( null, false );
+		$baseurl = is_array( $uploads ) && empty( $uploads['error'] ) ? (string) ( $uploads['baseurl'] ?? '' ) : '';
+		$base    = '' !== $baseurl ? wp_parse_url( $baseurl ) : null;
+		if ( ! is_array( $base ) ) {
+			return null;
+		}
+
+		$base_path = rtrim( (string) ( $base['path'] ?? '' ), '/' );
+		if ( '' !== $base_path && 0 !== strpos( $path, $base_path . '/' ) ) {
+			return null;
+		}
+
+		$relative = ltrim( substr( $path, strlen( $base_path ) ), '/' );
+		return '' !== $relative ? $relative : null;
 	}
 
 	private static function cross_env_list_param( $raw ): array {
@@ -870,7 +976,7 @@ trait DiviOps_Agent_ThemeBuilder {
 		return [ $raw ];
 	}
 
-	private static function cross_env_normalize_asset_hints( $raw_assets, $raw_source_ids ): array {
+	private static function cross_env_normalize_asset_hints( $raw_assets, $raw_source_ids, $raw_upload_paths = null ): array {
 		$source_ids = [];
 		foreach ( self::cross_env_list_param( $raw_source_ids ) as $id ) {
 			$id = absint( $id );
@@ -900,6 +1006,14 @@ trait DiviOps_Agent_ThemeBuilder {
 			}
 		}
 
+		foreach ( self::cross_env_list_param( $raw_upload_paths ) as $raw ) {
+			$asset = self::cross_env_normalize_exact_upload_path_hint( (string) $raw );
+			if ( null !== $asset ) {
+				$key            = $asset['upload_path'] . '|' . $asset['basename'];
+				$assets[ $key ] = $asset;
+			}
+		}
+
 		return [
 			'assets'     => array_values( $assets ),
 			'source_ids' => array_values( $source_ids ),
@@ -916,14 +1030,13 @@ trait DiviOps_Agent_ThemeBuilder {
 			return null;
 		}
 
-		$upload_path = null;
-		$needle      = '/wp-content/uploads/';
-		$pos         = strpos( $path, $needle );
-		if ( false !== $pos ) {
-			$upload_path = ltrim( substr( $path, $pos + strlen( $needle ) ), '/' );
-		} elseif ( false === strpos( $path, '/' ) ) {
-			$upload_path = null;
-		} else {
+		$is_absolute_url = is_array( $parsed ) && ! empty( $parsed['scheme'] ) && ! empty( $parsed['host'] );
+		$upload_path    = null;
+		if ( $is_absolute_url ) {
+			$upload_path = self::cross_env_upload_path_from_url( $hint );
+		} elseif ( 0 === strpos( $path, '/' ) ) {
+			$upload_path = self::cross_env_upload_path_from_rooted_path( $path );
+		} elseif ( 0 !== strpos( $path, '/' ) && false !== strpos( $path, '/' ) ) {
 			$upload_path = ltrim( $path, '/' );
 		}
 
@@ -938,9 +1051,51 @@ trait DiviOps_Agent_ThemeBuilder {
 		];
 	}
 
+	private static function cross_env_normalize_exact_upload_path_hint( string $hint ): ?array {
+		$hint   = trim( $hint );
+		$parsed = wp_parse_url( $hint );
+		if ( '' === $hint || ( is_array( $parsed ) && ( ! empty( $parsed['scheme'] ) || ! empty( $parsed['host'] ) ) ) ) {
+			return null;
+		}
+		$path = is_array( $parsed ) && isset( $parsed['path'] ) ? (string) $parsed['path'] : $hint;
+		$path = ltrim( str_replace( '\\', '/', $path ), '/' );
+		if ( '' === $path || preg_match( '#(^|/)\.\.?(/|$)#', $path ) ) {
+			return null;
+		}
+		$basename = self::cross_env_basename( $path );
+		if ( '' === $basename || '.' === $basename || '..' === $basename ) {
+			return null;
+		}
+		return [
+			'upload_path' => $path,
+			'basename'    => $basename,
+		];
+	}
+
 	private static function cross_env_attachment_candidates( array $asset_hints, array $source_ids ): array {
-		$candidates = [];
+		$candidates      = [];
+		$fallback_hints  = [];
+		$exact_basenames = [];
 		foreach ( $asset_hints as $hint ) {
+			if ( empty( $hint['upload_path'] ) ) {
+				$fallback_hints[] = $hint;
+				continue;
+			}
+			$posts = self::cross_env_query_attachments_for_hint( $hint );
+			foreach ( $posts as $post ) {
+				$row = self::cross_env_attachment_candidate_payload( $post, $hint, $source_ids );
+				if ( null === $row ) {
+					continue;
+				}
+				$candidates[ (string) $row['id'] . '|' . (string) ( $row['path'] ?? '' ) ] = $row;
+				$exact_basenames[ $hint['basename'] ] = true;
+			}
+		}
+
+		foreach ( $fallback_hints as $hint ) {
+			if ( isset( $exact_basenames[ $hint['basename'] ] ) ) {
+				continue;
+			}
 			$posts = self::cross_env_query_attachments_for_hint( $hint );
 			foreach ( $posts as $post ) {
 				$row = self::cross_env_attachment_candidate_payload( $post, $hint, $source_ids );
@@ -991,7 +1146,7 @@ trait DiviOps_Agent_ThemeBuilder {
 		$row = [
 			'id'       => $id,
 			'target_id'=> $id,
-			'path'     => '/wp-content/uploads/' . $attached_file,
+			'path'     => $attached_file,
 			'filename' => $basename,
 			'proof'    => $path_matches ? 'target_upload_path_exact' : 'target_basename_exact',
 		];
@@ -1014,7 +1169,12 @@ trait DiviOps_Agent_ThemeBuilder {
 			$port = ! empty( $parsed['port'] ) ? ':' . (int) $parsed['port'] : '';
 			return strtolower( (string) $parsed['scheme'] ) . '://' . strtolower( (string) $parsed['host'] ) . $port . (string) $parsed['path'];
 		}
-		return self::cross_env_site_origin() . '/wp-content/uploads/' . ltrim( $attached_file, '/' );
+		if ( ! function_exists( 'wp_upload_dir' ) ) {
+			return null;
+		}
+		$uploads = wp_upload_dir( null, false );
+		$baseurl = is_array( $uploads ) && empty( $uploads['error'] ) ? (string) ( $uploads['baseurl'] ?? '' ) : '';
+		return '' !== $baseurl ? rtrim( $baseurl, '/' ) . '/' . ltrim( $attached_file, '/' ) : null;
 	}
 
 	private static function cross_env_attachment_remaps( array $attachments, array $source_ids ): array {

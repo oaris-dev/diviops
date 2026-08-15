@@ -44,6 +44,7 @@ import {
   type CrossEnvThemeBuilderLayoutKind,
 } from "./cross-env-preflight/layout-preflight.js";
 import { crossEnvEvidenceLayoutKinds } from "./cross-env-preflight/layout-capability.js";
+import { sourceHintsFromPayload } from "./cross-env-source-hints.js";
 import {
   createSourcePayloadRef,
   loadSourcePayloadRef,
@@ -3099,6 +3100,10 @@ function registerCrossEnvEvidenceTools(): void {
           .array(z.string())
           .optional()
           .describe("Optional source upload paths, asset URLs, or basenames used to search target media candidates. Query strings, fragments, and credentials are stripped from output."),
+        source_upload_paths: z
+          .array(z.string())
+          .optional()
+          .describe("Optional source-export attachment paths with exact-path provenance, including root-level filenames."),
         source_attachment_ids: z
           .array(z.number())
           .optional()
@@ -3116,6 +3121,7 @@ function registerCrossEnvEvidenceTools(): void {
       destination_id,
       destination_kind,
       source_asset_hints,
+      source_upload_paths,
       source_attachment_ids,
     }) => {
       const body: Record<string, unknown> = {
@@ -3124,6 +3130,9 @@ function registerCrossEnvEvidenceTools(): void {
       };
       if (source_asset_hints && source_asset_hints.length > 0) {
         body.source_asset_hints = source_asset_hints;
+      }
+      if (source_upload_paths && source_upload_paths.length > 0) {
+        body.source_upload_paths = source_upload_paths;
       }
       if (source_attachment_ids && source_attachment_ids.length > 0) {
         body.source_attachment_ids = source_attachment_ids;
@@ -5048,26 +5057,6 @@ const CrossEnvSourcePayloadRefSchema = z
 
 function normalizeReviewedFingerprint(value: string): string {
   return value.trim().replace(/^sha256:/i, "").toLowerCase();
-}
-
-function sourceHintsFromPayload(source: SourceLayoutPayload): {
-  source_asset_hints?: string[];
-  source_attachment_ids?: number[];
-} {
-  const hints = new Set<string>();
-  const ids = new Set<number>();
-  for (const attachment of source.attachments ?? []) {
-    if (typeof attachment.id === "number" && Number.isInteger(attachment.id) && attachment.id > 0) {
-      ids.add(attachment.id);
-    }
-    for (const value of [attachment.path, attachment.url, attachment.filename]) {
-      if (typeof value === "string" && value.trim()) hints.add(value.trim());
-    }
-  }
-  return {
-    ...(hints.size > 0 ? { source_asset_hints: [...hints].sort((a, b) => a.localeCompare(b)) } : {}),
-    ...(ids.size > 0 ? { source_attachment_ids: [...ids].sort((a, b) => a - b) } : {}),
-  };
 }
 
 const ManagedRecoveryPolicySchema = z

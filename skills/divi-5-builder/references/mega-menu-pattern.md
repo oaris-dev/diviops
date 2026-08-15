@@ -214,13 +214,13 @@ Use `divi/link` for actual links, but wrap it with list-item HTML. Do not use `e
       }
     }
   },
-  "link": {
+  "content": {
     "innerContent": {
       "desktop": {
         "value": {
           "text": "Kontakt",
-          "url": "#",
-          "target": "off"
+          "linkUrl": "#",
+          "linkTarget": "off"
         }
       }
     }

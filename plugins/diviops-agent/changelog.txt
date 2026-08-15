@@ -9,6 +9,12 @@ Policy:
 - Keep entries customer-facing. Avoid internal issue numbers unless they are needed to explain a user-visible change.
 - Do not include secrets, credentials, customer data, or environment-specific URLs.
 
+## 1.5.12
+
+- Adds the narrow, self-retiring Divi 5.10/5.11 Post Filter product-price permission repair, including the exact route-specific Divi nonce and Visual Builder/edit-post authority checks. Other Divi routes are unchanged.
+- Preserves exact upload-path provenance for reviewed cross-environment media discovery, including custom upload roots and root-level files, while keeping ambiguous basename matches fail-closed.
+- Rejects legacy `divi/link` attribute paths that Divi ignores and fails closed when The SEO Framework's canonical WordPress plugin directory is unavailable.
+
 ## 1.5.11
 
 - Adds stronger handshake and target-identity evidence for connected MCP health diagnostics while preserving classic direct MCP/stdio and WordPress REST use; this does not publish or require the launcher.

@@ -21,7 +21,8 @@ DiviOps fits multiple WordPress workflows where AI-driven authoring + management
 
 ## Quick start
 
-Three steps to your first tool call.
+The first three steps prove connectivity. Native Divi authoring additionally
+requires the client-side skill and first-run verification in steps 4 and 5.
 
 ### 1. Install the WordPress plugin
 
@@ -37,6 +38,19 @@ In **WP Admin → Users → Your Profile → Application Passwords**:
 - Copy the generated password and strip the spaces
 
 ### 3. Register the MCP server
+
+The successor server line requires Node.js 22 or newer. Upgrade Node before
+selecting `@diviops/mcp-server@1.5.40` or a later release. Operators who must
+remain on Node 18 can pin the previously shipped compatible server explicitly:
+
+```bash
+npx -y --package=@diviops/mcp-server@1.5.39 diviops-mcp
+```
+
+That pin affects only the MCP server. Free and Pro WordPress plugin versions
+use independent version series and remain compatible through the advertised
+per-capability handshake. Direct npm/stdio and MCP v1 remain supported on the
+Node 22 successor; MCP v2 fixtures and the launcher sidecar are not published.
 
 Claude Code:
 
@@ -61,7 +75,9 @@ WP_USER = "your-wp-username"
 WP_APP_PASSWORD = "xxxxXXXXxxxxXXXXxxxxXXXX"
 ```
 
-Then ask your AI client: **"List the pages on my site."** It calls `diviops_page_list` and renders the result. You're authoring with the suite.
+Then ask your AI client: **"List the pages on my site."** It calls
+`diviops_page_list` and renders the result. This proves the plugin and MCP transport;
+it does not prove that the client has loaded Divi authoring knowledge.
 
 For Claude Desktop JSON, use `"command": "npx"` with args `["-y", "--package", "@diviops/mcp-server", "diviops-mcp"]`. The package also ships `diviops-preset`, so the explicit package/bin form is required; shorthand package invocation cannot reliably infer which bin to run.
 
@@ -74,6 +90,24 @@ change direct npm/stdio support.
 
 For a deeper walkthrough (containerized environments, WP-CLI configuration, troubleshooting installation), see [setup-guide.md](../docs/setup-guide.md).
 
+### 4. Load the `divi-5-builder` skill
+
+Install it for Claude Code by running
+`claude plugin marketplace add oaris-dev/diviops` and then
+`claude plugin install divi-5-builder@diviops`, or copy the distribution's
+`skills/*` into the supported skill directory for Codex/manual setups. WordPress
+and npm updates do not update manual skill copies. Avoid simultaneous
+plugin-managed and stale manual copies, then restart the client and confirm
+`divi-5-builder` is visible.
+
+### 5. Prove native module authoring
+
+Run the disposable, fail-closed
+[native Divi verification](../docs/setup-guide.md#first-run-native-divi-verification).
+Stop if the skill or required tools are unavailable. Do not accept page-sized HTML,
+Code modules, iframe layouts, or structural HTML in text/container fields as a
+fallback for editable native Divi modules.
+
 ## Example workflow
 
 > **You:** Create a hero section on a new page called "Spring Launch" with a heading, subheading, and a CTA button. Use my brand colors.
@@ -82,9 +116,10 @@ Claude orchestrates a few tool calls in sequence:
 
 1. `diviops_global_color_list` — discovers your brand palette.
 2. `diviops_template_list` / `diviops_template_get` — pulls a verified hero template that matches the request.
-3. `diviops_page_create` — creates `Spring Launch` as a draft with the hero block markup.
-4. `diviops_validate_blocks` — confirms the markup is well-formed before save. Accepts inline `content` or a `page_id` to validate already-saved markup.
-5. `diviops_render_preview` — returns the rendered HTML so you can verify before publishing. Accepts inline `content` or a `page_id` to preview an existing page.
+3. `diviops_validate_blocks` with inline `content` — confirms the constructed hero markup is well-formed before any write.
+4. `diviops_page_create` — creates `Spring Launch` as a draft using those exact validated bytes.
+5. `diviops_validate_blocks` with the saved `page_id` — verifies persisted readback.
+6. `diviops_render_preview` — returns the rendered HTML so you can verify before publishing. Accepts inline `content` or a `page_id` to preview an existing page.
 
 The skill enforces the Divi block format, the design system, and the response contract throughout — you stay at the prompt level.
 
@@ -226,10 +261,12 @@ plus checksum, not an arbitrary filesystem path.
 To collect the target JSON from the target WordPress site, call the Free/core
 read-only MCP tool `diviops_cross_env_target_context_get` against the target
 server and save the returned `data` object as `target.json`. Optional
-`source_asset_hints` and `source_attachment_ids` let the target site search for
-exact media-library candidates by upload path or basename. Ambiguous matches
-remain candidates only; no media is uploaded and no global colors or layouts are
-created. The export includes a SHA-256 checksum of the current target layout
+`source_asset_hints`, `source_upload_paths`, and `source_attachment_ids` let the
+target site search for media-library candidates. `source_upload_paths` preserves
+exact path provenance, including for root-level filenames; basename-only hints
+remain ambiguous when multiple target paths share a filename. No media is
+uploaded and no global colors or layouts are created. The export includes a
+SHA-256 checksum of the current target layout
 `post_content` as `destination_checksum` so preflight can bind the reviewed plan
 to the target state without exposing the raw target content. It also includes
 `global_color_value_evidence`, a deterministic SHA-256 digest map for resolved
@@ -380,7 +417,7 @@ Common quick fixes — full reference in [troubleshooting.md](../docs/troublesho
 
 ## Requirements
 
-- Node.js >= 18.0.0
+- Node.js >= 22.0.0
 - PHP >= 7.4
 - WordPress >= 6.5
 - Divi 5 theme active

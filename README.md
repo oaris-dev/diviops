@@ -27,8 +27,13 @@ Claude Code ◄──► MCP Server (stdio) ◄──► WordPress REST API ◄�
 | **DiviOps Agent** WordPress plugin | REST API endpoints for Divi page data, section targeting, block validation, preset management. The contract layer between WordPress + Divi and the MCP server. | `diviops-agent.zip` at repo root |
 | **`diviops-agent-pro`** WordPress plugin | Pro add-on for paid coverage slices, Pro license activation, and update gating. Requires `diviops-agent`. | `diviops-agent-pro.zip` at repo root in the Pro distribution |
 | **`@diviops/mcp-server`** | Node.js MCP server that bridges MCP clients to WordPress. Distributed via npm — no clone, no build. | `npx -y --package @diviops/mcp-server diviops-mcp` |
-| **`divi-5-builder`** skill | Block format rules, verified attribute paths, design patterns. Without it, agents guess attr formats and produce broken pages. | `skills/divi-5-builder/` (Claude: `claude plugin install oaris-dev/diviops`; Codex: copy `skills/*` into `~/.codex/skills`) |
+| **`divi-5-builder`** skill | Block format rules, verified attribute paths, design patterns. Without it, agents guess attr formats and produce broken pages. | `skills/divi-5-builder/` (Claude: add marketplace `oaris-dev/diviops`, then install `divi-5-builder@diviops`; Codex: copy `skills/*` into `~/.codex/skills`) |
 | **`diviops-design-library`** plugin | Optional. CSS entrance animations, gradient text, glass effects, Three.js WebGL shaders. | `diviops-design-library.zip` at repo root |
+
+The WordPress plugin, npm MCP server, and client-side skill are three independent
+components. WordPress and npm updates do not install or refresh a manually copied
+skill. A working MCP tool call proves connectivity only; native Divi authoring also
+requires a current `divi-5-builder` skill in the active client session.
 
 ## Use cases
 
@@ -43,7 +48,9 @@ DiviOps fits multiple WordPress workflows where AI-driven authoring + management
 
 ## Quick start
 
-Three steps to your first tool call. For containerized environments, HTTPS configuration, and troubleshooting, see [SETUP.md](SETUP.md).
+The first three steps prove connectivity; steps 4 and 5 establish native Divi
+authoring readiness. For containerized environments, HTTPS configuration, and
+troubleshooting, see [SETUP.md](SETUP.md).
 
 ### 1. Install the WordPress plugin
 
@@ -66,6 +73,15 @@ In **WP Admin → Users → Your Profile → Application Passwords**:
 - **Strip the spaces** from the generated password — WordPress shows `758r WQ1X URcg ...` for readability but accepts the spaceless form, which avoids argument-parsing surprises in `claude mcp add`.
 
 ### 3. Register the MCP server
+
+The current successor server requires Node.js 22 or newer. Upgrade Node before
+using `@diviops/mcp-server@1.5.40` or later. If an environment must remain on
+Node 18, pin the prior compatible server with
+`npx -y --package=@diviops/mcp-server@1.5.39 diviops-mcp`. This server pin does
+not select a WordPress plugin version: Free and Pro use independent version
+series and compatibility is determined by the capability handshake. Direct
+npm/stdio and MCP v1 remain supported; the launcher and MCP v2 fixtures are not
+part of the public package.
 
 Claude Code:
 
@@ -94,19 +110,27 @@ WP_USER = "your-wp-username"
 WP_APP_PASSWORD = "xxxxXXXXxxxxXXXXxxxxXXXX"
 ```
 
-Restart your client, then ask: **"List the pages on my site."** The assistant calls `diviops_page_list` and renders the result. You're authoring with the suite.
+Restart your client, then ask: **"List the pages on my site."** The assistant calls
+`diviops_page_list` and renders the result. This proves connectivity; complete the
+skill install and native-module smoke below before authoring content.
 
 ### 4. Load the `divi-5-builder` skill
 
 The skill teaches the assistant the correct Divi 5 block format. Without it, the agent guesses attr formats and produces broken pages.
 
 ```bash
-claude plugin install oaris-dev/diviops
+claude plugin marketplace add oaris-dev/diviops
+claude plugin install divi-5-builder@diviops
 ```
 
 Verify with `What skills do you have?` — you should see `divi-5-builder` listed.
 
-This distribution includes a [`.claude-plugin/marketplace.json`](.claude-plugin/marketplace.json) manifest, so the same install command also works from a local clone of this repo (`claude plugin install <path-to-clone>`). The repository is published as a Claude Code plugin marketplace entry.
+This distribution includes a [`.claude-plugin/marketplace.json`](.claude-plugin/marketplace.json) manifest. For a local clone, add its absolute path as the marketplace source, then install the same qualified plugin ID:
+
+```bash
+claude plugin marketplace add /absolute/path/to/diviops
+claude plugin install divi-5-builder@diviops
+```
 
 For alternative skill installation paths (cloned repo, project-local copy), see [SETUP.md](SETUP.md#step-7-load-the-divi-5-builder-skill).
 
@@ -117,6 +141,19 @@ mkdir -p "$HOME/.codex/skills"
 cp -R skills/* "$HOME/.codex/skills/"
 ```
 
+Manual Claude or Codex copies do not update with WordPress or npm. Replace them
+from each newer distribution and restart the client. Do not leave a stale manual
+Claude copy active beside the plugin-managed copy. Claude Desktop and other MCP
+clients do not necessarily load Claude Code's `.claude/skills` paths.
+
+### 5. Verify native Divi authoring
+
+Use the fail-closed disposable draft prompt in
+[SETUP.md](SETUP.md#first-run-native-divi-verification). It must produce and
+report native section, row, column, heading, text, and button modules. Code modules,
+page-sized HTML, iframe layouts, and structural HTML stuffed into text/container
+fields are not acceptable fallbacks.
+
 ## Example workflow
 
 > **You:** Create a hero section on a new page called "Spring Launch" with a heading, subheading, and a CTA button. Use my brand colors.
@@ -125,9 +162,10 @@ Claude orchestrates a few tool calls in sequence:
 
 1. `diviops_global_color_list` — discovers your brand palette.
 2. `diviops_template_list` / `diviops_template_get` — pulls a verified hero template that matches the request.
-3. `diviops_page_create` — creates `Spring Launch` as a draft with the hero block markup.
-4. `diviops_validate_blocks` — confirms the markup is well-formed before save.
-5. `diviops_render_preview` — returns the rendered HTML so you can verify before publishing.
+3. `diviops_validate_blocks` with inline `content` — confirms the constructed hero markup is well-formed before any write.
+4. `diviops_page_create` — creates `Spring Launch` as a draft using those exact validated bytes.
+5. `diviops_validate_blocks` with the saved `page_id` — verifies persisted readback.
+6. `diviops_render_preview` — returns the rendered HTML so you can verify before publishing.
 
 The skill enforces the Divi block format, the design system, and the response contract throughout — you stay at the prompt level.
 
@@ -225,7 +263,7 @@ Pro upgrade: <https://diviops.com>
 
 ## Requirements
 
-- Node.js 18+
+- Node.js 22+
 - PHP 7.4+
 - WordPress 6.5+
 - Divi 5.1.0+ theme active

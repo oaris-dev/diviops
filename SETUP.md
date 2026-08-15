@@ -8,9 +8,24 @@ Get from zero to generating Divi 5 pages with Claude Code or Codex in ~15 minute
 
 - **WordPress** 6.5+ with **Divi 5** theme (5.1.0+)
 - **PHP** 7.4+
-- **Node.js** 18+ (for the MCP server)
+- **Node.js** 22+ (for the MCP server)
 - **Claude Code** CLI or **Codex** installed
 - A local or remote WordPress site (Local by Flywheel recommended for local dev)
+
+## Three independent components
+
+Native Divi authoring requires all three components below. They are installed and
+updated independently:
+
+1. **DiviOps Agent** runs inside WordPress and owns the REST capability surface.
+2. **`@diviops/mcp-server`** connects the AI client to that WordPress site.
+3. **`divi-5-builder` skill** gives the client the verified Divi block formats and
+   native-module authoring rules.
+
+A successful MCP connection proves transport, not native Divi authoring knowledge.
+Updating WordPress or npm does not update a manually copied skill. Verify all three
+components before the first write and after changing clients, workspaces, or skill
+installation methods.
 
 ## Step 1: Install the WordPress Plugin
 
@@ -61,6 +76,20 @@ The Pro plugin requires the Free plugin. Pro runtime features continue to work a
 ## Step 3: Register with Your AI Client
 
 The MCP server runs from the published npm package — no clone, no build step.
+
+The successor server line requires Node.js 22 or newer. Upgrade Node before
+using `@diviops/mcp-server@1.5.40` or later. If the client host must remain on
+Node 18, pin the previously shipped compatible server explicitly:
+
+```bash
+npx -y --package=@diviops/mcp-server@1.5.39 diviops-mcp
+```
+
+The server pin does not select or downgrade either WordPress plugin. Server,
+Free, and Pro versions are independent, and the connected site's advertised
+capabilities remain the compatibility gate. The Node 22 successor continues to
+use direct npm/stdio and MCP v1; MCP v2 fixtures and the launcher sidecar remain
+unreleased.
 
 > **Important**: Choose a unique MCP name that won't conflict with other MCP servers you have registered. Use your site name (e.g., `diviops-mysite`).
 
@@ -113,6 +142,22 @@ WP_PATH = "/absolute/path/to/wordpress"
 ```
 
 Restart Codex after changing MCP config.
+
+Operators working from a DiviOps source checkout can audit existing classic
+Codex entries without printing raw environment values, arguments, or local
+paths. This read-only connector guardrail is not included in the packaged
+Free/Pro ZIPs or their root `SETUP.md`. From the source repository root, pass
+an explicit config path; the audit never changes the file:
+
+```bash
+npm --prefix diviops-launcher ci
+node diviops-launcher/scripts/codex-connector-audit.mjs \
+  --config "$HOME/.codex/config.toml"
+```
+
+Source-repository operators can also review
+`docs/codex-mcp-connector-hygiene.md` for the separately authorized
+one-connector migration and rollback contract.
 
 ### Local Development Environments
 
@@ -253,12 +298,13 @@ The skill teaches the assistant the correct Divi 5 block format — module attri
 
 **Option A — Install as a Claude Code plugin** (recommended):
 ```bash
-claude plugin install oaris-dev/diviops
+claude plugin marketplace add oaris-dev/diviops
+claude plugin install divi-5-builder@diviops
 ```
 
 This installs the `divi-5-builder` skill from this repo. Works from any directory — no need to clone or copy files. To update later:
 ```bash
-claude plugin update divi-5-builder
+claude plugin update divi-5-builder@diviops
 ```
 
 **Option B — Load from cloned repo**:
@@ -276,11 +322,28 @@ cd /path/to/your-project
 claude
 ```
 
+This project-local path is
+`<workspace>/.claude/skills/divi-5-builder/SKILL.md`. Start Claude Code from that
+workspace so the project skill is discoverable.
+
+**Option D — Copy skill for Claude Code user-wide use**:
+```bash
+mkdir -p "$HOME/.claude/skills"
+cp -R /path/to/diviops/skills/divi-5-builder "$HOME/.claude/skills/"
+```
+
+The resulting path is `~/.claude/skills/divi-5-builder/SKILL.md`.
+
 Verify the skill loaded:
 ```
 What skills do you have?
 ```
 You should see `divi-5-builder` in the list.
+
+Use one ownership path for a skill. Do not keep a Claude plugin-managed copy and a
+stale manual copy active at the same time. Plugin-managed skills update with
+`claude plugin update divi-5-builder@diviops`; manual project or user copies
+update only when you replace those copied files from a newer distribution.
 
 Pro packages include additional slice skills such as `diviops-fluentcart` and `diviops-scf`. Install or copy all bundled `skills/*` entries when you want those Pro workflows available to the agent.
 
@@ -295,6 +358,33 @@ Restart Codex after copying skills. Verify with:
 What skills do you have?
 ```
 You should see `divi-5-builder` and any bundled DiviOps slice skills you installed.
+
+Codex manual skills are not updated by npm, WordPress, or Claude plugin updates;
+replace the copied directory from the new distribution and restart Codex. Claude
+Desktop and other MCP clients may connect to the server without loading Claude
+Code's `.claude/skills` directories. Use that client's supported knowledge or
+skill mechanism; otherwise treat the client as read-only for Divi authoring.
+
+## First-run native Divi verification
+
+Run this on a disposable local site or disposable draft before real authoring:
+
+```text
+Confirm that divi-5-builder is available, then call diviops_meta_info. Construct
+inline markup containing native Divi section, row, column, heading, text, and
+button modules and validate that inline content with diviops_validate_blocks
+before any write. Do not use a Code module, page-sized HTML, an iframe layout, or
+structural HTML inside text or container fields. Only when inline validation has
+zero errors, create one disposable draft from the validated bytes, validate the
+saved page again by page ID, and report the exact native module names written:
+divi/section, divi/row, divi/column, divi/heading, divi/text, and divi/button. If
+the skill or required DiviOps tools are unavailable, stop without creating or
+changing content.
+```
+
+Pass only when the client reports the native module tree and validation succeeds.
+A visually correct page made from large HTML blobs is a failed setup, not an
+acceptable fallback. Trash the disposable draft after verification.
 
 ## Step 8: Optional — Bootstrap the Design System
 
@@ -494,7 +584,7 @@ Each registration is independent — different site, different credentials, diff
 1. `diviops-agent.zip` installed in their WordPress site
 2. For Pro seats, `diviops-agent-pro.zip` installed and activated with their license key
 3. `claude mcp add ... npx -y --package @diviops/mcp-server diviops-mcp` with their own `WP_URL`, `WP_USER`, `WP_APP_PASSWORD`
-4. The bundled skills via `claude plugin install oaris-dev/diviops` or by copying `skills/*` into their Codex skill directory
+4. The bundled skills via `claude plugin marketplace add oaris-dev/diviops` followed by `claude plugin install divi-5-builder@diviops`, or by copying `skills/*` into their Codex skill directory
 
 No clone, no build.
 
@@ -507,4 +597,4 @@ No clone, no build.
 | WP-CLI "not configured" | Set `WP_PATH` (Local by Flywheel) or `WP_CLI_CMD` (containerized) |
 | Styles not rendering | Hard-refresh browser (Cmd+Shift+R) — CSS cache |
 | VB shows raw `$variable()$` | Dynamic content binding — click the chip to edit |
-| `npx` can't find package | Update Node.js to 18+; verify `npx --version` works; use `npx -y --package @diviops/mcp-server diviops-mcp`; the explicit package/bin form is required |
+| `npx` can't find package | Update Node.js to 22+; verify `npx --version` works; use `npx -y --package @diviops/mcp-server diviops-mcp`; the explicit package/bin form is required |

@@ -1,0 +1,677 @@
+{
+  "schema_version": "1.0.0",
+  "registry_version": "1.0.0",
+  "generated_at": "2026-05-19",
+  "evidence_level_ordering": {
+    "UNVERIFIED": 0,
+    "SCHEMA_OBSERVED": 1,
+    "RUNTIME_VERIFIED": 2,
+    "VB_ROUNDTRIP_VERIFIED": 3,
+    "VB_PRESET_STORAGE_VERIFIED": 4,
+    "CROSS_VERSION_STABLE": 5
+  },
+  "effective_evidence_rule": "min(pattern_evidence_level, applicability[<module>].cell_evidence_level). Missing applicability[<module>] = UNVERIFIED (0).",
+  "write_emitter_threshold": "VB_PRESET_STORAGE_VERIFIED (>=4) at the EFFECTIVE level. SCHEMA_OBSERVED + caveat is allowed for non-mutating audit output only.",
+  "notes": [
+    "Tier 1 = shared decorations (background, spacing, border, sizing, ...). Carry pattern_evidence_level + per-module applicability[<module>].cell_evidence_level. Applicability is explicitly enumerated; never implicitly inherited.",
+    "Tier 2 = pattern families used by some modules (divi/font, divi/font-body, divi/button group). Carry pattern + per-module wrapper. Same explicit-enumeration rule.",
+    "Tier 3 = module-specific unique attrs. Per-module cell-level only.",
+    "Group-preset routing fields (group_name + group_id) appear per applicability cell on preset_type:group entries because shared buckets (e.g. divi/spacing) have constant groupName across modules but divergent groupId per use.",
+    "styleAttrs shorthand contract: capture files may use shorthand strings (e.g. 'byte-identical to attrs'); treat semantically as deepClone(attrs). Do not rewrite captures.",
+    "Day-one allowlist is a DERIVED QUERY at preset-CLI runtime: filter entries whose effective evidence (min rule above) is >= VB_PRESET_STORAGE_VERIFIED. No separate allowlist artifact ships.",
+    "Pattern A (Google Fonts: separate family + weight) and Pattern B (local-hosted: weight encoded in family string) are distinct entries; write emitter MUST NOT vouch one with the other's evidence.",
+    "Sources point to durable locations only: committed files in this repo (docs/, .claude/skills/) or stable URLs. Gitignored draft paths are forbidden."
+  ],
+  "tier1": [
+    {
+      "pattern_family": "module.decoration.background",
+      "pattern_evidence_level": "VB_PRESET_STORAGE_VERIFIED",
+      "pattern_evidence_source": "docs/verification/evidence/canonical-shape-dumps-2026-05-18/round-4-section.json",
+      "pattern_divi_version": "5.5.2",
+      "pattern_verified_at": "2026-05-18",
+      "canonical_shape_note": "module.decoration.background.desktop.value.color holds a color literal or $variable() token. Hover at desktop.hover.color (NO 'value' wrapper between hover and color, per reference_canonical_hover_state_shape).",
+      "applicability": {
+        "divi/section": {
+          "wrapper": "module",
+          "preset_type": "module",
+          "cell_evidence_level": "VB_PRESET_STORAGE_VERIFIED",
+          "cell_divi_version": "5.5.2",
+          "verified_at": "2026-05-18",
+          "source": "docs/verification/evidence/canonical-shape-dumps-2026-05-18/round-4-section.json",
+          "preset_map_key": "module.decoration.background__color",
+          "state": "desktop.value",
+          "caveats": []
+        },
+        "divi/heading": {
+          "wrapper": "module",
+          "preset_type": "module",
+          "cell_evidence_level": "SCHEMA_OBSERVED",
+          "cell_divi_version": "5.5.2",
+          "verified_at": "2026-05-19",
+          "source": ".claude/skills/divi-5-builder/references/module-formats.md#tier-1--common-decoration-all-modules",
+          "caveats": ["Tier 1 documented as universally applicable in module-formats.md; no module-specific VB capture for divi/heading on this wrapper yet"]
+        },
+        "divi/text": {
+          "wrapper": "module",
+          "preset_type": "module",
+          "cell_evidence_level": "SCHEMA_OBSERVED",
+          "cell_divi_version": "5.5.2",
+          "verified_at": "2026-05-19",
+          "source": ".claude/skills/divi-5-builder/references/module-formats.md#tier-1--common-decoration-all-modules",
+          "caveats": []
+        },
+        "divi/button": {
+          "wrapper": "module",
+          "preset_type": "module",
+          "cell_evidence_level": "SCHEMA_OBSERVED",
+          "cell_divi_version": "5.5.2",
+          "verified_at": "2026-05-19",
+          "source": ".claude/skills/divi-5-builder/references/module-formats.md#button-vb-verified-2026-03-31-for-511-schema-audited-2026-04-12-",
+          "caveats": ["Button background is canonically authored at button.decoration.background (Tier 2 button group), not module.decoration.background; module-level background works only when intentionally targeting the surrounding wrapper"]
+        }
+      }
+    },
+    {
+      "pattern_family": "module.decoration.spacing",
+      "pattern_evidence_level": "VB_PRESET_STORAGE_VERIFIED",
+      "pattern_evidence_source": "docs/verification/evidence/canonical-shape-dumps-2026-05-18/round-4-section.json",
+      "pattern_divi_version": "5.5.2",
+      "pattern_verified_at": "2026-05-18",
+      "canonical_shape_note": "module.decoration.spacing.desktop.value.padding (and .margin) is sparse-emit: only user-touched corners (top, right, bottom, left) appear in attrs, plus syncVertical + syncHorizontal which BOTH always emit on any spacing touch (atomic sibling pair — both engage together even when only one direction was touched). Sync flag values are 'off' by default, 'on' when user explicitly enables sync. Round-4 section main capture (top+bottom touched) stored {top, bottom, syncVertical, syncHorizontal} — no left/right. Round-4 discriminator (top+bottom only, sync explicitly NOT touched) confirms sync flags engage atomically while corners do not. Phase 2 emitter rule: emit only the specified corners + always emit both sync flags. Atomicity claim revised 2026-05-23 per the canonical section spacing group-bucket capture which corroborates the same sparse-emit + always-paired-sync shape on the group-preset path (evidence: docs/verification/evidence/canonical-shape-dumps-2026-05-23/round-5-spacing-section.json).",
+      "applicability": {
+        "divi/section": {
+          "wrapper": "module",
+          "preset_type": "module",
+          "cell_evidence_level": "VB_PRESET_STORAGE_VERIFIED",
+          "cell_divi_version": "5.5.2",
+          "verified_at": "2026-05-18",
+          "source": "docs/verification/evidence/canonical-shape-dumps-2026-05-18/round-4-section.json",
+          "preset_map_key": "module.decoration.spacing__padding",
+          "state": "desktop.value",
+          "caveats": ["Padding (and margin) is sparse-emit: corners appear ONLY when user touched them; syncVertical + syncHorizontal always emit on any spacing touch (atomic sibling pair). Phase 2 emitter rule: emit only the specified corners + always emit both sync flags. Default sync values are 'off'; 'on' when user explicitly enables sync. Atomicity claim revised 2026-05-23 per the canonical section spacing capture evidence."]
+        },
+        "divi/heading": {
+          "wrapper": "module",
+          "preset_type": "module",
+          "cell_evidence_level": "SCHEMA_OBSERVED",
+          "cell_divi_version": "5.5.2",
+          "verified_at": "2026-05-19",
+          "source": ".claude/skills/divi-5-builder/references/module-formats.md#tier-1--common-decoration-all-modules",
+          "caveats": []
+        },
+        "divi/text": {
+          "wrapper": "module",
+          "preset_type": "module",
+          "cell_evidence_level": "SCHEMA_OBSERVED",
+          "cell_divi_version": "5.5.2",
+          "verified_at": "2026-05-19",
+          "source": ".claude/skills/divi-5-builder/references/module-formats.md#tier-1--common-decoration-all-modules",
+          "caveats": []
+        },
+        "divi/button": {
+          "wrapper": "module",
+          "preset_type": "module",
+          "cell_evidence_level": "SCHEMA_OBSERVED",
+          "cell_divi_version": "5.5.2",
+          "verified_at": "2026-05-19",
+          "source": ".claude/skills/divi-5-builder/references/module-formats.md#button-vb-verified-2026-03-31-for-511-schema-audited-2026-04-12-",
+          "caveats": ["Button-module padding lives on module.decoration.spacing per Button exception, NOT button.decoration.spacing (which is VB-hidden / non-functional). See module-formats.md."]
+        },
+        "divi/row": {
+          "wrapper": "module",
+          "preset_type": "module",
+          "cell_evidence_level": "SCHEMA_OBSERVED",
+          "cell_divi_version": "5.5.2",
+          "verified_at": "2026-05-19",
+          "source": ".claude/skills/divi-5-builder/references/module-formats.md#tier-1--common-decoration-all-modules",
+          "caveats": []
+        },
+        "divi/column": {
+          "wrapper": "module",
+          "preset_type": "module",
+          "cell_evidence_level": "SCHEMA_OBSERVED",
+          "cell_divi_version": "5.5.2",
+          "verified_at": "2026-05-19",
+          "source": ".claude/skills/divi-5-builder/references/module-formats.md#tier-1--common-decoration-all-modules",
+          "caveats": []
+        },
+        "divi/group": {
+          "wrapper": "module",
+          "preset_type": "module",
+          "cell_evidence_level": "SCHEMA_OBSERVED",
+          "cell_divi_version": "5.5.2",
+          "verified_at": "2026-05-19",
+          "source": ".claude/skills/divi-5-builder/references/module-formats.md#tier-1--common-decoration-all-modules",
+          "caveats": []
+        }
+      }
+    },
+    {
+      "pattern_family": "module.decoration.border",
+      "pattern_evidence_level": "VB_PRESET_STORAGE_VERIFIED",
+      "pattern_evidence_source": "docs/verification/evidence/canonical-shape-dumps-2026-05-18/round-4-button-outlined-canonical.json",
+      "pattern_divi_version": "5.5.2",
+      "pattern_verified_at": "2026-05-19",
+      "canonical_shape_note": "border.desktop.value.{radius, styles.all.{width, style, color}}. radius vocabulary canonical: {topLeft, topRight, bottomLeft, bottomRight, sync}. styles.all.style is per-side string ('solid', 'dashed', ...) — VB emits styles.all.width + styles.all.color when user touches Width + Color; emits styles.all.style only when user touches the Style dropdown (per round-4-button-outlined-canonical user_did_NOT_touch_fields).",
+      "applicability": {
+        "divi/button": {
+          "wrapper": "button",
+          "preset_type": "group",
+          "group_name": "divi/button",
+          "group_id": "button",
+          "cell_evidence_level": "VB_PRESET_STORAGE_VERIFIED",
+          "cell_divi_version": "5.5.2",
+          "verified_at": "2026-05-19",
+          "source": "docs/verification/evidence/canonical-shape-dumps-2026-05-18/round-4-button-outlined-canonical.json",
+          "preset_map_key": "button.decoration.border__styles",
+          "state": "desktop.value",
+          "caveats": ["Outlined-button canonical shape; radius capture is at round-3-button-canonical-complete.json with sync='on'"]
+        },
+        "divi/section": {
+          "wrapper": "module",
+          "preset_type": "module",
+          "cell_evidence_level": "SCHEMA_OBSERVED",
+          "cell_divi_version": "5.5.2",
+          "verified_at": "2026-05-19",
+          "source": ".claude/skills/divi-5-builder/references/module-formats.md#tier-1--common-decoration-all-modules",
+          "caveats": []
+        },
+        "divi/heading": {
+          "wrapper": "module",
+          "preset_type": "module",
+          "cell_evidence_level": "SCHEMA_OBSERVED",
+          "cell_divi_version": "5.5.2",
+          "verified_at": "2026-05-19",
+          "source": ".claude/skills/divi-5-builder/references/module-formats.md#tier-1--common-decoration-all-modules",
+          "caveats": []
+        },
+        "divi/text": {
+          "wrapper": "module",
+          "preset_type": "module",
+          "cell_evidence_level": "SCHEMA_OBSERVED",
+          "cell_divi_version": "5.5.2",
+          "verified_at": "2026-05-19",
+          "source": ".claude/skills/divi-5-builder/references/module-formats.md#tier-1--common-decoration-all-modules",
+          "caveats": []
+        },
+        "divi/image": {
+          "wrapper": "image",
+          "preset_type": "module",
+          "cell_evidence_level": "SCHEMA_OBSERVED",
+          "cell_divi_version": "5.5.2",
+          "verified_at": "2026-05-19",
+          "source": ".claude/skills/divi-5-builder/references/module-formats.md#image-vb-verified-2026-03-19-schema-audited-2026-04-12--exception",
+          "caveats": ["Image-module exception: border lives on image.decoration.border, NOT module.decoration.border. Border radius from preset alone does not render — reinforce inline per module-formats.md image-specific quirk."]
+        }
+      }
+    },
+    {
+      "pattern_family": "module.decoration.sizing",
+      "pattern_evidence_level": "SCHEMA_OBSERVED",
+      "pattern_evidence_source": ".claude/skills/divi-5-builder/references/module-formats.md#tier-1--common-decoration-all-modules",
+      "pattern_divi_version": "5.5.2",
+      "pattern_verified_at": "2026-05-19",
+      "canonical_shape_note": "sizing.desktop.value.{maxWidth, width, flexType, alignment, alignSelf, minHeight, height}. flexType uses 24-unit grid ('8_24', '12_24'). flexType requires parent row display:'flex' per module-formats.md Column section. No Phase 1 capture for sizing yet; pattern remains SCHEMA_OBSERVED until a VB-roundtrip lands.",
+      "applicability": {
+        "divi/column": {
+          "wrapper": "module",
+          "preset_type": "module",
+          "cell_evidence_level": "SCHEMA_OBSERVED",
+          "cell_divi_version": "5.5.2",
+          "verified_at": "2026-05-19",
+          "source": ".claude/skills/divi-5-builder/references/module-formats.md#column-vb-verified-2026-03-19-flex-pipeline-reverified-2026-05-09-against-divi-541-",
+          "caveats": ["flexType requires parent row display:'flex'; on block-display rows Divi emits the legacy et_pb_column_N_M class and ignores flexType (intentional Divi behavior, not a bug)"]
+        },
+        "divi/group": {
+          "wrapper": "module",
+          "preset_type": "module",
+          "cell_evidence_level": "SCHEMA_OBSERVED",
+          "cell_divi_version": "5.5.2",
+          "verified_at": "2026-05-19",
+          "source": ".claude/skills/divi-5-builder/references/module-formats.md#group-vb-verified-2026-03-21-",
+          "caveats": []
+        },
+        "divi/section": {
+          "wrapper": "module",
+          "preset_type": "module",
+          "cell_evidence_level": "SCHEMA_OBSERVED",
+          "cell_divi_version": "5.5.2",
+          "verified_at": "2026-05-19",
+          "source": ".claude/skills/divi-5-builder/references/module-formats.md#tier-1--common-decoration-all-modules",
+          "caveats": []
+        }
+      }
+    }
+  ],
+  "tier2": [
+    {
+      "pattern_family": "divi/font",
+      "pattern_variant": "google_fonts_pattern_a",
+      "pattern_evidence_level": "VB_PRESET_STORAGE_VERIFIED",
+      "pattern_evidence_source": "docs/verification/evidence/canonical-shape-dumps-2026-05-18/round-1a-heading-h1-pattern-a-google.json",
+      "pattern_divi_version": "5.5.2",
+      "pattern_verified_at": "2026-05-18",
+      "canonical_shape_note": "Pattern A (Google Fonts CDN): separate {family: 'Inter', weight: '700', size, color} keys at <wrapper>.decoration.font.font.desktop.value.*. weight is a numeric-string ('100' to '900'). See reference_local_hosted_fonts_eu_pattern.",
+      "co_attrs": ["weight", "size", "color"],
+      "family_value_format": "plain_family_name",
+      "applicability": {
+        "divi/heading": {
+          "wrapper": "title",
+          "preset_type": "group",
+          "group_name": "divi/font",
+          "group_id": "designTitleText",
+          "cell_evidence_level": "VB_PRESET_STORAGE_VERIFIED",
+          "cell_divi_version": "5.5.2",
+          "verified_at": "2026-05-18",
+          "source": "docs/verification/evidence/canonical-shape-dumps-2026-05-18/round-1a-heading-h1-pattern-a-google.json",
+          "preset_map_key": "title.decoration.font.font__family",
+          "state": "desktop.value",
+          "caveats": []
+        },
+        "divi/blurb": {
+          "wrapper": "title",
+          "preset_type": "group",
+          "group_name": "divi/font",
+          "group_id": "designTitleText",
+          "cell_evidence_level": "SCHEMA_OBSERVED",
+          "cell_divi_version": "5.5.2",
+          "verified_at": "2026-05-19",
+          "source": ".claude/skills/divi-5-builder/references/module-formats.md#tier-2--pattern-families",
+          "caveats": ["Wrapper inferred from module-formats.md Font Family B; not VB-roundtripped on divi/blurb specifically"]
+        },
+        "divi/number-counter": {
+          "wrapper": "title",
+          "preset_type": "group",
+          "group_name": "divi/font",
+          "group_id": "designTitleText",
+          "cell_evidence_level": "SCHEMA_OBSERVED",
+          "cell_divi_version": "5.5.2",
+          "verified_at": "2026-05-19",
+          "source": ".claude/skills/divi-5-builder/references/module-formats.md#tier-2--pattern-families",
+          "caveats": []
+        },
+        "divi/testimonial": {
+          "wrapper": "author",
+          "preset_type": "group",
+          "group_name": "divi/font",
+          "group_id": "designTitleText",
+          "cell_evidence_level": "SCHEMA_OBSERVED",
+          "cell_divi_version": "5.5.2",
+          "verified_at": "2026-05-19",
+          "source": ".claude/skills/divi-5-builder/references/module-formats.md#tier-2--pattern-families",
+          "caveats": ["Testimonial also exposes jobTitle and company variants; each is a separate cell"]
+        },
+        "divi/accordion-item": {
+          "wrapper": "title",
+          "preset_type": "group",
+          "group_name": "divi/font",
+          "group_id": "designTitleText",
+          "cell_evidence_level": "SCHEMA_OBSERVED",
+          "cell_divi_version": "5.5.2",
+          "verified_at": "2026-05-19",
+          "source": ".claude/skills/divi-5-builder/references/module-formats.md#tier-2--pattern-families",
+          "caveats": []
+        },
+        "divi/slide": {
+          "wrapper": "title",
+          "preset_type": "group",
+          "group_name": "divi/font",
+          "group_id": "designTitleText",
+          "cell_evidence_level": "SCHEMA_OBSERVED",
+          "cell_divi_version": "5.5.2",
+          "verified_at": "2026-05-19",
+          "source": ".claude/skills/divi-5-builder/references/module-formats.md#tier-2--pattern-families",
+          "caveats": []
+        }
+      }
+    },
+    {
+      "pattern_family": "divi/font",
+      "pattern_variant": "local_hosted_pattern_b",
+      "pattern_evidence_level": "VB_PRESET_STORAGE_VERIFIED",
+      "pattern_evidence_source": "docs/verification/evidence/canonical-shape-dumps-2026-05-18/round-1b-heading-h1-pattern-b-local.json",
+      "pattern_divi_version": "5.5.2",
+      "pattern_verified_at": "2026-05-18",
+      "canonical_shape_note": "Pattern B (local-hosted, EU-GDPR via divi-oafontz plugin + et_uploaded_fonts): {family: 'Sora 700', size, color} — weight is ENCODED in family string; NO separate 'weight' key. Pattern A vs Pattern B are NOT interchangeable evidence for write emitters. Reference: reference_local_hosted_fonts_eu_pattern.",
+      "co_attrs": ["size", "color"],
+      "family_value_format": "weight_encoded_in_family_string",
+      "applicability": {
+        "divi/heading": {
+          "wrapper": "title",
+          "preset_type": "group",
+          "group_name": "divi/font",
+          "group_id": "designTitleText",
+          "cell_evidence_level": "VB_PRESET_STORAGE_VERIFIED",
+          "cell_divi_version": "5.5.2",
+          "verified_at": "2026-05-18",
+          "source": "docs/verification/evidence/canonical-shape-dumps-2026-05-18/round-1b-heading-h1-pattern-b-local.json",
+          "preset_map_key": "title.decoration.font.font__family",
+          "state": "desktop.value",
+          "caveats": ["User did NOT touch the weight picker; Pattern B's encoding lives in the family string itself"]
+        }
+      }
+    },
+    {
+      "pattern_family": "divi/font-body",
+      "pattern_variant": "google_fonts_pattern_a",
+      "pattern_evidence_level": "VB_PRESET_STORAGE_VERIFIED",
+      "pattern_evidence_source": "docs/verification/evidence/canonical-shape-dumps-2026-05-18/round-2-body-text-pattern-a.json",
+      "pattern_divi_version": "5.5.2",
+      "pattern_verified_at": "2026-05-18",
+      "canonical_shape_note": "Pattern A on body-text family. Wrapper chain: content.decoration.bodyFont.body.font.desktop.value.{family, weight, color, size}. bodyFont.link.font.desktop.value.color for link state. Pattern B for body-text deferred unless heading-vs-body shape divergence surfaces a body-specific need (per round-2 _meta).",
+      "co_attrs": ["weight", "size", "color"],
+      "family_value_format": "plain_family_name",
+      "applicability": {
+        "divi/text": {
+          "wrapper": "content",
+          "preset_type": "group",
+          "group_name": "divi/font-body",
+          "group_id": "designText",
+          "cell_evidence_level": "VB_PRESET_STORAGE_VERIFIED",
+          "cell_divi_version": "5.5.2",
+          "verified_at": "2026-05-18",
+          "source": "docs/verification/evidence/canonical-shape-dumps-2026-05-18/round-2-body-text-pattern-a.json",
+          "preset_map_key": "content.decoration.bodyFont.body.font__family",
+          "state": "desktop.value",
+          "caveats": []
+        },
+        "divi/testimonial": {
+          "wrapper": "content",
+          "preset_type": "group",
+          "group_name": "divi/font-body",
+          "group_id": "designText",
+          "cell_evidence_level": "SCHEMA_OBSERVED",
+          "cell_divi_version": "5.5.2",
+          "verified_at": "2026-05-19",
+          "source": ".claude/skills/divi-5-builder/references/module-formats.md#tier-2--pattern-families",
+          "caveats": []
+        },
+        "divi/accordion-item": {
+          "wrapper": "content",
+          "preset_type": "group",
+          "group_name": "divi/font-body",
+          "group_id": "designText",
+          "cell_evidence_level": "SCHEMA_OBSERVED",
+          "cell_divi_version": "5.5.2",
+          "verified_at": "2026-05-19",
+          "source": ".claude/skills/divi-5-builder/references/module-formats.md#tier-2--pattern-families",
+          "caveats": []
+        },
+        "divi/slide": {
+          "wrapper": "content",
+          "preset_type": "group",
+          "group_name": "divi/font-body",
+          "group_id": "designText",
+          "cell_evidence_level": "SCHEMA_OBSERVED",
+          "cell_divi_version": "5.5.2",
+          "verified_at": "2026-05-19",
+          "source": ".claude/skills/divi-5-builder/references/module-formats.md#tier-2--pattern-families",
+          "caveats": []
+        },
+        "divi/blurb": {
+          "wrapper": "content",
+          "preset_type": "group",
+          "group_name": "divi/font-body",
+          "group_id": "designText",
+          "cell_evidence_level": "SCHEMA_OBSERVED",
+          "cell_divi_version": "5.5.2",
+          "verified_at": "2026-05-19",
+          "source": ".claude/skills/divi-5-builder/references/module-formats.md#tier-2--pattern-families",
+          "caveats": []
+        }
+      }
+    },
+    {
+      "pattern_family": "divi/button.background",
+      "pattern_evidence_level": "VB_PRESET_STORAGE_VERIFIED",
+      "pattern_evidence_source": "docs/verification/evidence/canonical-shape-dumps-2026-05-18/round-3-button-canonical-complete.json",
+      "pattern_divi_version": "5.5.2",
+      "pattern_verified_at": "2026-05-18",
+      "canonical_shape_note": "button.decoration.background.desktop.{value.color, hover.color}. NOTE: hover wrapper omits 'value' (per reference_canonical_hover_state_shape — Divi 5.5.x hover is one wrapper shallower than desktop). Phase 2 CLI must emit hover.color (NOT hover.value.color).",
+      "applicability": {
+        "divi/button": {
+          "wrapper": "button",
+          "preset_type": "group",
+          "group_name": "divi/button",
+          "group_id": "button",
+          "cell_evidence_level": "VB_PRESET_STORAGE_VERIFIED",
+          "cell_divi_version": "5.5.2",
+          "verified_at": "2026-05-18",
+          "source": "docs/verification/evidence/canonical-shape-dumps-2026-05-18/round-3-button-canonical-complete.json",
+          "preset_map_key": "button.decoration.background__color",
+          "state": "desktop.value + desktop.hover",
+          "caveats": []
+        }
+      }
+    },
+    {
+      "pattern_family": "divi/button.border",
+      "pattern_evidence_level": "VB_PRESET_STORAGE_VERIFIED",
+      "pattern_evidence_source": "docs/verification/evidence/canonical-shape-dumps-2026-05-18/round-3-button-canonical-complete.json",
+      "pattern_divi_version": "5.5.2",
+      "pattern_verified_at": "2026-05-18",
+      "canonical_shape_note": "button.decoration.border.desktop.value.radius = {topLeft, topRight, bottomLeft, bottomRight, sync}. Outlined-button styles.all.{width, color} captured at round-4-button-outlined-canonical.json. radius vocabulary differs from current MCP shape ({top,right,bottom,left,syncCorners}) — migration question deferred per F2 of round-3 findings.",
+      "applicability": {
+        "divi/button": {
+          "wrapper": "button",
+          "preset_type": "group",
+          "group_name": "divi/button",
+          "group_id": "button",
+          "cell_evidence_level": "VB_PRESET_STORAGE_VERIFIED",
+          "cell_divi_version": "5.5.2",
+          "verified_at": "2026-05-18",
+          "source": "docs/verification/evidence/canonical-shape-dumps-2026-05-18/round-3-button-canonical-complete.json",
+          "preset_map_key": "button.decoration.border__radius",
+          "state": "desktop.value",
+          "caveats": ["Canonical radius vocabulary is {topLeft, topRight, bottomLeft, bottomRight, sync} — NOT {top,right,bottom,left,syncCorners}. Current MCP shape diverges; migration question deferred per round-3 finding F2."]
+        }
+      }
+    },
+    {
+      "pattern_family": "divi/button.font",
+      "pattern_variant": "google_fonts_pattern_a",
+      "pattern_evidence_level": "VB_PRESET_STORAGE_VERIFIED",
+      "pattern_evidence_source": "docs/verification/evidence/canonical-shape-dumps-2026-05-18/round-3-button-canonical-complete.json",
+      "pattern_divi_version": "5.5.2",
+      "pattern_verified_at": "2026-05-18",
+      "canonical_shape_note": "button.decoration.font.font.desktop.value.{family, weight, color}. Pattern A only at present; Pattern B button capture deferred to backlog. button.decoration.font.font is Font Family B (double-nested).",
+      "co_attrs": ["weight", "color"],
+      "family_value_format": "plain_family_name",
+      "applicability": {
+        "divi/button": {
+          "wrapper": "button",
+          "preset_type": "group",
+          "group_name": "divi/button",
+          "group_id": "button",
+          "cell_evidence_level": "VB_PRESET_STORAGE_VERIFIED",
+          "cell_divi_version": "5.5.2",
+          "verified_at": "2026-05-18",
+          "source": "docs/verification/evidence/canonical-shape-dumps-2026-05-18/round-3-button-canonical-complete.json",
+          "preset_map_key": "button.decoration.font.font__family",
+          "state": "desktop.value",
+          "caveats": []
+        }
+      }
+    },
+    {
+      "pattern_family": "divi/spacing",
+      "pattern_evidence_level": "VB_PRESET_STORAGE_VERIFIED",
+      "pattern_evidence_source": "docs/verification/evidence/canonical-shape-dumps-2026-05-23/round-5-spacing-section.json",
+      "pattern_divi_version": "5.6.0",
+      "pattern_verified_at": "2026-05-23",
+      "canonical_shape_note": "Composable Settings spacing bucket (group preset). VB-verified on Divi 5.6.0 via the canonical section spacing capture (divi/section cell only): groupId is the Composable Settings panel id 'designSpacing' (NOT a dotted attribute path — prior 'module.decoration.spacing' note was a misread). primaryAttrName is 'module' for section spacing; registry schema does not carry primaryAttrName today, recorded in the divi/section cell caveats instead. Attrs root: attrs.<primaryAttrName>.decoration.spacing.desktop.value.{padding|margin}, where both padding and margin follow the IDENTICAL sparse-emit rule: only user-touched corners (top, right, bottom, left) appear, with syncVertical + syncHorizontal always emitted together on any spacing touch (atomic sibling pair; 'off' by default, 'on' when user explicitly enables sync). Margin capture (kxc3elho8v on the write/reset sandbox substrate) corroborates the same shape rule with single-corner touch on the margin axis. Round-trip render-side verification (divi/section block referencing an MCP-created preset on the write/reset sandbox substrate, page 1520): clean — empty corners stay empty in VB, no phantom defaults. Inner-element variants (title, content wrappers) and non-section module cells (heading, text, button) are NOT verified — they retain schema-inferred group_id values with caveats; do NOT extrapolate this section evidence to those cells per feedback_preset_map_per_module.",
+      "applicability": {
+        "divi/heading": {
+          "wrapper": "title",
+          "preset_type": "group",
+          "group_name": "divi/spacing",
+          "group_id": "title.decoration.spacing",
+          "cell_evidence_level": "SCHEMA_OBSERVED",
+          "cell_divi_version": "5.5.2",
+          "verified_at": "2026-05-19",
+          "source": ".claude/skills/divi-5-builder/references/presets.md#known-group-bucket-inventory-vb-verified-2026-05-04",
+          "caveats": [
+            "divi/spacing group bucket VB-confirmed (5.4.0); per-module title-spacing cell needs its own roundtrip",
+            "group_id is NOT VB-verified for this cell — value 'title.decoration.spacing' is schema-inferred. The canonical section spacing capture (5.6.0) proved the section cell uses groupId='designSpacing' (Composable Settings panel id, not dotted attr path); whether heading uses the same value or a wrapper-prefixed variant is unverified. Do NOT use this group_id for preset writes until a heading-spacing capture on the canonical clean reference substrate lands. Note: write/reset sandbox presets (ids ecs423stpr, yjh59i25br) are bound to title wrapper with the same sparse-emit shape, but these are unverified residue and explicitly NOT used as evidence; proper capture on the canonical reference substrate is required."
+          ]
+        },
+        "divi/text": {
+          "wrapper": "content",
+          "preset_type": "group",
+          "group_name": "divi/spacing",
+          "group_id": "content.decoration.spacing",
+          "cell_evidence_level": "SCHEMA_OBSERVED",
+          "cell_divi_version": "5.5.2",
+          "verified_at": "2026-05-19",
+          "source": ".claude/skills/divi-5-builder/references/presets.md#known-group-bucket-inventory-vb-verified-2026-05-04",
+          "caveats": [
+            "group_id is NOT VB-verified for this cell — value 'content.decoration.spacing' is schema-inferred. The canonical section spacing capture (5.6.0) proved the section cell uses groupId='designSpacing' (Composable Settings panel id, not dotted attr path); whether text uses the same value or a wrapper-prefixed variant is unverified. Do NOT use this group_id for preset writes until a text-spacing capture on the canonical clean reference substrate lands."
+          ]
+        },
+        "divi/section": {
+          "wrapper": "module",
+          "preset_type": "group",
+          "group_name": "divi/spacing",
+          "group_id": "designSpacing",
+          "cell_evidence_level": "VB_PRESET_STORAGE_VERIFIED",
+          "cell_divi_version": "5.6.0",
+          "verified_at": "2026-05-23",
+          "source": "docs/verification/evidence/canonical-shape-dumps-2026-05-23/round-5-spacing-section.json",
+          "preset_map_key": "module.decoration.spacing__padding",
+          "state": "desktop.value",
+          "caveats": [
+            "Sparse-emit padding AND margin: only user-touched corners appear in attrs; syncVertical + syncHorizontal always emit on any spacing touch (atomic sibling pair, both as 'off' by default — 'on' when user explicitly enables sync).",
+            "primaryAttrName='module' for this cell. Registry schema does not carry primaryAttrName as a first-class field today; recorded here in caveats. Phase 2 emitter must include primaryAttrName='module' when writing this preset shape.",
+            "VB authoring footgun: padding/margin field values MUST be committed via Enter or blur before saving the preset in the Composable Settings panel, or the preset saves as an empty registry shell with no 'attrs' key. CLI-driven emitters don't have this problem (values are passed via flags), but worth knowing for any UI-driven preset authoring."
+          ]
+        },
+        "divi/button": {
+          "wrapper": "module",
+          "preset_type": "group",
+          "group_name": "divi/spacing",
+          "group_id": "module.decoration.spacing",
+          "cell_evidence_level": "SCHEMA_OBSERVED",
+          "cell_divi_version": "5.5.2",
+          "verified_at": "2026-05-19",
+          "source": ".claude/skills/divi-5-builder/references/presets.md#known-group-bucket-inventory-vb-verified-2026-05-04",
+          "caveats": [
+            "Button padding is canonically authored on module.decoration.spacing per Button exception (NOT button.decoration.spacing which is VB-hidden)",
+            "group_id is NOT VB-verified for this cell — value 'module.decoration.spacing' is schema-inferred. The canonical section spacing capture (5.6.0) proved the section cell uses groupId='designSpacing' (Composable Settings panel id, not dotted attr path); whether button uses the same value or differs is unverified. Do NOT use this group_id for preset writes until a button-spacing capture on the canonical clean reference substrate lands."
+          ]
+        }
+      }
+    }
+  ],
+  "tier3": [
+    {
+      "module": "divi/button",
+      "attr_path": "button.innerContent.desktop.value",
+      "shape": "{text: string, linkUrl: string}",
+      "preset_type": "inline",
+      "evidence_level": "SCHEMA_OBSERVED",
+      "divi_version": "5.5.2",
+      "verified_at": "2026-05-19",
+      "source": ".claude/skills/divi-5-builder/references/module-formats.md#button-vb-verified-2026-03-31-for-511-schema-audited-2026-04-12-",
+      "status": "documented",
+      "caveats": ["innerContent is per-instance, not normally preset-authored; the Phase 1 captures focus on preset shape so this cell remains SCHEMA_OBSERVED for now"]
+    },
+    {
+      "module": "divi/text",
+      "attr_path": "content.innerContent.desktop.value",
+      "shape": "HTML string (unicode-escaped, e.g. '\\u003cp\\u003eBody\\u003c/p\\u003e')",
+      "preset_type": "inline",
+      "evidence_level": "SCHEMA_OBSERVED",
+      "divi_version": "5.5.2",
+      "verified_at": "2026-05-19",
+      "source": ".claude/skills/divi-5-builder/references/module-formats.md#text-vb-verified-2026-03-19-schema-audited-2026-04-12-",
+      "status": "documented",
+      "caveats": []
+    },
+    {
+      "module": "divi/heading",
+      "attr_path": "title.innerContent.desktop.value",
+      "shape": "plain string",
+      "preset_type": "inline",
+      "evidence_level": "SCHEMA_OBSERVED",
+      "divi_version": "5.5.2",
+      "verified_at": "2026-05-19",
+      "source": ".claude/skills/divi-5-builder/references/module-formats.md#heading-vb-verified-2026-03-19-schema-audited-2026-04-12-",
+      "status": "documented",
+      "caveats": []
+    },
+    {
+      "module": "divi/heading",
+      "attr_path": "title.decoration.font.font.desktop.value.headingLevel",
+      "shape": "string enum 'h1'..'h6'",
+      "preset_type": "module",
+      "evidence_level": "SCHEMA_OBSERVED",
+      "divi_version": "5.5.2",
+      "verified_at": "2026-05-19",
+      "source": ".claude/skills/divi-5-builder/references/module-formats.md#tier-2--pattern-families",
+      "status": "documented",
+      "caveats": ["headingLevel is a structural-only field — preset's styleAttrs strip it per presets.md storage-format notes"]
+    },
+    {
+      "module": "divi/image",
+      "attr_path": "image.innerContent.desktop.value",
+      "shape": "{src, id, alt, linkUrl, linkTarget} OR separate sub-items per schema",
+      "preset_type": "inline",
+      "evidence_level": "SCHEMA_OBSERVED",
+      "divi_version": "5.5.2",
+      "verified_at": "2026-05-19",
+      "source": ".claude/skills/divi-5-builder/references/module-formats.md#image-vb-verified-2026-03-19-schema-audited-2026-04-12--exception",
+      "status": "documented",
+      "caveats": ["Combined form appears to work in practice; VB round-trip test pending per module-formats.md drift candidate note"]
+    },
+    {
+      "module": "divi/icon",
+      "attr_path": "icon.innerContent.desktop.value",
+      "shape": "{unicode, type: 'fa'|'divi', weight: '400'|'900', url?: string}",
+      "preset_type": "inline",
+      "evidence_level": "SCHEMA_OBSERVED",
+      "divi_version": "5.5.2",
+      "verified_at": "2026-05-19",
+      "source": ".claude/skills/divi-5-builder/references/module-formats.md#icon-vb-verified-2026-03-19-schema-audited-2026-04-12-",
+      "status": "documented",
+      "caveats": []
+    },
+    {
+      "module": "divi/section",
+      "attr_path": "module.advanced.dividers.{top,bottom}.desktop.value",
+      "shape": "{style, height, color, repeat, flip[], arrangement}",
+      "preset_type": "module",
+      "evidence_level": "SCHEMA_OBSERVED",
+      "divi_version": "5.5.2",
+      "verified_at": "2026-05-19",
+      "source": ".claude/skills/divi-5-builder/references/module-formats.md#dividers-section-only-vb-verified-2026-03-23",
+      "status": "documented",
+      "caveats": ["Section only; Row/Column/Group do not support dividers"]
+    },
+    {
+      "module": "divi/column",
+      "attr_path": "module.decoration.sizing.desktop.value.flexType",
+      "shape": "24-unit grid string enum ('1_24'..'24_24'; '8_24'=1/3, '12_24'=1/2)",
+      "preset_type": "module",
+      "evidence_level": "SCHEMA_OBSERVED",
+      "divi_version": "5.5.2",
+      "verified_at": "2026-05-19",
+      "source": ".claude/skills/divi-5-builder/references/module-formats.md#column-vb-verified-2026-03-19-flex-pipeline-reverified-2026-05-09-against-divi-541-",
+      "status": "documented",
+      "caveats": ["Requires parent row display:'flex'; otherwise Divi emits legacy et_pb_column_N_M and ignores flexType (intentional Divi behavior)"]
+    }
+  ],
+  "patterns_index": {
+    "fonts": {
+      "pattern_a_google_cdn": {
+        "discriminator_capture": "docs/verification/evidence/canonical-shape-dumps-2026-05-18/round-1a-heading-h1-pattern-a-google.json",
+        "shape_note": "separate family + weight + size + color keys",
+        "co_attrs": ["family", "weight", "size", "color"]
+      },
+      "pattern_b_local_hosted": {
+        "discriminator_capture": "docs/verification/evidence/canonical-shape-dumps-2026-05-18/round-1b-heading-h1-pattern-b-local.json",
+        "shape_note": "family encodes weight ('Sora 700'); NO separate weight key — Pattern B requires divi-oafontz local-font setup",
+        "co_attrs": ["family", "size", "color"]
+      }
+    }
+  }
+}

@@ -3,7 +3,7 @@ Contributors: diviops
 Tags: divi, mcp, ai, rest-api, site-builder
 Requires at least: 6.5
 Tested up to: 7.0
-Stable tag: 1.5.11
+Stable tag: 1.5.12
 Requires PHP: 7.4
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -68,6 +68,12 @@ No. The Free plugin backs the core useful surface. Some higher-leverage workflow
 
 == Changelog ==
 
+= 1.5.12 =
+
+* Repairs the exact affected Divi 5.10/5.11 Post Filter product-price permission callback while preserving its route-specific nonce and editor authority boundary.
+* Preserves exact upload-path provenance for reviewed cross-environment media matching, including custom upload locations and root-level files.
+* Rejects ignored legacy Link-module attribute paths and fails closed when the canonical SEO provider plugin directory is unavailable.
+
 = 1.5.11 =
 
 * Adds stronger handshake and target-identity evidence for connected MCP health diagnostics while preserving the existing direct MCP and WordPress REST workflows.
@@ -111,6 +117,10 @@ No. The Free plugin backs the core useful surface. Some higher-leverage workflow
 * Keeps `Stable tag` aligned with the plugin header version.
 
 == Upgrade Notice ==
+
+= 1.5.12 =
+
+Recommended for Divi 5.10/5.11 sites and reviewed cross-environment media workflows. MCP server and WordPress plugin versions remain independent; capability advertisement is the compatibility gate.
 
 = 1.5.11 =
 
