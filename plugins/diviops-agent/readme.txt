@@ -2,8 +2,8 @@
 Contributors: diviops
 Tags: divi, mcp, ai, rest-api, site-builder
 Requires at least: 6.5
-Tested up to: 7.0
-Stable tag: 1.5.12
+Tested up to: 7.1
+Stable tag: 1.5.13
 Requires PHP: 7.4
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -68,6 +68,11 @@ No. The Free plugin backs the core useful surface. Some higher-leverage workflow
 
 == Changelog ==
 
+= 1.5.13 =
+
+* Confirms compatibility with WordPress 7.1 and updates the WordPress.org compatibility metadata.
+* Keeps the MCP server, capabilities, REST behavior, and Free/Pro boundary unchanged from 1.5.12.
+
 = 1.5.12 =
 
 * Repairs the exact affected Divi 5.10/5.11 Post Filter product-price permission callback while preserving its route-specific nonce and editor authority boundary.
@@ -117,6 +122,10 @@ No. The Free plugin backs the core useful surface. Some higher-leverage workflow
 * Keeps `Stable tag` aligned with the plugin header version.
 
 == Upgrade Notice ==
+
+= 1.5.13 =
+
+Confirms compatibility with WordPress 7.1. MCP server and WordPress plugin versions remain independent; capability advertisement is the compatibility gate.
 
 = 1.5.12 =
 

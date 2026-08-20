@@ -9,6 +9,11 @@ Policy:
 - Keep entries customer-facing. Avoid internal issue numbers unless they are needed to explain a user-visible change.
 - Do not include secrets, credentials, customer data, or environment-specific URLs.
 
+## 1.5.13
+
+- Confirms compatibility with WordPress 7.1 and updates the WordPress.org compatibility metadata.
+- Keeps the MCP server, capabilities, REST behavior, and Free/Pro boundary unchanged from 1.5.12.
+
 ## 1.5.12
 
 - Adds the narrow, self-retiring Divi 5.10/5.11 Post Filter product-price permission repair, including the exact route-specific Divi nonce and Visual Builder/edit-post authority checks. Other Divi routes are unchanged.
