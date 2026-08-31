@@ -10,24 +10,6 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 trait DiviOps_Agent_Compatibility {
-	/** Exact Divi Post Filter route affected in Divi 5.10.x. */
-	private const DIVI_POST_FILTER_PRICE_ROUTE = '/divi/v1/loop/product-price-range';
-
-	/** Namespace-relative route used by Divi's nonce-name API. */
-	private const DIVI_POST_FILTER_PRICE_NONCE_ROUTE = '/loop/product-price-range';
-
-	/** Divi REST namespace used to derive the route-specific nonce name. */
-	private const DIVI_REST_NAMESPACE = 'divi/v1';
-
-	/** Exact HTTP method registered for the compatibility route. */
-	private const DIVI_POST_FILTER_PRICE_METHOD = 'GET';
-
-	/** Broken upstream controller introduced with Post Filter. */
-	private const DIVI_POST_FILTER_PRICE_CONTROLLER = 'ET\Builder\Packages\ModuleLibrary\PostFilterItem\PostFilterProductPriceRangeController';
-
-	/** Divi role helper used by the other Post Filter discovery routes. */
-	private const DIVI_USER_ROLE_CLASS = 'ET\Builder\Framework\UserRole\UserRole';
-
 	/**
 	 * Replace only Divi's verified broken product-price permission callback.
 	 *

@@ -9,9 +9,14 @@ Policy:
 - Keep entries customer-facing. Avoid internal issue numbers unless they are needed to explain a user-visible change.
 - Do not include secrets, credentials, customer data, or environment-specific URLs.
 
-## 1.5.14 (source candidate)
+## 1.5.15
 
-- Package validation and publication remain pending.
+- Restores the declared PHP 7.4+ runtime floor by moving compatibility and authoring-limit constants from traits into the consuming class.
+- Prevents the activation-time fatal error affecting Free 1.5.12 through 1.5.14 on PHP 7.4, 8.0, and 8.1.
+- Keeps the Divi Post Filter compatibility repair, authoring limits, capability handshake, and all other runtime behavior unchanged.
+
+## 1.5.14
+
 - Adds cumulative input, block-count, nesting-depth, string-count and parsed-string-byte limits before full-content dry-run plans and mutations, including aggregate Theme Builder content.
 - Preserves the existing seven-handler permission, integrity, sanitization and operation-dependent backup/rollback/readback order. Native-first guidance allows intentional custom HTML; no semantic HTML-shape detector is added.
 - The separately versioned MCP server and client-side skill must be updated independently for their revised behavior and guidance.

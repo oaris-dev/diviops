@@ -8,11 +8,6 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 trait DiviOps_Agent_AuthoringShape {
-	private const AUTHORING_SHAPE_LIMITS = [
-		'input_bytes' => 1048576, 'blocks' => 4096, 'depth' => 64, 'fields' => 8192,
-		'string_bytes' => 1048576,
-	];
-
 	/** Check all content before any dry-run plan or mutation. */
 	private static function authoring_shape_preflight( array $contents, string $operation, string $target, $request, ?int $target_id = null ) {
 		$state = [ 'bytes' => 0, 'blocks' => 0, 'fields' => 0, 'string_bytes' => 0 ];

@@ -3,7 +3,7 @@
  * Plugin Name: DiviOps Agent
  * Plugin URI: https://github.com/oaris-dev/diviops
  * Description: REST API bridge for DiviOps — connects Claude Code to your Divi 5 site for AI-powered page building and design management.
- * Version: 1.5.14
+ * Version: 1.5.15
  * Author: oaris.de
  * Author URI: https://oaris.de
  * Text Domain: diviops-agent
@@ -70,7 +70,7 @@ class DiviOps_Agent {
 	 * Plugin version — surfaced in /handshake for self-diagnosis only;
 	 * server no longer gates on it (capability map is the gate).
 	 */
-	const VERSION = '1.5.14';
+	const VERSION = '1.5.15';
 
 	/**
 	 * Minimum MCP server version this plugin is compatible with.
@@ -194,6 +194,20 @@ class DiviOps_Agent {
 	 */
 	const RATE_LIMIT_READ  = 120;
 	const RATE_LIMIT_WRITE = 30;
+
+	/** PHP 7.4-compatible constants consumed by the compatibility trait. */
+	private const DIVI_POST_FILTER_PRICE_ROUTE = '/divi/v1/loop/product-price-range';
+	private const DIVI_POST_FILTER_PRICE_NONCE_ROUTE = '/loop/product-price-range';
+	private const DIVI_REST_NAMESPACE = 'divi/v1';
+	private const DIVI_POST_FILTER_PRICE_METHOD = 'GET';
+	private const DIVI_POST_FILTER_PRICE_CONTROLLER = 'ET\Builder\Packages\ModuleLibrary\PostFilterItem\PostFilterProductPriceRangeController';
+	private const DIVI_USER_ROLE_CLASS = 'ET\Builder\Framework\UserRole\UserRole';
+
+	/** PHP 7.4-compatible limits consumed by the authoring-shape trait. */
+	private const AUTHORING_SHAPE_LIMITS = [
+		'input_bytes' => 1048576, 'blocks' => 4096, 'depth' => 64, 'fields' => 8192,
+		'string_bytes' => 1048576,
+	];
 
 	public static function init() {
 		add_action( 'rest_api_init', [ __CLASS__, 'register_routes' ] );
