@@ -217,6 +217,10 @@ trait DiviOps_Agent_Page {
 			);
 		}
 		$content = $normalized['content'];
+		$shape = self::authoring_shape_preflight( [ $content ], 'page_update_content', 'page', $request, $post_id );
+		if ( is_wp_error( $shape ) ) {
+			return self::envelope_from_content_write_error( $shape );
+		}
 
 		if ( $dry_run ) {
 			$old_len = strlen( (string) $post->post_content );
@@ -632,6 +636,10 @@ trait DiviOps_Agent_Page {
 		$permission = self::page_create_permission_result( $request );
 		if ( is_wp_error( $permission ) ) {
 			return self::post_type_permission_refusal( $permission );
+		}
+		$shape = self::authoring_shape_preflight( [ $content ], 'page_create', 'page', $request );
+		if ( is_wp_error( $shape ) ) {
+			return self::envelope_from_content_write_error( $shape );
 		}
 
 		if ( $dry_run ) {

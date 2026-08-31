@@ -3,7 +3,7 @@ Contributors: diviops
 Tags: divi, mcp, ai, rest-api, site-builder
 Requires at least: 6.5
 Tested up to: 7.1
-Stable tag: 1.5.13
+Stable tag: 1.5.14
 Requires PHP: 7.4
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -68,6 +68,12 @@ No. The Free plugin backs the core useful surface. Some higher-leverage workflow
 
 == Changelog ==
 
+= 1.5.14 =
+
+* Source candidate: package validation and publication are pending.
+* Adds cumulative input, block, nesting and string limits before full-content dry-run plans or writes, including combined Theme Builder layouts.
+* Keeps native-first authoring with intentional custom HTML and preserves existing permissions, sanitization and operation-specific backup/readback safeguards.
+
 = 1.5.13 =
 
 * Confirms compatibility with WordPress 7.1 and updates the WordPress.org compatibility metadata.
@@ -122,6 +128,10 @@ No. The Free plugin backs the core useful surface. Some higher-leverage workflow
 * Keeps `Stable tag` aligned with the plugin header version.
 
 == Upgrade Notice ==
+
+= 1.5.14 =
+
+Source candidate, not yet published. Use the matched server and skill updates for the revised guidance; plugin capabilities remain the compatibility gate.
 
 = 1.5.13 =
 

@@ -110,7 +110,7 @@ function endpointSkipsNormalization(endpoint: string): boolean {
   return NON_BLOCK_STORAGE_PREFIXES.some((prefix) => endpoint.startsWith(prefix));
 }
 
-function normalizeBody(value: unknown, withinBlockTree = false): unknown {
+export function normalizeBody(value: unknown, withinBlockTree = false): unknown {
   if (typeof value === 'string') {
     return withinBlockTree ? normalizeQuoteEscapes(value) : value;
   }

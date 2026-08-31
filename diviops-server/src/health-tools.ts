@@ -23,7 +23,7 @@ export const META_PING_CONFIG = {
 
 export const META_INFO_CONFIG = {
   description:
-    "Returns DiviOps MCP server identity, server_version, license type, numeric tool_count, registered tool catalog summary, active plugin version summary, WP-CLI allowlist, and plugin handshake/slice state including Pro and FluentCart target readiness. Use as the S0 preflight before dogfooding or product work. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }.",
+    "Returns DiviOps MCP server identity, server_version, license type, numeric tool_count, registered tool catalog summary, active plugin version summary, WP-CLI allowlist, and plugin handshake/slice state including Pro and FluentCart target readiness. In regular stdio mode, a successful plugin, module, capability, and registered-tool observation is the immutable startup snapshot; failed startup observation is explicitly unavailable and claims no target coverage. Reconnect or restart MCP after supported target changes. Launcher health mode continues to observe target evidence per call. Use as the S0 preflight before dogfooding or product work. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }.",
   annotations: { readOnlyHint: true, idempotentHint: true },
   _meta: { idempotent: "true" },
 } as const;

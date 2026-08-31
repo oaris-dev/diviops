@@ -337,6 +337,21 @@ The Pro version includes per-module element maps (elements, innerContent shapes,
 
 Upgrade to Pro: https://diviops.com
 
+### Theme Builder Loop-ID Collisions *(Divi 5.11.1, runtime-verified 2026-08-21)*
+
+Continue to author a unique `loopId` per Theme Builder layout and keep each
+`divi/post-nav` `targetLoop` matched to a loop in the same layout. In the exact
+qualified Divi 5.11.1 header/body/footer matrix, Divi's template meta-link,
+Visual Builder save, and portability-import lifecycles preserved the first-seen
+loop ID, made later cross-layout collisions unique, and rewrote only the
+matching same-layout `targetLoop`. Unrelated sentinel bytes stayed stable;
+Theme Builder placement, frontend rendering, reload, pagination isolation, and
+the bounded cache manifest passed.
+
+Treat that as version- and matrix-specific compatibility evidence, not an
+authoring shortcut. It does not prove arbitrary loop modules, other Divi
+versions, external sites, or generic portability behavior.
+
 ## Charts (Divi 5.11 runtime-qualified)
 
 `divi/charts` is a Free one-site content primitive. Author only from the generated `chart` and `module` paths below. Runtime evidence covers table and imported-CSV data, line/pie/scatter/bubble types, module/group presets, full Visual Builder reload, frontend legend/tooltip/responsive behavior, dynamic assets, and exact cleanup on canonical Divi 5.11.0. Do not infer hosted Divi AI authoring from schema presence.
@@ -347,7 +362,7 @@ Upgrade to Pro: https://diviops.com
 
 > Generated mechanically by `diviops-server/scripts/regen-module-formats.mjs` from `diviops_schema_get_module` dump-all output. Each module block lives between `BEGIN GENERATED:module:divi/<slug>` / `END GENERATED:module:divi/<slug>` HTML-comment sentinels (see `diviops-server/CONTRIBUTING.md` for the full convention). Do **not** edit between sentinels — edits are clobbered on regen.
 
-> Generated against Divi `5.11.0`, schema `a80afd7d6ae7…`.
+> Generated against Divi `5.11.1`, schema `61fe05a885e6…`.
 
 Per CLAUDE.md "Suite architecture coherence": schema dump is the canonical index; VB-verified prose above is the canonical interpretation. The two sections are complementary, not competing — prose explains surprises, this index enumerates paths exhaustively. On conflicts, the prose above wins (per `feedback_vb_first_verification`).
 

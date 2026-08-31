@@ -19,6 +19,24 @@ DiviOps fits multiple WordPress workflows where AI-driven authoring + management
 - **WordPress site auditing** — preset audits, design-token usage scans, orphan detection (presets, variables, dangling references); broader site surveys via wp-cli (`wp option list`, `wp post list --format=json`, `wp post term list <id> <taxonomy> --format=json`, `wp user list`).
 - **Hybrid sites (Divi + custom PHP)** — Divi authors the marketing pages; custom PHP templates handle dynamic ones (CPT listings, single-post views, member portals); design tokens harmonized across both surfaces via CSS custom properties driven from the Divi variable system.
 
+## Authoring policy
+
+Use native Divi modules first. Intentional custom HTML is supported when native
+Divi cannot meet the agreed requirement; HTML shape is not a semantic refusal gate.
+Permissions, schemas, sanitization, bounded parsing, dry-run, required backups and
+readback still apply. Ordinary server startup and the seven full-content writes
+do not require a browser, trust registration or receipt. Visual QA is separate.
+
+With an unreleased browser-gate plugin snapshot, its refusals remain authoritative:
+the migrated server removes private browser handoff data and does not retry or
+bypass the refusal. An unreleased browser-gate server snapshot tolerates the
+retired registration route on the migrated plugin, but retains its own
+startup-attestation overhead. Existing capability checks and
+authentication errors are unchanged. Published server 1.5.40 and Free 1.5.13
+predate that experiment and did not require browser attestation or receipts.
+Source behavior is not a claim that current npm, WordPress.org or manually
+installed packages include the migration.
+
 ## Quick start
 
 The first three steps prove connectivity. Native Divi authoring additionally
@@ -141,7 +159,9 @@ The server exposes **94 always-on tools** across the categories below. Each cate
 | WP-CLI passthrough | Escape hatch for site ops | `meta_wp_cli` |
 | Cache + meta | Connection probe, identity, icons, cache flush | `meta_*` |
 
-Use `diviops_meta_info` as the S0 preflight before dogfooding or product work. It returns `server_version`, a numeric `tool_count`, a `tools` catalog summary (`registered_total`, always-on count, Pro possible/registered counts by target), `plugins` version records for `diviops-agent`, `diviops-agent-pro`, FluentCart, and FluentCart Pro when available, plus the existing handshake and slice state.
+Use `diviops_meta_info` as the S0 preflight before dogfooding or product work. It returns `server_version`, a numeric `tool_count`, a `tools` catalog summary (`registered_total`, always-on count, Pro possible/registered counts by target), `plugins` version records for `diviops-agent`, `diviops-agent-pro`, FluentCart, and FluentCart Pro when available, plus the existing handshake and slice state. In regular npm/stdio sessions, successfully observed plugin, module, capability, and registered-tool fields are the immutable handshake snapshot that built the session catalog. The additive `startup_capture` record supplies its non-secret timestamp, exact covered evidence, independent-component compatibility rule, and deterministic reconnect guidance. A failed handshake instead reports `startup_unavailable`, a bounded `startup_handshake_failed` reason class, and no covered target evidence. After a supported plugin, theme, or target change, reconnect or restart MCP before treating `meta_info`, the registered tools, or capability gates as current. Live read tools such as `diviops_fc_status` remain separate current observations; they do not rewrite startup registry truth.
+
+Launcher health mode keeps its stricter existing contract: `diviops_meta_ping` and `diviops_meta_info` re-observe model-visible target evidence on every call. The regular stdio `startup_capture` record does not alter launcher behavior, direct npm/stdio compatibility, or tool registration after initialization.
 
 Additional **conditionally-registered Pro tools** appear only on sites that have the Pro plugin (`diviops-agent-pro`) active alongside the target coverage plugin:
 

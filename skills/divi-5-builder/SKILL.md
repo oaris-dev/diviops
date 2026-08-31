@@ -46,6 +46,25 @@ Read the right file for the task at hand — don't load everything.
 9. **Always use section/row/column structure**: Wrapperless top-level modules lose styling
 10. **Cache invalidation**: All write tools auto-invalidate Divi's CSS cache. If styles appear stale, hard-refresh the browser.
 
+### Native-first authoring and custom components
+
+Prefer editable native Divi modules. When they cannot reasonably meet the
+requirement, use a deliberate custom HTML/CSS/JavaScript/SVG component or embed
+and explain its purpose in the task plan. A requested custom component is enough
+design intent; do not ask permission for each HTML element or add empty native
+wrappers to satisfy a module count. Keep the surrounding layout native when useful.
+
+Do not silently replace an expected editable page or major native area with raw
+HTML to finish faster. Explain that material editability tradeoff and obtain
+agreement first. Size, one Code module, dynamic behavior or an iframe alone do
+not make a deliberately chosen component invalid. The harness checks write
+integrity, not the user's design intent.
+
+Keep schema validation, permissions, WordPress sanitization, dry-run, required
+backup and persisted-content readback. Custom HTML does not grant script
+permissions or authorize external activity. Visual QA is separate from write
+acceptance: perform it when authorized, and disclose when it was not performed.
+
 ### Verification convention
 
 Skill docs label findings by evidence quality. **Runtime acceptance ≠ VB compatibility** — a path can render correctly via MCP write but get rewritten or rejected on VB save. When citing or extending these docs, preserve the existing tier:
@@ -64,6 +83,8 @@ Upgrade tier by VB round-trip: have the user save the shape in VB, then dump the
 
 ### Design Quality Checklist
 When generating pages, ALWAYS apply:
+Live visual checks below require task authorization. For planning-only or no-access
+tasks, record them as pending; never imply that an unperformed check passed.
 - **Entrance animations** on visible modules (`fade`/`slide` with staggered `delay`: 0ms, 150ms, 300ms, 450ms)
 - **Hover states** on cards, buttons, icons (use `desktop.hover` format)
 - **Responsive overrides** (tablet/phone: padding, font sizes, `flexDirection: column`)
@@ -259,6 +280,7 @@ Build post/product/CPT listing pages. See [module-formats.md](references/module-
 - **Any container**: Group, Column, Row, or Section can be the loop container
 - **Custom post types**: `{"label":"Projects","value":"project"}` — all dynamic vars work the same
 - **Pagination**: `divi/post-nav` after loop container with matching `targetLoop`
+- **Theme Builder layouts**: author unique loop IDs and keep each Post Navigation `targetLoop` layout-local. Divi 5.11.1 runtime-verified collision handling is bounded to the exact meta-link, Visual Builder save, and portability-import matrix documented in [module-formats.md](references/module-formats.md#theme-builder-loop-id-collisions-divi-5111-runtime-verified-2026-08-21); do not rely on it as a cross-version repair contract.
 
 ## Theme Builder
 

@@ -105,6 +105,10 @@ trait DiviOps_Agent_Canvas {
 		if ( $content && false !== strpos( $content, '<!-- wp:divi/' ) && false === strpos( $content, '<!-- wp:divi/placeholder' ) ) {
 			$content = "<!-- wp:divi/placeholder -->\n{$content}\n<!-- /wp:divi/placeholder -->";
 		}
+		$shape = self::authoring_shape_preflight( [ (string) $content ], 'canvas_create', 'canvas', $request );
+		if ( is_wp_error( $shape ) ) {
+			return self::envelope_from_content_write_error( $shape );
+		}
 
 		// Uniqueness probe — mirror preset_create's contract.
 		// (parent_page_id, title) is the duplicate-key tuple; matches the
@@ -1162,6 +1166,10 @@ trait DiviOps_Agent_Canvas {
 				$content = "<!-- wp:divi/placeholder -->\n{$content}\n<!-- /wp:divi/placeholder -->";
 			}
 			$update_args['post_content'] = wp_slash( $content );
+			$shape = self::authoring_shape_preflight( [ $content ], 'canvas_update', 'canvas', $request, $post_id );
+			if ( is_wp_error( $shape ) ) {
+				return self::envelope_from_content_write_error( $shape );
+			}
 		}
 		if ( null !== $title ) {
 			$update_args['post_title'] = sanitize_text_field( $title );

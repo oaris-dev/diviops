@@ -213,6 +213,10 @@ trait DiviOps_Agent_Library {
 				400
 			);
 		}
+		$shape = self::authoring_shape_preflight( [ $content ], 'library_save', 'library_item', $request );
+		if ( is_wp_error( $shape ) ) {
+			return self::envelope_from_content_write_error( $shape );
+		}
 
 		// Title-uniqueness check, scoped to (layout_type, scope).
 		$existing_id = self::library_existing_id_by_title( $title, $layout_type, $scope );

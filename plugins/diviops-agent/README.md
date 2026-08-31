@@ -42,11 +42,15 @@ The plugin includes a WordPress.org-format `readme.txt` and a plugin-local `chan
 
 Current metadata policy:
 
-- `Stable tag` matches the plugin header `Version` (`1.5.13`).
+- `Stable tag` matches the plugin header `Version` (`1.5.14`, prepared source candidate).
 - `Requires at least` and `Requires PHP` mirror the main plugin header.
 - `Tested up to` is evidence-based for this repo/substrate and should not be raised until the Free plugin is actually tested on that WordPress version.
 - External-service/authentication disclosure must mention the separately distributed npm MCP server, WordPress Application Passwords, and the rule that secrets do not belong in issues, examples, screenshots, or repo files.
 - Free/Pro copy must keep the Free plugin useful while making clear that Pro is the paid workflow-leverage layer and that not every MCP tool is Free-backed.
+
+The 1.5.14 candidate is not published. Its changed PHP bytes require new
+candidate-package compatibility evidence before publication; the retained
+`Tested up to: 7.1` field does not inherit that proof from the 1.5.13 release.
 
 Before a WordPress.org submission, validate the readme and plugin package:
 

@@ -234,7 +234,7 @@ Use diviops_page_list to show all pages.
 After activating `diviops-agent-pro.zip` and the Pro license, restart the MCP client and run:
 
 ```
-Use diviops_meta_info to show the plugin handshake and capability summary.
+Use diviops_meta_info to show the plugin handshake and capability summary. In a regular npm/stdio session, inspect `startup_capture`: successfully observed plugin, module, capability, and registered-tool evidence is the immutable startup snapshot. A failed handshake reports `startup_unavailable` with no covered target evidence. Reconnect or restart MCP after a plugin, theme, or target change before treating successful startup evidence as current. A live read such as `diviops_fc_status` is a separate current observation and does not refresh the startup tool catalog.
 ```
 
 If FluentCart and FluentCart Pro are active on the target site, `diviops_meta_info` should report `slices.fluentcart.active: true` and list `fluentcart_*` entries under `slices.fluentcart.tool_capabilities`. Pro coverage tools such as `diviops_fc_status`, `diviops_fc_product_list`, `diviops_fc_gateway_list`, and license/order readback tools should also appear in the MCP tool list. If the target plugin is not installed or the Pro plugin is inactive, those tools are intentionally omitted.

@@ -1242,6 +1242,10 @@ trait DiviOps_Agent_ThemeBuilder {
 			);
 		}
 		$content = $normalized['content'];
+		$shape = self::authoring_shape_preflight( [ $content ], 'tb_layout_update', 'theme_builder_layout:' . $post->post_type, $request, $post_id );
+		if ( is_wp_error( $shape ) ) {
+			return self::envelope_from_content_write_error( $shape );
+		}
 
 		if ( (bool) $request->get_param( 'dry_run' ) ) {
 			$extra = $backup ? [ 'backup' => self::rollback_snapshot_plan_for_post_write( $post, 'diviops_tb_layout_update', [ 'tool_operation' => 'tb_layout.update' ] ) ] : [];
@@ -1936,6 +1940,10 @@ trait DiviOps_Agent_ThemeBuilder {
 		$permission = self::published_post_types_permission_result( $post_types );
 		if ( is_wp_error( $permission ) ) {
 			return self::post_type_permission_refusal( $permission );
+		}
+		$shape = self::authoring_shape_preflight( [ $header_content, $footer_content ], 'tb_template_create', 'theme_builder_template', $request );
+		if ( is_wp_error( $shape ) ) {
+			return self::envelope_from_content_write_error( $shape );
 		}
 
 		// "default" (case-insensitive) and empty string are both treated as

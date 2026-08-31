@@ -1,6 +1,6 @@
 {
   "name": "@diviops/mcp-server",
-  "version": "1.5.40",
+  "version": "1.5.41",
   "description": "MCP server exposing Divi 5 Visual Builder as tools for Claude",
   "type": "module",
   "main": "dist/index.js",
@@ -16,6 +16,14 @@
     "!dist/launcher-bootstrap.d.ts",
     "!dist/launcher-sidecar.js",
     "!dist/launcher-sidecar.d.ts",
+    "!dist/authoring-browser-contract.js",
+    "!dist/authoring-browser-contract.d.ts",
+    "!dist/authoring-browser-coordinator.js",
+    "!dist/authoring-browser-coordinator.d.ts",
+    "!dist/authoring-browser-runtime.js",
+    "!dist/authoring-browser-runtime.d.ts",
+    "!dist/authoring-browser-worker.js",
+    "!dist/authoring-browser-worker.d.ts",
     "templates",
     "data/verified-attrs.json",
     "data/verified-attrs-backlog.json",
@@ -25,9 +33,10 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "dev": "tsc --watch",
-    "test": "npm run build && node --test dist/__tests__/*.test.js dist/preset-cli/__tests__/*.test.js dist/cross-env-preflight/__tests__/*.test.js && node scripts/check-release-boundary.mjs",
+    "test": "npm run build && node --test dist/__tests__/*.test.js dist/preset-cli/__tests__/*.test.js dist/cross-env-preflight/__tests__/*.test.js scripts/authoring-release-boundary.test.mjs && node scripts/check-release-boundary.mjs",
     "prepublishOnly": "npm run build",
-    "regen:skill": "node scripts/regen-module-formats.mjs"
+    "regen:skill": "node scripts/regen-module-formats.mjs",
+    "check:authoring-shape-budget": "node scripts/check-page-sized-html-fallback-production-budget.mjs"
   },
   "keywords": [
     "mcp",
@@ -64,6 +73,7 @@
     "@modelcontextprotocol/core": "2.0.0",
     "@modelcontextprotocol/server": "2.0.0",
     "@types/node": "^22.0.0",
+    "playwright-core": "1.62.1",
     "typescript": "^5.7.0"
   }
 }

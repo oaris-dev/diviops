@@ -55,6 +55,8 @@ Codifying `<ns>.not_configured` (gate) + `<ns>.command_failed` (runtime) as dist
 
 On MCP session start the server pings the plugin and receives a handshake payload that names which target plugins are present, which modules the user has activated, and which per-tool capabilities the plugin advertises. The server uses this to (a) gate tool registration so unsupported tools don't appear at all, and (b) gate coverage-slice skill activation so the right slice (Divi page authoring vs SCF vs FluentCart vs …) routes.
 
+In regular npm/stdio sessions, `diviops_meta_info` reports a successful immutable startup snapshot and labels it in `startup_capture` with a non-secret timestamp, exact coverage, and reconnect guidance. A failed startup observation reports `startup_unavailable` with a bounded reason class and no covered target evidence. Plugin, theme, or target changes require reconnecting or restarting MCP before successful `meta_info` evidence, registered tools, and capability gates can be treated as current. Live read tools such as `diviops_fc_status` are separate current observations and do not refresh the startup registry. Launcher health mode is different by design: its two health tools retain their per-call target-observation contract.
+
 Three layers must align for a coverage slice's tools to be live in the session:
 
 1. **Target presence** — the target plugin (Divi 5, SCF, FluentCart, …) is installed on the WP site. Detected via `class_exists()` or similar; reflected in the handshake's `available_targets`.

@@ -14,6 +14,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import { WPClient } from "./wp-client.js";
+import { requestAuthoringWrite } from "./authoring-shape-integration.js";
 import {
   capabilityUpgradeHint,
   type HandshakePluginInfo,
@@ -58,6 +59,10 @@ import {
   META_PING_CONFIG,
   requestAbortSignal,
 } from "./health-tools.js";
+import {
+  createStartupCaptureEvidence,
+  type StartupCaptureEvidence,
+} from "./startup-capture.js";
 import { CanonicalToolRegistry } from "./canonical-tool-registry.js";
 import {
   isolationFailure,
@@ -96,6 +101,8 @@ const wp = new WPClient({
   username: WP_USER,
   applicationPassword: WP_APP_PASSWORD,
 });
+const authoringWrite = (endpoint: string, method: string, body: Record<string, unknown>, operation: string, dryRun: boolean) =>
+  requestAuthoringWrite(wp, { endpoint, method, body, operation, dryRun });
 
 // WP-CLI (optional — Local by Flywheel via WP_PATH, or custom wrapper via WP_CLI_CMD)
 const WP_PATH = process.env.WP_PATH ?? "";
@@ -183,6 +190,8 @@ export type HandshakeState =
   | { kind: "pending" };
 
 let handshakeState: HandshakeState = { kind: "pending" };
+let startupCaptureEvidence: StartupCaptureEvidence =
+  createStartupCaptureEvidence(handshakeState, null);
 
 type ToolRegistrationKind = "server_local" | "plugin" | "pro";
 
@@ -379,6 +388,7 @@ function buildMetaInfo() {
     capabilities,
     tool_count: tools.registered_total,
     tools,
+    startup_capture: startupCaptureEvidence,
     plugins: buildPluginVersionSummary(),
     handshake:
       handshakeState.kind === "ok"
@@ -1579,10 +1589,7 @@ registerPluginTool(
     const body: Record<string, unknown> = { content };
     if (dry_run) body.dry_run = true;
     if (backup) body.backup = true;
-    const result = await wp.requestEnveloped(`/page/update-content/${page_id}`, {
-      method: "POST",
-      body,
-    });
+    const result = await authoringWrite(`/page/update-content/${page_id}`, "POST", body, "page_update_content", dry_run === true);
     return {
       content: [
         { type: "text" as const, text: serializeEnvelope(result, "diviops_page_update_content") },
@@ -2254,10 +2261,7 @@ registerPluginTool(
     if (isolationGate) return isolationGate;
     const body: Record<string, unknown> = { title, content: content ?? "", status: status ?? "draft" };
     if (dry_run) body.dry_run = true;
-    const result = await wp.requestEnveloped("/page/create", {
-      method: "POST",
-      body,
-    });
+    const result = await authoringWrite("/page/create", "POST", body, "page_create", dry_run === true);
     return {
       content: [
         { type: "text" as const, text: serializeEnvelope(result, "diviops_page_create") },
@@ -3000,10 +3004,7 @@ registerPluginTool(
     if (isolationGate) return isolationGate;
     const body: Record<string, unknown> = { title, content, layout_type, scope };
     if (dry_run) body.dry_run = true;
-    const result = await wp.requestEnveloped("/library/save", {
-      method: "POST",
-      body,
-    });
+    const result = await authoringWrite("/library/save", "POST", body, "library_save", dry_run === true);
     return {
       content: [
         { type: "text" as const, text: serializeEnvelope(result, "diviops_library_save") },
@@ -3242,10 +3243,7 @@ registerPluginTool(
     const body: Record<string, unknown> = { content };
     if (dry_run) body.dry_run = true;
     if (backup) body.backup = true;
-    const result = await wp.requestEnveloped(`/theme-builder/layout/update/${layout_id}`, {
-      method: "PUT",
-      body,
-    });
+    const result = await authoringWrite(`/theme-builder/layout/update/${layout_id}`, "PUT", body, "tb_layout_update", dry_run === true);
     return {
       content: [
         { type: "text" as const, text: serializeEnvelope(result, "diviops_tb_layout_update") },
@@ -3353,10 +3351,7 @@ registerPluginTool(
     if (isolationGate) return isolationGate;
     const body: Record<string, unknown> = { title, condition, header_content, footer_content };
     if (dry_run) body.dry_run = true;
-    const result = await wp.requestEnveloped("/theme-builder/template/create", {
-      method: "POST",
-      body,
-    });
+    const result = await authoringWrite("/theme-builder/template/create", "POST", body, "tb_template_create", dry_run === true);
     return {
       content: [
         { type: "text" as const, text: serializeEnvelope(result, "diviops_tb_template_create") },
@@ -3466,7 +3461,7 @@ registerPluginTool(
     if (append_to_main) body.append_to_main = append_to_main;
     if (z_index !== undefined) body.z_index = z_index;
     if (dry_run) body.dry_run = true;
-    const result = await wp.requestEnveloped("/canvas/create", { method: "POST", body });
+    const result = await authoringWrite("/canvas/create", "POST", body, "canvas_create", dry_run === true);
     return {
       content: [
         { type: "text" as const, text: serializeEnvelope(result, "diviops_canvas_create") },
@@ -3622,10 +3617,7 @@ registerPluginTool(
     if (append_to_main !== undefined) body.append_to_main = append_to_main;
     if (z_index !== undefined) body.z_index = z_index;
     if (dry_run) body.dry_run = true;
-    const result = await wp.requestEnveloped(`/canvas/update/${canvas_post_id}`, {
-      method: "POST",
-      body,
-    });
+    const result = await authoringWrite(`/canvas/update/${canvas_post_id}`, "POST", body, "canvas_update", dry_run === true);
     return {
       content: [
         { type: "text" as const, text: serializeEnvelope(result, "diviops_canvas_update") },
@@ -7173,11 +7165,13 @@ let productionRegistryFinalized = false;
  */
 export function finalizeProductionRegistryForHandshake(
   state: HandshakeState,
+  observedAt: string | Date | null = new Date(),
 ): CanonicalToolRegistry {
   if (productionRegistryFinalized) {
     throw new Error("Production MCP registry has already been finalized");
   }
   handshakeState = state;
+  startupCaptureEvidence = createStartupCaptureEvidence(state, observedAt);
   registerCrossEnvEvidenceTools();
   registerProTools();
   productionRegistryFinalized = true;
