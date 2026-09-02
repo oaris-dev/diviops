@@ -3,7 +3,7 @@ Contributors: diviops
 Tags: divi, mcp, ai, rest-api, site-builder
 Requires at least: 6.5
 Tested up to: 7.1
-Stable tag: 1.5.15
+Stable tag: 1.5.16
 Requires PHP: 7.4
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -67,6 +67,12 @@ All endpoints require WordPress Application Password authentication. Read endpoi
 No. The Free plugin backs the core useful surface. Some higher-leverage workflows and paid coverage slices require Pro plugin handlers. The MCP server checks the plugin capability handshake and only exposes or runs tools supported by the connected site.
 
 == Changelog ==
+
+= 1.5.16 =
+
+* Adds an optional exact-checksum guard to full-content page updates, including a fresh pre-write read that refuses concurrent page drift before mutation.
+* Advertises exact-checksum enforcement separately from the legacy unconditional writer so clients can gate checksum-dependent workflows through the capability handshake.
+* Enables receipt-owned Pro workflows to bind reviewed page content to the guarded Free write path while preserving legacy behavior when the optional checksum is omitted.
 
 = 1.5.15 =
 
@@ -132,6 +138,10 @@ No. The Free plugin backs the core useful surface. Some higher-leverage workflow
 * Keeps `Stable tag` aligned with the plugin header version.
 
 == Upgrade Notice ==
+
+= 1.5.16 =
+
+Recommended for receipt-owned Pro page workflows that require exact page-checksum drift protection. MCP server and WordPress plugin versions remain independent; capability advertisement is the compatibility gate.
 
 = 1.5.15 =
 

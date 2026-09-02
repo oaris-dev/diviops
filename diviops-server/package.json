@@ -1,6 +1,6 @@
 {
   "name": "@diviops/mcp-server",
-  "version": "1.5.41",
+  "version": "1.5.44",
   "description": "MCP server exposing Divi 5 Visual Builder as tools for Claude",
   "type": "module",
   "main": "dist/index.js",
@@ -63,7 +63,7 @@
     "@hono/node-server": "2.1.0",
     "@modelcontextprotocol/sdk": "^1.30.0",
     "body-parser": "2.3.0",
-    "fast-uri": "3.1.5",
+    "fast-uri": "3.1.7",
     "hono": "4.13.1",
     "ip-address": "10.5.0",
     "zod": "^4.3.6"

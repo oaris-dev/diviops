@@ -93,7 +93,27 @@ trait DiviOps_Agent_Page {
 			'post_type'    => $post->post_type,
 			'has_divi'     => self::post_uses_divi( $post ),
 			'content_raw'  => $post->post_content,
+			'content_checksum' => 'sha256:' . hash( 'sha256', (string) $post->post_content ),
 		] );
+	}
+
+	/**
+	 * Read post_content directly from the posts table for integrity checks.
+	 *
+	 * get_post() may return a request-local cached object after another request
+	 * has committed an edit, so mutation-boundary and final-readback checks must
+	 * bypass the object cache.
+	 */
+	public static function page_content_read_uncached( int $post_id ): ?string {
+		global $wpdb;
+
+		if ( ! isset( $wpdb->posts ) || ! method_exists( $wpdb, 'prepare' ) || ! method_exists( $wpdb, 'get_var' ) ) {
+			return null;
+		}
+		$content = $wpdb->get_var(
+			$wpdb->prepare( "SELECT post_content FROM {$wpdb->posts} WHERE ID = %d LIMIT 1", $post_id )
+		);
+		return is_string( $content ) ? $content : null;
 	}
 
 	/**
@@ -196,6 +216,34 @@ trait DiviOps_Agent_Page {
 				[ 'page_id' => $post_id ]
 			);
 		}
+
+		$expected_checksum = $request->get_param( 'expected_checksum' );
+		if ( null !== $expected_checksum ) {
+			if ( ! is_string( $expected_checksum ) || 1 !== preg_match( '/^sha256:[a-f0-9]{64}$/', $expected_checksum ) ) {
+				return self::envelope_error(
+					'invalid_input',
+					'expected_checksum must be a lowercase SHA-256 checksum from diviops_page_get.',
+					'Read the page, then pass its exact content_checksum. Omit only for legacy unconditional writes.',
+					400,
+					[ 'field' => 'expected_checksum', 'mutated' => false ]
+				);
+			}
+			$current_checksum = 'sha256:' . hash( 'sha256', (string) $post->post_content );
+			if ( ! hash_equals( $current_checksum, $expected_checksum ) ) {
+				return self::envelope_error(
+					'page.content_drift',
+					"Page #{$post_id} changed before its content could be updated.",
+					'Re-read diviops_page_get and review the new content before retrying. There is no force path.',
+					409,
+					[
+						'page_id'           => $post_id,
+						'expected_checksum' => $expected_checksum,
+						'current_checksum'  => $current_checksum,
+						'mutated'           => false,
+					]
+				);
+			}
+		}
 		if ( ! is_string( $content ) ) {
 			return self::envelope_error(
 				'invalid_input',
@@ -237,6 +285,32 @@ trait DiviOps_Agent_Page {
 				[],
 				$extra
 			);
+		}
+
+		// Re-read immediately before the write so a hook or concurrent editor
+		// cannot pass the initial review binding and then silently overwrite a
+		// newer page revision during the same request.
+		if ( null !== $expected_checksum ) {
+			$fresh_content  = self::page_content_read_uncached( $post_id );
+			$fresh_checksum = null !== $fresh_content
+				? 'sha256:' . hash( 'sha256', $fresh_content )
+				: '';
+			if ( null === $fresh_content || ! hash_equals( $expected_checksum, $fresh_checksum ) ) {
+				return self::envelope_error(
+					'page.content_drift',
+					"Page #{$post_id} changed before its content could be updated.",
+					'Re-read diviops_page_get and review the new content before retrying. There is no force path.',
+					409,
+					[
+						'page_id'           => $post_id,
+						'expected_checksum' => $expected_checksum,
+						'current_checksum'  => $fresh_checksum,
+						'mutated'           => false,
+					]
+				);
+			}
+			$post               = clone $post;
+			$post->post_content = $fresh_content;
 		}
 
 		$snapshot = null;

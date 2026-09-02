@@ -42,15 +42,18 @@ The plugin includes a WordPress.org-format `readme.txt` and a plugin-local `chan
 
 Current metadata policy:
 
-- `Stable tag` matches the plugin header `Version` (`1.5.15`).
+- `Stable tag` matches the plugin header `Version` (`1.5.16`).
 - `Requires at least` and `Requires PHP` mirror the main plugin header.
 - `Tested up to` is evidence-based for this repo/substrate and should not be raised until the Free plugin is actually tested on that WordPress version.
 - External-service/authentication disclosure must mention the separately distributed npm MCP server, WordPress Application Passwords, and the rule that secrets do not belong in issues, examples, screenshots, or repo files.
 - Free/Pro copy must keep the Free plugin useful while making clear that Pro is the paid workflow-leverage layer and that not every MCP tool is Free-backed.
 
-Free 1.5.15 is the PHP 7.4 compatibility hotfix for the trait-constant fatal
-introduced in 1.5.12. The packaged plugin is syntax- and startup-tested across
-PHP 7.4, 8.0, 8.1, 8.2, and 8.3 before publication.
+Free 1.5.16 adds an optional exact-checksum guard to full-content page updates.
+It refuses reviewed-content drift before mutation while preserving the legacy
+write contract when the guard is omitted. The precise
+`page_update_content_expected_checksum` capability distinguishes enforcement
+from older Free versions that only advertise the base writer. The packaged plugin is syntax- and
+startup-tested across PHP 7.4, 8.0, 8.1, 8.2, and 8.3 before publication.
 
 Before a WordPress.org submission, validate the readme and plugin package:
 

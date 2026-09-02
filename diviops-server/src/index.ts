@@ -476,6 +476,31 @@ function backupCapabilityError(
   return null;
 }
 
+function conditionalCapabilityError(
+  toolName: string,
+  capability: string,
+  required: boolean,
+  alternative: string,
+): MissingCapabilityMcpResult | null {
+  if (!required) return null;
+  try {
+    requireCapability(capability);
+  } catch (e) {
+    if (e instanceof MissingCapabilityError) {
+      return missingCapabilityEnvelope(e, toolName, {
+        serverVersion: SERVER_VERSION,
+        hint: capabilityUpgradeHint(
+          e.capability,
+          e.pluginComponent,
+          alternative,
+        ),
+      });
+    }
+    throw e;
+  }
+  return null;
+}
+
 // `any` here is deliberate, not laziness. McpServer.registerTool is a
 // multi-overload generic whose `cb`/`InputArgs` machinery doesn't compose
 // with `Parameters<typeof server.registerTool>` (overload collapse to
@@ -546,12 +571,14 @@ function registerLocalTool<
  *    be passed explicitly.
  *
  * 2. **Conditional registration.** The tool is registered with the
- *    MCP server ONLY when all four gates align at handshake time:
+ *    MCP server ONLY when the common gates and any tool-specific required
+ *    capabilities align at handshake time:
  *      - handshakeState.kind === "ok"
  *      - proActive === true
  *      - availableTargets[target].present === true
  *      - activeModules[target] === true
  *      - capabilities[capabilityKey] === true
+ *      - every capabilities[requiredCapabilities[]] === true
  *
  *    When any gate is false the call is a no-op — the tool simply
  *    doesn't exist on the MCP surface. Per ADR-007 "no error surface,
@@ -574,7 +601,11 @@ function registerProTool<H extends (args: any) => Promise<any>>(
   name: string,
   config: any,
   handler: H,
-  gates: { target: string; capabilityKey: string },
+  gates: {
+    target: string;
+    capabilityKey: string;
+    requiredCapabilities?: string[];
+  },
 ): void {
   const catalogEntry = recordToolCatalog({
     name,
@@ -584,7 +615,15 @@ function registerProTool<H extends (args: any) => Promise<any>>(
     capability_key: gates.capabilityKey,
   });
   if (handshakeState.kind !== "ok") return;
-  if (!proToolGatesSatisfied(handshakeState, gates)) return;
+  const resolvedHandshake = handshakeState;
+  if (
+    gates.requiredCapabilities?.some(
+      (capability) => resolvedHandshake.capabilities[capability] !== true,
+    )
+  ) {
+    return;
+  }
+  if (!proToolGatesSatisfied(resolvedHandshake, gates)) return;
 
   catalogEntry.registered = true;
   recordIdempotent(name, config?._meta);
@@ -738,7 +777,7 @@ registerPluginTool(
   "diviops_page_get",
   {
     description:
-      "Get detailed info about a specific page including its raw Divi block content. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }; missing page_id returns ok:false with code 'not_found' and a hint pointing to diviops_page_list.",
+      "Get detailed info about a specific page including its raw Divi block content and content_checksum (`sha256:` over the exact post_content bytes) for stale-write protection. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }; missing page_id returns ok:false with code 'not_found' and a hint pointing to diviops_page_list.",
     inputSchema: {
       page_id: z.number().describe("WordPress post/page ID"),
     },
@@ -1563,7 +1602,7 @@ registerPluginTool(
   "diviops_page_update_content",
   {
     description:
-      "Update the content of a page with Divi block markup. The content should be valid WordPress block markup using divi/* blocks. IMPORTANT: This overwrites the entire page content. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }; missing page_id returns 'not_found', edit-permission failures return 'forbidden' (HTTP 403), non-string content returns 'invalid_input' with `error.data = { field, received_type }`." +
+      "Update the content of a page with Divi block markup. The content should be valid WordPress block markup using divi/* blocks. IMPORTANT: This overwrites the entire page content. Pass expected_checksum from diviops_page_get to refuse stale writes; omission preserves the legacy unconditional-write contract. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }; missing page_id returns 'not_found', edit-permission failures return 'forbidden' (HTTP 403), stale content returns 'page.content_drift' (HTTP 409), and non-string content returns 'invalid_input' with `error.data = { field, received_type }`." +
       DRY_RUN_DESC_SUFFIX,
     inputSchema: {
       page_id: z.number().describe("WordPress post/page ID to update"),
@@ -1572,21 +1611,34 @@ registerPluginTool(
         .describe(
           "Full page content in WordPress block markup format (<!-- wp:divi/section -->...<!-- /wp:divi/section -->)",
         ),
+      expected_checksum: z
+        .string()
+        .regex(/^sha256:[a-f0-9]{64}$/)
+        .optional()
+        .describe("Optional review binding from diviops_page_get.content_checksum. When supplied, drift refuses with no force path."),
       dry_run: DRY_RUN_FIELD,
       backup: BACKUP_FIELD,
     },
     annotations: { idempotentHint: false },
     _meta: { idempotent: "conditional" },
   },
-  async ({ page_id, content, dry_run, backup }) => {
+  async ({ page_id, content, expected_checksum, dry_run, backup }) => {
     const backupGate = backupCapabilityError("diviops_page_update_content", backup);
     if (backupGate) return backupGate;
+    const checksumGate = conditionalCapabilityError(
+      "diviops_page_update_content",
+      "page_update_content_expected_checksum",
+      expected_checksum !== undefined,
+      "Alternatively, omit expected_checksum to use the legacy unconditional-write contract.",
+    );
+    if (checksumGate) return checksumGate;
     const isolationGate = writerIsolationErrorResult(
       "diviops_page_update_content",
       { content },
     );
     if (isolationGate) return isolationGate;
     const body: Record<string, unknown> = { content };
+    if (expected_checksum !== undefined) body.expected_checksum = expected_checksum;
     if (dry_run) body.dry_run = true;
     if (backup) body.backup = true;
     const result = await authoringWrite(`/page/update-content/${page_id}`, "POST", body, "page_update_content", dry_run === true);
@@ -5646,7 +5698,7 @@ function registerProTools(): void {
     "diviops_fc_product_get",
     {
       description:
-        "Fetch a single FluentCart Pro product by ID, including the ProductDetail row, the default-variation read-back fields, and a list of variation IDs (Pro tier; requires FluentCart Pro installed + activated). Read-only. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }; the success payload is { product: { id, title, slug, status, created_at, modified_at, variation_type, variants_count, min_price, max_price, stock_availability, excerpt, content, author_id, view_url, edit_url }, detail: { fulfillment_type, variation_type, min_price, max_price, manage_stock, manage_downloadable, stock_availability, default_variation_id, ... } | null, default_variation: { id, sku, item_price, compare_price } | null, variation_ids: number[], variations_count }. The default_variation block closes the read-after-write loop for the V2 simple-product write tools — sku and compare_price round-trip cleanly without a FluentCart admin fallback. Unit asymmetry: product_create / product_update accept price and compare_price in currency units (e.g. 29.99); product_get returns min_price, max_price, default_variation.item_price, and default_variation.compare_price in stored cents (e.g. 2999). default_variation.sku is null when the stored SKU is SQL NULL; clearing a SKU with sku: \"\" on update reads back as null. default_variation itself is null when the product has no default variation row. Use the variation_ids list to follow up with a (future) diviops_fc_variation_list call. Error codes: invalid_input (HTTP 400) when id is not a positive integer; not_found (HTTP 404) when no product matches the ID (or it's filtered out by the FluentCart auto-draft global scope); fluentcart.module_inactive (HTTP 412) when FluentCart is uninstalled or the module toggle is off; fluentcart.query_failed (HTTP 500) when the FluentCart model query raises an exception.",
+        "Fetch a single FluentCart Pro product by ID, including the ProductDetail row, default-variation read-back fields, a compact value-free shape-readiness verdict, buyer-safe storefront links, and a list of variation IDs (Pro tier; requires FluentCart Pro installed + activated). Read-only. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }; the success payload is { product: { id, title, slug, status, created_at, modified_at, variation_type, variants_count, min_price, max_price, stock_availability, excerpt, content, author_id, view_url, edit_url }, detail: { fulfillment_type, variation_type, min_price, max_price, manage_stock, manage_downloadable, stock_availability, default_variation_id, ... } | null, default_variation: { id, sku, item_price, compare_price } | null, storefront_links: { view_url: string|null, checkout_url: string|null, checkout_variation_id: number|null, ready: boolean, problems: string[], draft_preview_available: false }, shape_readiness: { profile: \"simple_onetime\"|\"simple_annual_subscription\"|\"unsupported\", ready: boolean, problems: string[] }, variation_ids: number[], variations_count }. storefront_links is ready only for a published, simple product with exactly one resolvable variation that passes FluentCart's native canPurchase(1) check. Native simple products may use the bounded sole-variation fallback when their default pointer is empty. Missing or drifted DiviOps-authored defaults remain visible in shape_readiness and every mutation remains strict. storefront_links.checkout_url comes from FluentCart's native getPurchaseUrl() query-string route; DiviOps does not invent add-to-cart URLs. Draft, pending, and private products return both buyer URLs as null. storefront_links.problems uses finite codes: product_not_published, product_shape_not_ready, default_variation_missing, variation_not_purchasable, checkout_url_unavailable. product_shape_not_ready is limited to non-simple products or products without exactly one variation. product.view_url remains unchanged for backward-compatible administrative readback and is not a buyer-safety verdict. shape_readiness never returns raw other_info; problems contains only finite codes: detail_missing, variation_type_unsupported, variation_count_not_one, default_variation_pointer_missing, default_variation_pointer_dangling, detail_defaults_drift, payment_profile_unsupported, payment_type_drift, variation_defaults_drift. An intentionally independent variation_title is supported and does not affect readiness. The default_variation block closes the read-after-write loop for the V2 simple-product write tools — sku and compare_price round-trip cleanly without a FluentCart admin fallback. Unit asymmetry: product_create / product_update accept price and compare_price in currency units (e.g. 29.99); product_get returns min_price, max_price, default_variation.item_price, and default_variation.compare_price in stored cents (e.g. 2999). default_variation.sku is null when the stored SKU is SQL NULL; clearing a SKU with sku: \"\" on update reads back as null. default_variation itself is null when the product has no default variation row. Apply/no-op product_create and product_update responses include the same storefront_links projection. Use the variation_ids list to follow up with diviops_fc_variation_list. Error codes: invalid_input (HTTP 400) when id is not a positive integer; not_found (HTTP 404) when no product matches the ID (or it's filtered out by the FluentCart auto-draft global scope); fluentcart.module_inactive (HTTP 412) when FluentCart is uninstalled or the module toggle is off; fluentcart.query_failed (HTTP 500) when the FluentCart model query raises an exception.",
       inputSchema: {
         id: z
           .number()
@@ -5676,6 +5728,72 @@ function registerProTools(): void {
     { target: "fluentcart", capabilityKey: "fluentcart_product_get" },
   );
 
+  registerProTool(
+    "diviops_fc_campaign_section_apply",
+    {
+      description:
+        "Create or replace one receipt-owned FluentCart campaign section on an existing Divi page. The fixed product_card_buy_now_v1 profile uses only the official fluent-cart-divi/product-card and fluent-cart-divi/buy-now modules. Requires a published storefront-ready product, active supported FluentCart Divi Modules 1.0.0 schemas, an exact page checksum, and exactly one of position=start|end or the prior receipt. Dry-run returns exact generated block markup, validation/render evidence, the rollback plan, and a planned receipt. Apply always creates a rollback backup, refuses page drift, validates and renders before writing, verifies exact readback, and returns the receipt required for any replacement. It never mutates products, prices, variants, orders, customers, cart, taxes, or checkout behavior." +
+        DRY_RUN_DESC_SUFFIX,
+      inputSchema: {
+        page_id: z.number().int().positive().describe("Existing WordPress page ID."),
+        product_id: z.number().int().positive().describe("Published FluentCart product ID whose storefront_links.ready is true."),
+        profile: z.literal("product_card_buy_now_v1").describe("The only supported fixed presentation profile."),
+        expected_page_checksum: z
+          .string()
+          .regex(/^sha256:[a-f0-9]{64}$/)
+          .describe("Exact diviops_page_get.content_checksum reviewed for this write."),
+        position: z.enum(["start", "end"]).optional().describe("Create at the start or end of the page. Mutually exclusive with receipt."),
+        receipt: z
+          .object({
+            schema: z.literal("diviops.fluentcart_campaign_section.receipt.v1"),
+            page_id: z.number().int().positive(),
+            product_id: z.number().int().positive(),
+            profile: z.literal("product_card_buy_now_v1"),
+            section_label: z.string().min(1),
+            section_sha256: z.string().regex(/^sha256:[a-f0-9]{64}$/),
+            page_sha256: z.string().regex(/^sha256:[a-f0-9]{64}$/),
+            addon_version: z.literal("1.0.0"),
+            addon_schema_sha256: z.string().regex(/^sha256:[a-f0-9]{64}$/),
+            builder_version: z.string().min(1),
+          })
+          .strict()
+          .optional()
+          .describe("Prior exact-owned receipt for replacement. Mutually exclusive with position."),
+        dry_run: DRY_RUN_FIELD,
+      },
+      annotations: { idempotentHint: false },
+      _meta: { idempotent: "conditional" },
+    },
+    async ({ page_id, product_id, profile, expected_page_checksum, position, receipt, dry_run }) => {
+      const body: Record<string, unknown> = {
+        page_id,
+        product_id,
+        profile,
+        expected_page_checksum,
+      };
+      if (position !== undefined) body.position = position;
+      if (receipt !== undefined) body.receipt = receipt;
+      if (dry_run) body.dry_run = true;
+      const result = await wp.requestEnveloped(
+        "/pro/fluentcart/campaign-section/apply",
+        { method: "POST", body },
+      );
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: serializeEnvelope(result, "diviops_fc_campaign_section_apply"),
+          },
+        ],
+      };
+    },
+    {
+      target: "fluentcart",
+      capabilityKey: "fluentcart_campaign_section_apply",
+      requiredCapabilities: ["page_update_content_expected_checksum"],
+    },
+  );
+
   // ── V2 — simple product writes ─────────────────────────────────────
   //
   // Three Pro write tools backing the constrained simple-onetime-product
@@ -5689,7 +5807,7 @@ function registerProTools(): void {
     "diviops_fc_product_create",
     {
       description:
-        "Create a simple FluentCart Pro product (Pro tier; requires FluentCart Pro installed + activated). V2 scope: simple onetime products only — one default variant, `detail.variation_type=\"simple\"`, `payment_type=\"onetime\"`, `fulfillment_type=\"digital\"|\"physical\"`. Multi-variation, subscriptions, downloadables, gallery, taxonomies, activation_limit, and license-flow fields ship in later verticals and are refused here. Required: `title` (1-200 chars). Optional: `status` (`draft`|`publish`|`pending`|`private`; default `draft`), `content`, `excerpt`, `fulfillment_type` (default `digital`), `price` (≥0; default 0), `compare_price` (≥0; must be ≥ `price` when provided), `sku` (optional; must be unique across FluentCart variations and at most 30 characters because FluentCart stores `fct_product_variations.sku` as `VARCHAR(30)` — overlong values are rejected before mutation rather than silently truncated). Returns the standardized envelope { ok, data?, error: { code, message, hint? } }; apply-mode success payload is { product, detail, default_variation: { id, sku, item_price, compare_price } | null, variation_ids, variations_count, product_id, detail_id, default_variation_id } (HTTP 201). The default_variation block mirrors the diviops_fc_product_get read-back shape so callers don't need a follow-up read to confirm sku / compare_price / item_price after a write. Unit asymmetry: write inputs (price, compare_price) are in currency units (e.g. 29.99); the default_variation block returns item_price + compare_price in stored cents (e.g. 2999), matching detail.min_price / max_price. default_variation.compare_price is null when no compare price is stored (FCP persists \"no compare\" as 0, normalized to null on read); default_variation.sku is null when the SKU column is SQL NULL or an empty string (the create path stores omitted SKU as NULL). Error codes: invalid_input (400) when any input violates the constraints above (including SKU > 30 chars — error.data carries { field: \"sku\", max_length: 30, actual_length }); fluentcart.sku_conflict (409) when the provided SKU is already in use; fluentcart.module_inactive (412); fluentcart.command_failed (500) when wp_insert_post/ProductDetail/ProductVariation creation raises. Idempotency: NOT idempotent — repeat calls create distinct products." +
+        "Create a simple FluentCart Pro product (Pro tier; requires FluentCart Pro installed + activated). V2 scope: simple onetime products only — one exact default variant, `detail.variation_type=\"simple\"`, `payment_type=\"onetime\"`, `fulfillment_type=\"digital\"|\"physical\"`. Creation writes FluentCart's current finite simple-product detail/variation other_info defaults and persists an exact nonzero pointer to the sole variant. Multi-variation, subscriptions, downloadables, gallery, taxonomies, activation_limit, and license-flow fields ship in later verticals and are refused here. Required: `title` (1-200 chars). Optional: `status` (`draft`|`publish`|`pending`|`private`; default `draft`), `content`, `excerpt`, `fulfillment_type` (default `digital`), `price` (≥0; default 0), `compare_price` (≥0; must be ≥ `price` when provided), `sku` (optional; must be unique across FluentCart variations and at most 30 characters because FluentCart stores `fct_product_variations.sku` as `VARCHAR(30)` — overlong values are rejected before mutation rather than silently truncated). Returns the standardized envelope { ok, data?, error: { code, message, hint? } }; apply-mode success payload is { product, detail, default_variation: { id, sku, item_price, compare_price } | null, storefront_links: { view_url, checkout_url, checkout_variation_id, ready, problems, draft_preview_available }, shape_readiness: { profile, ready, problems }, variation_ids, variations_count, product_id, detail_id, default_variation_id } (HTTP 201). The default_variation block mirrors the diviops_fc_product_get read-back shape so callers don't need a follow-up read to confirm sku / compare_price / item_price after a write; storefront_links and shape_readiness mirror its buyer-safety and value-free readiness projections. Unit asymmetry: write inputs (price, compare_price) are in currency units (e.g. 29.99); the default_variation block returns item_price + compare_price in stored cents (e.g. 2999), matching detail.min_price / max_price. default_variation.compare_price is null when no compare price is stored (FCP persists \"no compare\" as 0, normalized to null on read); default_variation.sku is null when the SKU column is SQL NULL or an empty string (the create path stores omitted SKU as NULL). Error codes: invalid_input (400) when any input violates the constraints above (including SKU > 30 chars — error.data carries { field: \"sku\", max_length: 30, actual_length }); fluentcart.sku_conflict (409) when the provided SKU is already in use; fluentcart.module_inactive (412); fluentcart.command_failed (500) when wp_insert_post/ProductDetail/ProductVariation creation raises. Idempotency: NOT idempotent — repeat calls create distinct products." +
         DRY_RUN_DESC_SUFFIX,
       inputSchema: {
         title: z
@@ -5797,7 +5915,7 @@ function registerProTools(): void {
     "diviops_fc_product_update",
     {
       description:
-        "Update a simple FluentCart Pro product (Pro tier; requires FluentCart Pro installed + activated). V2 scope: simple onetime products only — accepts partial updates on title, status, content, excerpt, fulfillment_type, price, compare_price, sku. SKU constraint: must be unique across FluentCart variations and at most 30 characters (FluentCart stores `fct_product_variations.sku` as `VARCHAR(30)`); `sku: \"\"` clears the SKU and reads back as `null`. Overlong SKUs are rejected before mutation rather than silently truncated. Refuses non-simple products (variation_type other than 'simple', or default variant with payment_type other than 'onetime') with `fluentcart.unsupported_product_shape` (HTTP 422) — multi-variation + subscription writes ship in V3+. Required: `id` (positive integer; the post ID of the fluent_products CPT entry). All other fields optional; only changed fields are applied. When no field actually changes, returns `ok:true` with `data.noop: true` (apply mode) or an empty-plan dry-run summary. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }; apply-mode success payload is { product, detail, default_variation: { id, sku, item_price, compare_price } | null, variation_ids, variations_count, changed_fields[] } (or { noop: true, product, detail, default_variation, ... } on a no-op). The default_variation block reflects the post-update state (or current state on noop) and mirrors the diviops_fc_product_get shape — sku, item_price, and compare_price round-trip without a follow-up read. Unit asymmetry: write inputs (price, compare_price) are in currency units (e.g. 29.99); default_variation returns item_price + compare_price in stored cents (e.g. 2999). default_variation.sku is null after `sku: \"\"` clears it (the empty string is stored as SQL NULL so the variations table's UNIQUE constraint allows multiple cleared SKUs); default_variation.compare_price is null when no compare price is stored (FCP persists \"no compare\" as 0, normalized to null on read). Error codes: invalid_input (400) when any field violates the constraints (including SKU > 30 chars — error.data carries { field: \"sku\", max_length: 30, actual_length }); not_found (404) when the product ID does not exist; fluentcart.unsupported_product_shape (422) when the product is not simple/onetime; fluentcart.sku_conflict (409) when a new SKU collides with another variation; fluentcart.module_inactive (412); fluentcart.command_failed (500). Idempotency: conditional — repeating an identical update is a no-op." +
+        "Update a simple FluentCart Pro product (Pro tier; requires FluentCart Pro installed + activated). Product-level title, status, content, and excerpt updates are supported for both onetime and subscription products; changing title also keeps the default variation's variation_title coherent. On simple onetime products, fulfillment_type, price, compare_price, and sku remain supported. On subscription products those variation-level fields are refused with `fluentcart.unsupported_product_shape` (HTTP 422): pricing and SKU must use diviops_fc_variation_update, while subscription fulfillment changes remain out of scope. This ensures subscription pricing never flows through the V2 product path. Multi-variation products remain refused. Supported updates preserve initialized detail/variation defaults and unrelated existing other_info keys; they report but do not auto-repair legacy drift. SKU constraint on onetime products: unique across FluentCart variations and at most 30 characters; `sku: \"\"` clears it and reads back as `null`. Required: `id` (positive integer; the post ID of the fluent_products CPT entry). All other fields optional; only changed fields are applied. When no field actually changes, returns `ok:true` with `data.noop: true` (apply mode) or an empty-plan dry-run summary. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }; apply-mode success payload is { product, detail, default_variation: { id, sku, item_price, compare_price } | null, storefront_links: { view_url, checkout_url, checkout_variation_id, ready, problems, draft_preview_available }, shape_readiness: { profile, ready, problems }, variation_ids, variations_count, changed_fields[] } (or { noop: true, product, detail, default_variation, storefront_links, shape_readiness, ... } on a no-op). The default_variation, storefront_links, and value-free shape_readiness blocks reflect the post-update state. Unit asymmetry for onetime pricing: write inputs are currency units; readback prices are stored cents. Error codes: invalid_input (400); not_found (404); fluentcart.unsupported_product_shape (422) for non-simple products, unsupported payment types, or subscription variation fields; fluentcart.sku_conflict (409); fluentcart.module_inactive (412); fluentcart.command_failed (500). Idempotency: conditional — repeating an identical update is a no-op." +
         DRY_RUN_DESC_SUFFIX,
       inputSchema: {
         id: z
@@ -5812,7 +5930,9 @@ function registerProTools(): void {
           .min(1)
           .max(200)
           .optional()
-          .describe("New product title. 1-200 chars."),
+          .describe(
+            "New product title. 1-200 chars. Also updates the default variation title for both onetime and subscription products.",
+          ),
         status: z
           .enum(["draft", "publish", "pending", "private"])
           .optional()
@@ -5822,26 +5942,26 @@ function registerProTools(): void {
         fulfillment_type: z
           .enum(["digital", "physical"])
           .optional()
-          .describe("New fulfillment shape."),
+          .describe("New fulfillment shape. Simple onetime products only."),
         price: z
           .number()
           .min(0)
           .optional()
           .describe(
-            "New default-variation item_price (currency units). Non-negative.",
+            "New default-variation item_price (currency units). Non-negative. Simple onetime products only; use diviops_fc_variation_update for subscriptions.",
           ),
         compare_price: z
           .number()
           .min(0)
           .optional()
           .describe(
-            "New compare-at price. Must be ≥ `price` when both provided.",
+            "New compare-at price. Must be ≥ `price` when both provided. Simple onetime products only.",
           ),
         sku: z
           .string()
           .optional()
           .describe(
-            "New SKU for the default variation. Optional. Must be unique across all FluentCart variations and at most 30 characters (FluentCart stores fct_product_variations.sku as VARCHAR(30)). Empty string clears the SKU (reads back as null).",
+            "New SKU for the default variation. Simple onetime products only. Must be unique across all FluentCart variations and at most 30 characters. Empty string clears the SKU (reads back as null).",
           ),
         dry_run: DRY_RUN_FIELD,
       },
@@ -5989,7 +6109,7 @@ function registerProTools(): void {
     "diviops_fc_variation_update",
     {
       description:
-        "Update the default variation of a simple FluentCart Pro product (Pro tier; V3; requires FluentCart Pro installed + activated). V3 scope: writes the product's default variation only; refuses non-simple products and non-default variations with `fluentcart.unsupported_product_shape` (HTTP 422). Multi-variation create/delete remains out of scope. Accepts partial updates on price, compare_price, sku, payment_type, and the subscription shape (repeat_interval, times, trial_days, manage_setup_fee). Switching `payment_type: \"subscription\"` requires `repeat_interval` (yearly/half_yearly/quarterly/monthly/weekly/daily) — either supplied in the same call or already stored. Switching to `onetime` strips the subscription-only keys from other_info, matching ProductVariationRequest::beforeValidation. `manage_setup_fee: \"yes\"` requires signup_fee + signup_fee_name which are out of scope for V3 (use FluentCart admin UI for setup fees); only `manage_setup_fee: \"no\"` is accepted. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }; apply-mode success payload is { product_id, variation_id, changed_fields[], variation: VariationRow, product_price_range: { min_price, max_price } | null } (or { noop: true, product_id, variation_id, variation } when nothing changes). VariationRow mirrors the diviops_fc_variation_list shape — sku, item_price, compare_price, payment_type, other_info, license round-trip without a follow-up read. Unit asymmetry: write inputs (price, compare_price) are currency units (e.g. 19.00); VariationRow returns item_price + compare_price in stored cents. Error codes: invalid_input (400); not_found (404); fluentcart.unsupported_product_shape (422); fluentcart.sku_conflict (409); fluentcart.module_inactive (412); fluentcart.command_failed (500). Idempotency: conditional — identical repeat is a no-op." +
+        "Update the default variation of a simple FluentCart Pro product (Pro tier; V3; requires FluentCart Pro installed + activated). V3 scope: writes the product's default variation only; refuses non-simple products and non-default variations with `fluentcart.unsupported_product_shape` (HTTP 422). Multi-variation create/delete remains out of scope. Accepts partial updates on variation_title (non-empty, 1-200 chars), price, compare_price, sku, payment_type, and the subscription shape (repeat_interval, times, trial_days, manage_setup_fee). variation_title changes only the default variation label; use diviops_fc_product_update.title when the product title and default variation label should stay aligned. Switching `payment_type: \"subscription\"` requires `repeat_interval` (yearly/half_yearly/quarterly/monthly/weekly/daily) — either supplied in the same call or already stored. Switching to `onetime` restores FluentCart's initialized one-time values for the finite subscription-related keys while preserving unrelated other_info. `manage_setup_fee: \"yes\"` remains out of scope. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }; apply-mode success payload is { product_id, variation_id, changed_fields[], variation: VariationRow, product_price_range: { min_price, max_price } | null } (or { noop: true, product_id, variation_id, variation } when nothing changes). VariationRow provides direct readback including variation_title. Error codes: invalid_input (400); not_found (404); fluentcart.unsupported_product_shape (422); fluentcart.sku_conflict (409); fluentcart.module_inactive (412); fluentcart.command_failed (500). Idempotency: conditional — identical repeat is a no-op." +
         DRY_RUN_DESC_SUFFIX,
       inputSchema: {
         product_id: z
@@ -6005,6 +6125,14 @@ function registerProTools(): void {
           .positive()
           .describe(
             "FluentCart variation ID. Must be the product's default variation (V3 constraint).",
+          ),
+        variation_title: z
+          .string()
+          .min(1)
+          .max(200)
+          .optional()
+          .describe(
+            "Default variation label. 1-200 chars. This does not change the product title.",
           ),
         price: z
           .number()
@@ -6030,7 +6158,7 @@ function registerProTools(): void {
           .enum(["onetime", "subscription"])
           .optional()
           .describe(
-            "Variation payment_type. Switching to 'subscription' requires repeat_interval. Switching to 'onetime' strips subscription-only fields from other_info.",
+            "Variation payment_type. Switching to 'subscription' requires repeat_interval. Switching to 'onetime' restores initialized one-time values for the finite subscription-related keys and preserves unrelated other_info.",
           ),
         repeat_interval: z
           .enum([
@@ -6074,6 +6202,7 @@ function registerProTools(): void {
     async ({
       product_id,
       variation_id,
+      variation_title,
       price,
       compare_price,
       sku,
@@ -6086,6 +6215,7 @@ function registerProTools(): void {
     }: {
       product_id: number;
       variation_id: number;
+      variation_title?: string;
       price?: number;
       compare_price?: number;
       sku?: string;
@@ -6097,6 +6227,7 @@ function registerProTools(): void {
       dry_run?: boolean;
     }) => {
       const body: Record<string, unknown> = {};
+      if (variation_title !== undefined) body.variation_title = variation_title;
       if (price !== undefined) body.price = price;
       if (compare_price !== undefined) body.compare_price = compare_price;
       if (sku !== undefined) body.sku = sku;

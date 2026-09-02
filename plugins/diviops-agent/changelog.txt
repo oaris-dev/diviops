@@ -9,6 +9,13 @@ Policy:
 - Keep entries customer-facing. Avoid internal issue numbers unless they are needed to explain a user-visible change.
 - Do not include secrets, credentials, customer data, or environment-specific URLs.
 
+## 1.5.16
+
+- Adds an optional exact-checksum guard to the full-content page writer and refuses stale reviewed content both at request entry and immediately before mutation.
+- Advertises that enforcement through the precise `page_update_content_expected_checksum` capability so checksum-dependent clients can distinguish it from the legacy unconditional writer.
+- Lets receipt-owned Pro workflows reuse the existing Free integrity, rollback, cache, and readback path without moving generic page-writing ownership into Pro.
+- Keeps existing callers backward-compatible when `expected_checksum` is omitted; no force path or broader page-write behavior is added.
+
 ## 1.5.15
 
 - Restores the declared PHP 7.4+ runtime floor by moving compatibility and authoring-limit constants from traits into the consuming class.

@@ -3,7 +3,7 @@
  * Plugin Name: DiviOps Agent
  * Plugin URI: https://github.com/oaris-dev/diviops
  * Description: REST API bridge for DiviOps — connects Claude Code to your Divi 5 site for AI-powered page building and design management.
- * Version: 1.5.15
+ * Version: 1.5.16
  * Author: oaris.de
  * Author URI: https://oaris.de
  * Text Domain: diviops-agent
@@ -70,7 +70,7 @@ class DiviOps_Agent {
 	 * Plugin version — surfaced in /handshake for self-diagnosis only;
 	 * server no longer gates on it (capability map is the gate).
 	 */
-	const VERSION = '1.5.15';
+	const VERSION = '1.5.16';
 
 	/**
 	 * Minimum MCP server version this plugin is compatible with.
@@ -81,7 +81,8 @@ class DiviOps_Agent {
 	 * Per-tool capability map emitted by /handshake.
 	 *
 	 * Each key is a post-rename MCP tool name slug (without the
-	 * `diviops_` prefix). The server's `requireCapability(<key>)`
+	 * `diviops_` prefix) or a precise additive behavior capability for
+	 * a backwards-compatible route extension. The server's `requireCapability(<key>)`
 	 * gate at every plugin-touching tool entry compares against this
 	 * list. Tools the server adds in newer releases that aren't yet
 	 * in this list will fail fast on older plugins with an "upgrade
@@ -112,7 +113,7 @@ class DiviOps_Agent {
 		'module_clone_backup', 'module_lock_backup', 'module_move_backup', 'module_unlock_backup', 'module_update_backup',
 		// page
 		'page_create', 'page_get', 'page_get_layout', 'page_list',
-		'page_trash', 'page_update_content', 'page_update_content_backup', 'page_update_meta', 'page_update_status',
+		'page_trash', 'page_update_content', 'page_update_content_backup', 'page_update_content_expected_checksum', 'page_update_meta', 'page_update_status',
 		// preset
 		'preset_audit', 'preset_audit_storage', 'preset_cleanup', 'preset_create', 'preset_delete', 'preset_inspect', 'preset_registry_doctor',
 		'preset_reassign', 'preset_scan_orphans', 'preset_set_default', 'preset_update',
@@ -1308,6 +1309,11 @@ class DiviOps_Agent {
 				'content' => [
 					'required' => true,
 					'type'     => 'string',
+				],
+				'expected_checksum' => [
+					'required' => false,
+					'type'     => 'string',
+					'pattern'  => '^sha256:[a-f0-9]{64}$',
 				],
 				'dry_run' => [ 'required' => false, 'type' => 'boolean', 'default' => false ],
 				'backup'  => [ 'required' => false, 'type' => 'boolean', 'default' => false ],
