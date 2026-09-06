@@ -294,6 +294,8 @@ Need a semantic name? Register it inside Divi as a `gvid-*` / `gcid-*` in the Va
 
 **These modules break the standard `module.decoration.*` pattern. Getting these wrong causes silent failures.**
 
+Image width/maxWidth evidence is limited to Divi 5.11.0 (VB-verified 2026-09-03): native save added `desktop.value: {"width":"240px","maxWidth":"100%"}` and `phone.value: {"width":"180px"}` directly under `module.advanced.sizing`, rendering at 240/180px. All other attrs were preserved, including the old inert `module.advanced.sizing.forceFullwidth.<breakpoint>.value` bag; that preservation did not verify the toggle. Its corrected path below is source-verified by the Image conversion outline and sizing renderer. This does not revise spacing, other advanced fields, other versions or the historical preset-radius caveat.
+
 | Module | What's different | Correct path | Wrong pattern (silent fail) |
 |--------|-----------------|--------------|--------------------------|
 | **Heading** | Explicit heading level required | `title.decoration.font.font.desktop.value.headingLevel: "h1"` | omitting → renders as `<h2>` |
@@ -308,6 +310,7 @@ Need a semantic name? Register it inside Divi as a `gvid-*` / `gcid-*` in the Va
 | **Text/Blurb** | Body font triple-nesting | `content.decoration.bodyFont.body.font.desktop.value.*` | `bodyFont.bodyFont.*` → color/size silently ignored |
 | **Flex children only** | `flexType` 24-unit grid path is `module.decoration.sizing.desktop.value.flexType` | on `divi/column` / `divi/column-inner` inside `divi/row` whose `module.decoration.layout.desktop.value.display = "flex"`, OR on Group children inside a Group with `display: "flex"` | `decoration.layout.flexType` (wrong path — byte-stored but semantically dropped); on a default `display: block` row the renderer ignores `flexType` and emits legacy `et_pb_column_N_M` classes by column count → 3×`"8_24"` columns render full-width stacked, not side-by-side (Divi 5.4.1 verified 2026-05-09); on blurb/text/image with no flex parent → silently dropped, use `module.decoration.sizing.width` instead |
 | **Image** | Spacing/sizing on advanced | `module.advanced.{spacing,sizing}` | `module.decoration.{spacing,sizing}` |
+| **Image** | Width/maxWidth (VB-tested Divi 5.11.0); forceFullwidth (source-verified) | `module.advanced.sizing.<breakpoint>.value.width` / `maxWidth` / `forceFullwidth` share the same breakpoint value | nested `module.advanced.sizing.sizing.<breakpoint>.value` width/maxWidth was inert; `module.advanced.sizing.forceFullwidth.<breakpoint>.value` also has the wrong ordering |
 | **Image** | Border on image element | `image.decoration.border` | `module.decoration.border` |
 | **Image** | Border-radius from preset alone doesn't render | reinforce inline on `image.decoration.border.desktop.value.radius` (same path as preset) | preset only → square corners on frontend (image-specific quirk) |
 | **Icon** | Border/bg on module only | `module.decoration.{border,background}` | `icon.decoration.{border,background}` |
@@ -356,13 +359,44 @@ versions, external sites, or generic portability behavior.
 
 `divi/charts` is a Free one-site content primitive. Author only from the generated `chart` and `module` paths below. Runtime evidence covers table and imported-CSV data, line/pie/scatter/bubble types, module/group presets, full Visual Builder reload, frontend legend/tooltip/responsive behavior, dynamic assets, and exact cleanup on canonical Divi 5.11.0. Do not infer hosted Divi AI authoring from schema presence.
 
+## Slider controls (Divi 5.12.1, source-proven)
+
+For `divi/slider`, source metadata and `SliderPresetAttrsMap.php` expose:
+
+| Block attribute path | Values / purpose |
+|---|---|
+| `pagination.advanced.style.desktop.value` | `"dot"` or `"swipe"`; Controls Style |
+| `pagination.advanced.swipeText.desktop.value` | Custom swipe label string |
+| `pagination.advanced.showCounter.desktop.value` | `"on"` / `"off"`; slide count |
+| `pagination.advanced.showSwipeLabel.desktop.value` | `"on"` / `"off"`; swipe label visibility |
+| `pagination.advanced.color.desktop.value` | Swipe bar count/label text color |
+
+The first four fields disable responsive, hover and sticky controls in metadata.
+Show Controls lives at `pagination.advanced.show`. Swipe labels/counters apply
+when controls are shown and style is `"swipe"`. Missing style still falls back
+to `"dot"` in PHP and the target render defaults; D4 conversion adds `"dot"`
+to non-preset Slider content missing style. Do not rewrite old Sliders to swipe
+or infer a new swipe default from the new UI. Old-dot preservation and explicit
+new-swipe authoring need separate runtime/VB checks; neither was performed for
+this source adoption. Other Slider-family modules are outside this evidence.
+
+## Divi 5.12.1 fixture provenance
+
+The cached 89-module fixture is a source-derived refresh, not a live schema
+capture. It follows `schema_get_module` / dump-all's six fields and PHP array
+serialization, using the exact target's static metadata and registration
+defaults, while preserving WordPress boilerplate and the synthetic layout block.
+Separate render/printed defaults are not registry attribute defaults. Locale,
+registration filters, conditional providers and runtime/VB behavior remain
+unverified; earlier version-specific proofs above are not promoted to 5.12.1.
+
 <!-- BEGIN GENERATED:header -->
 
 ## Generated path index
 
 > Generated mechanically by `diviops-server/scripts/regen-module-formats.mjs` from `diviops_schema_get_module` dump-all output. Each module block lives between `BEGIN GENERATED:module:divi/<slug>` / `END GENERATED:module:divi/<slug>` HTML-comment sentinels (see `diviops-server/CONTRIBUTING.md` for the full convention). Do **not** edit between sentinels — edits are clobbered on regen.
 
-> Generated against Divi `5.11.1`, schema `61fe05a885e6…`.
+> Generated against Divi `5.12.1`, schema `f9de6c827de8…`.
 
 Per CLAUDE.md "Suite architecture coherence": schema dump is the canonical index; VB-verified prose above is the canonical interpretation. The two sections are complementary, not competing — prose explains surprises, this index enumerates paths exhaustively. On conflicts, the prose above wins (per `feedback_vb_first_verification`).
 
@@ -671,7 +705,7 @@ Per CLAUDE.md "Suite architecture coherence": schema dump is the canonical index
 - **item** — `item.decoration.background`, `item.decoration.border`, `item.decoration.boxShadow`, `item.decoration.sizing`, `item.decoration.spacing`
 - **itemEven** — `itemEven.decoration.background`, `itemEven.decoration.border`, `itemEven.decoration.boxShadow`, `itemEven.decoration.sizing`, `itemEven.decoration.spacing`
 - **marker** — `marker.decoration.background`, `marker.decoration.border`, `marker.decoration.boxShadow`, `marker.decoration.icon`, `marker.decoration.sizing`, `marker.decoration.spacing` _(+advanced)_
-- **module** — `module.decoration.animation`, `module.decoration.attributes`, `module.decoration.background`, `module.decoration.border`, `module.decoration.boxShadow`, `module.decoration.conditions`, `module.decoration.disabledOn`, `module.decoration.filters`, `module.decoration.order`, `module.decoration.overflow`, `module.decoration.position`, `module.decoration.scroll`, `module.decoration.sizing`, `module.decoration.spacing`, `module.decoration.sticky`, `module.decoration.transform`, `module.decoration.transition`, `module.decoration.zIndex` _(+advanced)_
+- **module** — `module.decoration.animation`, `module.decoration.attributes`, `module.decoration.background`, `module.decoration.border`, `module.decoration.boxShadow`, `module.decoration.conditions`, `module.decoration.disabledOn`, `module.decoration.filters`, `module.decoration.interactions`, `module.decoration.order`, `module.decoration.overflow`, `module.decoration.position`, `module.decoration.scroll`, `module.decoration.sizing`, `module.decoration.spacing`, `module.decoration.sticky`, `module.decoration.transform`, `module.decoration.transition`, `module.decoration.zIndex` _(+advanced)_
 - **spacer** — `spacer.decoration.background`, `spacer.decoration.border`, `spacer.decoration.boxShadow`, `spacer.decoration.layout`, `spacer.decoration.sizing`, `spacer.decoration.spacing`
 - **spacerEven** — `spacerEven.decoration.background`, `spacerEven.decoration.border`, `spacerEven.decoration.boxShadow`, `spacerEven.decoration.layout`, `spacerEven.decoration.sizing`, `spacerEven.decoration.spacing`
 - **title** — `title.decoration.font`
@@ -690,7 +724,7 @@ Per CLAUDE.md "Suite architecture coherence": schema dump is the canonical index
 - **content** — `content.decoration.bodyFont` _(+innerContent, +advanced)_
 - **date** — `date.decoration.font` _(+innerContent)_
 - **marker** — `marker.decoration.background`, `marker.decoration.border`, `marker.decoration.boxShadow`, `marker.decoration.icon`, `marker.decoration.sizing`, `marker.decoration.spacing` _(+innerContent, +advanced)_
-- **module** — `module.decoration.animation`, `module.decoration.attributes`, `module.decoration.background`, `module.decoration.border`, `module.decoration.boxShadow`, `module.decoration.conditions`, `module.decoration.disabledOn`, `module.decoration.filters`, `module.decoration.order`, `module.decoration.overflow`, `module.decoration.position`, `module.decoration.scroll`, `module.decoration.sizing`, `module.decoration.spacing`, `module.decoration.transform`, `module.decoration.transition`, `module.decoration.zIndex` _(+advanced)_
+- **module** — `module.decoration.animation`, `module.decoration.attributes`, `module.decoration.background`, `module.decoration.border`, `module.decoration.boxShadow`, `module.decoration.conditions`, `module.decoration.disabledOn`, `module.decoration.filters`, `module.decoration.interactions`, `module.decoration.order`, `module.decoration.overflow`, `module.decoration.position`, `module.decoration.scroll`, `module.decoration.sizing`, `module.decoration.spacing`, `module.decoration.transform`, `module.decoration.transition`, `module.decoration.zIndex` _(+advanced)_
 - **spacer** — `spacer.decoration.background`, `spacer.decoration.border`, `spacer.decoration.boxShadow`, `spacer.decoration.layout`, `spacer.decoration.sizing`, `spacer.decoration.spacing` _(+advanced)_
 - **title** — `title.decoration.font` _(+innerContent)_
 

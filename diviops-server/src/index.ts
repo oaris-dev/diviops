@@ -3390,18 +3390,27 @@ registerPluginTool(
         .describe(
           "Footer block markup (empty = inherit from default template)",
         ),
+      body_content: z.string().optional().default("").describe(
+        "Body block markup (omitted/empty = existing no-custom-body behavior). Nonempty content requires plugin capability tb_template_create_body; returns body_layout_id. No global Theme Builder save or legacy cleanup.",
+      ),
       dry_run: DRY_RUN_FIELD,
     },
     annotations: { idempotentHint: false },
     _meta: { idempotent: "false" },
   },
-  async ({ title, condition, header_content, footer_content, dry_run }) => {
+  async ({ title, condition, header_content, footer_content, body_content, dry_run }) => {
+    const bodyGate = conditionalCapabilityError(
+      "diviops_tb_template_create", "tb_template_create_body", body_content !== "",
+      "Omit body_content only when no custom body layout is intended.",
+    );
+    if (bodyGate) return bodyGate;
     const isolationGate = writerIsolationErrorResult(
       "diviops_tb_template_create",
-      { header_content, footer_content },
+      { header_content, footer_content, body_content },
     );
     if (isolationGate) return isolationGate;
     const body: Record<string, unknown> = { title, condition, header_content, footer_content };
+    if (body_content !== "") body.body_content = body_content;
     if (dry_run) body.dry_run = true;
     const result = await authoringWrite("/theme-builder/template/create", "POST", body, "tb_template_create", dry_run === true);
     return {
@@ -5792,6 +5801,167 @@ function registerProTools(): void {
       capabilityKey: "fluentcart_campaign_section_apply",
       requiredCapabilities: ["page_update_content_expected_checksum"],
     },
+  );
+
+  registerProTool(
+    "diviops_fc_campaign_page_apply",
+    {
+      description:
+        "Create one new draft campaign page or insert/replace one exact-owned campaign-page segment on an existing Divi page. All PAGE profiles compose an H1 hero, product section, and H2 closing section; SECTION is unchanged. Choose preset_campaign_page_flexible_v1 for native Divi Image/Text plus one native Buy Now in the product section, no ProductCard: 16 modules, exactly seven distinct installed preset roles (section, row, column, heading, body, image, buy_now). It requires image_attachment_id: an existing readable WordPress raster-image attachment. The sanitized product title and attachment identity/URL/alt/dimensions are authoring snapshots bound to confirmation; empty alt falls back to the product title. No image import/fetch, stored price/stock, or automatic catalog/image syncing. Native Buy Now retains live FluentCart behavior. Choose preset_campaign_page_native_card_v1 for a short page with one native card CTA: 14 modules, exactly six installed preset roles (section, row, column, heading, body, product_card), and closing copy referring to the card above. The existing preset_campaign_page_v1 intentionally repeats the CTA with native Buy Now below the closing copy: 15 modules and seven roles including buy_now and product_card. image_attachment_id and the image role are forbidden for both card profiles. It accepts one published storefront-ready FluentCart product. Dry-run audits presets and returns exact preset checksums, page markup, validation/render evidence, rollback plan, and a profile-bound plan checksum. Apply requires those exact preset checksums plus confirm_plan_sha256. Existing-page writes also require page_update_content_expected_checksum, an exact page checksum, mandatory backup, and either start/end insertion or a same-profile prior receipt. Cross-profile receipts are refused, not migrated. New pages are always drafts with an explicit title and sanitized slug; their rollback is exact page trash. The workflow never creates or repairs presets, accepts arbitrary copy/design input, publishes a page, or mutates FluentCart commerce state." +
+        DRY_RUN_DESC_SUFFIX,
+      inputSchema: {
+        product_id: z.number().int().positive().describe("Published FluentCart product ID whose storefront_links.ready is true."),
+        profile: z.enum(["preset_campaign_page_v1", "preset_campaign_page_native_card_v1", "preset_campaign_page_flexible_v1"]),
+        image_attachment_id: z.number().int().positive().optional().describe("Required only for preset_campaign_page_flexible_v1; forbidden for other profiles. Existing readable WordPress raster-image attachment; no URL/import/fetch."),
+        destination: z.discriminatedUnion("mode", [
+          z
+            .object({
+              mode: z.literal("new_draft"),
+              title: z.string().min(1).max(200),
+              slug: z
+                .string()
+                .max(200)
+                .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
+            })
+            .strict(),
+          z
+            .object({
+              mode: z.literal("existing_page"),
+              page_id: z.number().int().positive(),
+              expected_page_checksum: z.string().regex(/^sha256:[a-f0-9]{64}$/),
+              position: z.enum(["start", "end"]).optional(),
+              receipt: z
+                .object({
+                  schema: z.literal("diviops.fluentcart_campaign_page.receipt.v1"),
+                  page_id: z.number().int().positive(),
+                  product_id: z.number().int().positive(),
+                  profile: z.enum(["preset_campaign_page_v1", "preset_campaign_page_native_card_v1", "preset_campaign_page_flexible_v1"]),
+                  section_labels: z.object({ hero: z.string(), product: z.string(), closing: z.string() }).strict(),
+                  segment_sha256: z.string().regex(/^sha256:[a-f0-9]{64}$/),
+                  page_sha256: z.string().regex(/^sha256:[a-f0-9]{64}$/),
+                  preset_bindings_sha256: z.string().regex(/^sha256:[a-f0-9]{64}$/),
+                  addon_version: z.literal("1.0.0"),
+                  addon_schema_sha256: z.string().regex(/^sha256:[a-f0-9]{64}$/),
+                  builder_version: z.string().min(1),
+                })
+                .strict()
+                .optional(),
+            })
+            .strict(),
+        ]),
+        preset_roles: z
+          .object({
+            section: z.string().min(1).max(128),
+            row: z.string().min(1).max(128),
+            column: z.string().min(1).max(128),
+            heading: z.string().min(1).max(128),
+            body: z.string().min(1).max(128),
+            product_card: z.string().min(1).max(128).optional().describe("Required for both card profiles; forbidden for preset_campaign_page_flexible_v1."),
+            buy_now: z.string().min(1).max(128).optional().describe("Required for legacy and flexible profiles; forbidden for preset_campaign_page_native_card_v1."),
+            image: z.string().min(1).max(128).optional().describe("Required only for preset_campaign_page_flexible_v1; forbidden for other profiles."),
+          })
+          .strict(),
+        expected_preset_checksums: z
+          .object({
+            section: z.string().regex(/^sha256:[a-f0-9]{64}$/),
+            row: z.string().regex(/^sha256:[a-f0-9]{64}$/),
+            column: z.string().regex(/^sha256:[a-f0-9]{64}$/),
+            heading: z.string().regex(/^sha256:[a-f0-9]{64}$/),
+            body: z.string().regex(/^sha256:[a-f0-9]{64}$/),
+            product_card: z.string().regex(/^sha256:[a-f0-9]{64}$/).optional().describe("Required for both card profiles; forbidden for preset_campaign_page_flexible_v1."),
+            buy_now: z.string().regex(/^sha256:[a-f0-9]{64}$/).optional().describe("Required for legacy and flexible profiles; forbidden for preset_campaign_page_native_card_v1."),
+            image: z.string().regex(/^sha256:[a-f0-9]{64}$/).optional().describe("Required only for preset_campaign_page_flexible_v1; forbidden for other profiles."),
+          })
+          .strict()
+          .optional()
+          .describe("Exact role checksums returned by dry-run. Required for apply."),
+        confirm_plan_sha256: z
+          .string()
+          .regex(/^sha256:[a-f0-9]{64}$/)
+          .optional()
+          .describe("Exact confirmation.plan_sha256 returned by dry-run. Required for apply."),
+        dry_run: DRY_RUN_FIELD,
+      },
+      annotations: { idempotentHint: false },
+      _meta: { idempotent: "conditional" },
+    },
+    async ({ product_id, profile, image_attachment_id, destination, preset_roles, expected_preset_checksums, confirm_plan_sha256, dry_run }) => {
+      // The SDK publishes a raw object shape; enforce its cross-field profile rules before transport.
+      const flexible = profile === "preset_campaign_page_flexible_v1";
+      const needsBuyNow = profile !== "preset_campaign_page_native_card_v1";
+      const roleMismatch = [preset_roles, expected_preset_checksums].some(
+        (roles) => roles !== undefined && (
+          Object.hasOwn(roles, "buy_now") !== needsBuyNow ||
+          Object.hasOwn(roles, "product_card") === flexible ||
+          Object.hasOwn(roles, "image") !== flexible
+        ),
+      );
+      const receiptMismatch = destination.mode === "existing_page" && destination.receipt !== undefined && destination.receipt.profile !== profile;
+      if (roleMismatch || receiptMismatch || (image_attachment_id !== undefined) !== flexible) {
+        return {
+          isError: true,
+          content: [{ type: "text" as const, text: serializeEnvelope({
+            ok: false,
+            error: { code: "invalid_input", message: "Image input, preset roles, checksum roles, and prior receipt must match the selected PAGE profile.", data: { mutated: false } },
+          }, "diviops_fc_campaign_page_apply") }],
+        };
+      }
+      const body: Record<string, unknown> = { product_id, profile, destination, preset_roles };
+      if (image_attachment_id !== undefined) body.image_attachment_id = image_attachment_id;
+      if (expected_preset_checksums !== undefined) body.expected_preset_checksums = expected_preset_checksums;
+      if (confirm_plan_sha256 !== undefined) body.confirm_plan_sha256 = confirm_plan_sha256;
+      if (dry_run) body.dry_run = true;
+      const result = await wp.requestEnveloped(
+        "/pro/fluentcart/campaign-page/apply",
+        { method: "POST", body },
+      );
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: serializeEnvelope(result, "diviops_fc_campaign_page_apply"),
+          },
+        ],
+      };
+    },
+    {
+      target: "fluentcart",
+      capabilityKey: "fluentcart_campaign_page_apply",
+      requiredCapabilities: ["page_update_content_expected_checksum"],
+    },
+  );
+
+  const campaignRefreshSchema = z.object({
+    page_id: z.number().int().positive().describe("Explicit editable draft page, never a receipt-derived target."),
+    product_id: z.number().int().positive().describe("Ready product matching the existing native BuyNow variation."),
+    expected_page_checksum: z.string().regex(/^sha256:[a-f0-9]{64}$/),
+    refresh: z.enum(["title", "image", "title_and_image"]),
+    targets: z.object({
+      section_auto_index: z.string().regex(/^section:[1-9][0-9]*$/),
+      heading_auto_index: z.string().regex(/^heading:[1-9][0-9]*$/),
+      image_auto_index: z.string().regex(/^image:[1-9][0-9]*$/),
+    }).strict().describe("Current-layout indices for the first campaign section, hero H1 and product Image; no label/text guessing."),
+    image_attachment_id: z.number().int().positive().optional().describe("Required for image/title_and_image; forbidden for title. Existing readable raster attachment only."),
+    confirm_plan_sha256: z.string().regex(/^sha256:[a-f0-9]{64}$/).optional(),
+    dry_run: z.boolean().optional().default(true),
+  }).strict();
+  registerProTool(
+    "diviops_fc_campaign_page_refresh",
+    {
+      description: "Refresh only the reviewed product title and/or explicitly selected image in one polished flexible campaign on a draft page. Preserves its 16-block segment, seven existing module-preset bindings, all local design/copy and single native BuyNow. Requires exact current page checksum and explicit section/H1/Image auto-indices, not a generator receipt. Defaults to dry-run; apply requires its exact confirmation.plan_sha256 and rechecks consumed product/image state. No-op creates no backup or write. Changed content delegates once to the Free checksum/backup writer; its existing failure compensation may restore content. Returns maintenance evidence, never a PAGE/SECTION receipt. No automatic catalog sync, preset repair, publication or commerce mutation.",
+      inputSchema: campaignRefreshSchema,
+      annotations: { idempotentHint: false }, _meta: { idempotent: "conditional" },
+    },
+    async (args: z.infer<typeof campaignRefreshSchema>) => {
+      if ((args.image_attachment_id !== undefined) !== (args.refresh !== "title") || (!args.dry_run && !args.confirm_plan_sha256)) {
+        return { isError: true, content: [{ type: "text" as const, text: serializeEnvelope({
+          ok: false, error: { code: "invalid_input", message: "Image input must match the refresh mode; apply requires the reviewed plan confirmation.", data: { mutated: false } },
+        }, "diviops_fc_campaign_page_refresh") }] };
+      }
+      const result = await wp.requestEnveloped("/pro/fluentcart/campaign-page/refresh", { method: "POST", body: args });
+      return { content: [{ type: "text" as const, text: serializeEnvelope(result, "diviops_fc_campaign_page_refresh") }] };
+    },
+    { target: "fluentcart", capabilityKey: "fluentcart_campaign_page_refresh", requiredCapabilities: ["page_update_content_expected_checksum"] },
   );
 
   // ── V2 — simple product writes ─────────────────────────────────────

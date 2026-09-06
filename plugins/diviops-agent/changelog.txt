@@ -9,6 +9,13 @@ Policy:
 - Keep entries customer-facing. Avoid internal issue numbers unless they are needed to explain a user-visible change.
 - Do not include secrets, credentials, customer data, or environment-specific URLs.
 
+## 1.5.17
+
+- Adds optional `body_content` to the existing Theme Builder template-create operation; no new tool is introduced. Successful creation returns `body_layout_id` alongside the existing template, header/footer and master identities.
+- Includes body permissions and cumulative content checks before dry-run plans or mutation, using the same core sanitization path as header/footer creation. Dry-run describes body creation and linking without writing.
+- Advertises `tb_template_create_body` so updated MCP clients refuse nonempty body requests against older plugins before dispatch. Omitted or empty body content keeps legacy behavior; restart the MCP session after updating to refresh its capability snapshot.
+- Creates and links only the requested layout/template state, without global Theme Builder save or legacy-template cleanup. Guided native editor binding and content readback remain necessary; this is not a general VB compatibility guarantee.
+
 ## 1.5.16
 
 - Adds an optional exact-checksum guard to the full-content page writer and refuses stale reviewed content both at request entry and immediately before mutation.

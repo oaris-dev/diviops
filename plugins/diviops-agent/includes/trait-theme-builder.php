@@ -16,7 +16,7 @@
  * Error code mapping for this namespace:
  *   - not_found     — layout_id (or template_id on tb_template_trash) resolves to no
  *                     post or to a wrong post type
- *   - invalid_input — content / header_content / footer_content not a string
+ *   - invalid_input — content / header_content / footer_content / body_content not a string
  *   - forbidden     — caller lacks delete_post on the et_template / linked layouts
  *   - <wp_error_code> — wp_insert_post / wp_update_post returned WP_Error;
  *                     envelope_from_wp_error() preserves the underlying
@@ -1915,17 +1915,18 @@ trait DiviOps_Agent_ThemeBuilder {
 	}
 
 	/**
-	 * Create a complete Theme Builder template with header/footer layouts.
+	 * Create a complete Theme Builder template with header/body/footer layouts.
 	 */
 	public static function tb_template_create( $request ) {
 		$title          = sanitize_text_field( $request->get_param( 'title' ) );
 		$condition      = sanitize_text_field( $request->get_param( 'condition' ) );
 		$header_content = $request->get_param( 'header_content' ) ?? '';
 		$footer_content = $request->get_param( 'footer_content' ) ?? '';
-		if ( ! is_string( $header_content ) || ! is_string( $footer_content ) ) {
+		$body_content   = $request->get_param( 'body_content' ) ?? '';
+		if ( ! is_string( $header_content ) || ! is_string( $footer_content ) || ! is_string( $body_content ) ) {
 			return self::envelope_error(
 				'invalid_input',
-				'header_content and footer_content must be strings when provided.',
+				'header_content, footer_content and body_content must be strings when provided.',
 				null,
 				400
 			);
@@ -1937,11 +1938,14 @@ trait DiviOps_Agent_ThemeBuilder {
 		if ( '' !== $footer_content ) {
 			$post_types[] = 'et_footer_layout';
 		}
+		if ( '' !== $body_content ) {
+			$post_types[] = 'et_body_layout';
+		}
 		$permission = self::published_post_types_permission_result( $post_types );
 		if ( is_wp_error( $permission ) ) {
 			return self::post_type_permission_refusal( $permission );
 		}
-		$shape = self::authoring_shape_preflight( [ $header_content, $footer_content ], 'tb_template_create', 'theme_builder_template', $request );
+		$shape = self::authoring_shape_preflight( [ $header_content, $footer_content, $body_content ], 'tb_template_create', 'theme_builder_template', $request );
 		if ( is_wp_error( $shape ) ) {
 			return self::envelope_from_content_write_error( $shape );
 		}
@@ -2024,8 +2028,10 @@ trait DiviOps_Agent_ThemeBuilder {
 					'is_default'         => $is_default_condition,
 					'header_bytes'       => strlen( $header_content ),
 					'footer_bytes'       => strlen( $footer_content ),
+					'body_bytes'         => strlen( $body_content ),
 					'will_create_header' => '' !== $header_content,
 					'will_create_footer' => '' !== $footer_content,
+					'will_create_body'   => '' !== $body_content,
 				],
 			];
 			if ( '' !== $header_content ) {
@@ -2040,6 +2046,18 @@ trait DiviOps_Agent_ThemeBuilder {
 					'kind'   => 'tb_layout.create',
 					'target' => 'et_footer_layout',
 					'after'  => [ 'title' => $title . ' Footer Layout', 'bytes' => strlen( $footer_content ) ],
+				];
+			}
+			if ( '' !== $body_content ) {
+				$changes[] = [
+					'kind'   => 'tb_layout.create',
+					'target' => 'et_body_layout',
+					'after'  => [ 'title' => $title . ' Body Layout', 'bytes' => strlen( $body_content ) ],
+				];
+				$changes[] = [
+					'kind'   => 'tb_template.link',
+					'target' => 'et_template._et_body_layout_id',
+					'after'  => [ 'layout' => 'new et_body_layout', 'enabled' => '1' ],
 				];
 			}
 			$master_clause = $will_bootstrap_master
@@ -2074,6 +2092,7 @@ trait DiviOps_Agent_ThemeBuilder {
 
 		$header_id = 0;
 		$footer_id = 0;
+		$body_id   = 0;
 
 		// Create header layout if content provided.
 		if ( '' !== $header_content ) {
@@ -2103,6 +2122,20 @@ trait DiviOps_Agent_ThemeBuilder {
 			self::initialize_divi_page_meta( $footer_id );
 		}
 
+		// Create body layout through the same core write path as header/footer.
+		if ( '' !== $body_content ) {
+			$body_id = wp_insert_post( [
+				'post_title'   => $title . ' Body Layout',
+				'post_content' => wp_slash( $body_content ),
+				'post_type'    => 'et_body_layout',
+				'post_status'  => 'publish',
+			], true );
+			if ( is_wp_error( $body_id ) ) {
+				return self::envelope_from_wp_error( $body_id );
+			}
+			self::initialize_divi_page_meta( $body_id );
+		}
+
 		// Create template post.
 		$template_id = wp_insert_post( [
 			'post_title'  => $title,
@@ -2122,7 +2155,7 @@ trait DiviOps_Agent_ThemeBuilder {
 		update_post_meta( $template_id, '_et_enabled', '1' );
 		update_post_meta( $template_id, '_et_header_layout_id', $header_id );
 		update_post_meta( $template_id, '_et_header_layout_enabled', $header_id ? '1' : '0' );
-		update_post_meta( $template_id, '_et_body_layout_id', '0' );
+		update_post_meta( $template_id, '_et_body_layout_id', $body_id ?: '0' );
 		update_post_meta( $template_id, '_et_body_layout_enabled', '1' );
 		update_post_meta( $template_id, '_et_footer_layout_id', $footer_id );
 		update_post_meta( $template_id, '_et_footer_layout_enabled', $footer_id ? '1' : '0' );
@@ -2138,6 +2171,7 @@ trait DiviOps_Agent_ThemeBuilder {
 			'template_id'              => $template_id,
 			'header_layout_id'         => $header_id,
 			'footer_layout_id'         => $footer_id,
+			'body_layout_id'           => $body_id,
 			'condition'                => $condition,
 			'is_default'               => $is_default_condition,
 			'master_post_id'           => $master_id,

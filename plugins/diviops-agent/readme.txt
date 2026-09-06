@@ -3,7 +3,7 @@ Contributors: diviops
 Tags: divi, mcp, ai, rest-api, site-builder
 Requires at least: 6.5
 Tested up to: 7.1
-Stable tag: 1.5.16
+Stable tag: 1.5.17
 Requires PHP: 7.4
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -67,6 +67,13 @@ All endpoints require WordPress Application Password authentication. Read endpoi
 No. The Free plugin backs the core useful surface. Some higher-leverage workflows and paid coverage slices require Pro plugin handlers. The MCP server checks the plugin capability handshake and only exposes or runs tools supported by the connected site.
 
 == Changelog ==
+
+= 1.5.17 =
+
+* Adds optional body layout content to the existing Theme Builder template-creation operation, including the new body's ID and template link.
+* Checks body create/publish permissions and combined layout-content limits before dry-run planning or writes, using the existing core sanitization path.
+* Advertises body support through the precise tb_template_create_body capability. Updated MCP clients refuse nonempty body requests against older plugins; omitted or empty body content preserves existing behavior.
+* Creates the requested layout without a global Theme Builder save or unrelated legacy-template cleanup.
 
 = 1.5.16 =
 
@@ -138,6 +145,10 @@ No. The Free plugin backs the core useful surface. Some higher-leverage workflow
 * Keeps `Stable tag` aligned with the plugin header version.
 
 == Upgrade Notice ==
+
+= 1.5.17 =
+
+For guided shared-detail workflows needing a new Theme Builder body layout. Use an updated MCP client and restart its session to refresh the capability handshake before requesting body content. This is not a general Visual Builder save guarantee.
 
 = 1.5.16 =
 

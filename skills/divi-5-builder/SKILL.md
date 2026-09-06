@@ -5,7 +5,7 @@ compatibility: Requires diviops-mcp MCP server connected to a WordPress site wit
 metadata:
   author: oaris-dev
   version: "1.0"
-  divi-version: "5.11.0"
+  divi-version: "5.12.1"
 ---
 
 # Divi 5 Builder Skill
@@ -23,6 +23,8 @@ Read the right file for the task at hand — don't load everything.
 | Task | Read first |
 |------|-----------|
 | Using MCP tools & targeting | [tools.md](references/tools.md) |
+| Existing SCF plain-text field in one native Text body layout | [SCF + Divi Text workflow](../diviops-scf/references/divi-text-field-workflow.md) (exact local native UI/VB-backed fixture, not general qualification, fresh MCP end-to-end proof, or a new paid primitive; native VB bind, then exact readback before reuse; future operations require authorization) |
+| Staff directory cards and shared CPT detail body | [Staff directory workflow](../diviops-scf/references/staff-directory-workflow.md) (accepted guided local walkthrough; portrait/name/profile-link cards only, native SCF role on details; publication approval and native binding readback required) |
 | Creating/editing pages | [design-guide.md](references/design-guide.md) → [module-formats.md](references/module-formats.md) |
 | Copy-paste minimum-valid block snippets | [minimal-snippets.md](references/minimal-snippets.md) (Heading, Text, Button, Blurb, Icon, Image) |
 | Module attribute paths | [module-formats.md](references/module-formats.md) (Tier 1 free — Tier 2 patterns + Tier 3 per-module are Pro) |

@@ -2,6 +2,27 @@
 
 Curated Divi-builder authoring subset. The full DiviOps server currently registers 114 tools: 91 always-on tools (80 plugin-routed + 11 local) and 23 conditional Pro tools. See [`diviops-server/README.md`](../../../../diviops-server/README.md) for the complete inventory. SCF coverage lives in the [diviops-scf/](../../diviops-scf/SKILL.md) skill; cross-cutting harness conventions (response envelope, capability handshake, `dry_run` plan shape, idempotency) live in the [diviops/](../../diviops/SKILL.md) primer skill.
 
+## Divi 5.12.1 vendor boundary (source-proven)
+
+Divi's `/divi/v1/*` routes are separate from DiviOps tools. Default-policy
+routes now enforce `X-ET-Nonce` against the full prefixed route and request
+method (HEAD uses GET); the old 82-grouped-route prefix mismatch is
+source-fixed and must not be used as current reachability guidance.
+`GET /divi/v1/settings-data/nonces` retains its explicit `NONCE_POLICY_WP_ONLY`
+exception. Authentication and permission callbacks still apply; successful
+nonce refresh does not prove direct Application Password access to other routes.
+
+Keep the narrow `/loop/product-price-range` permission repair: the vendor still
+calls missing `UserRole::can_edit_posts()`. The corrected nonce wrapper does not
+retire that separate repair or its exact success/refusal retest.
+
+The vendor AI Agent tool definitions changed materially in 5.12.1. Rediscover
+the current tools before any separately authorized AI workflow; older
+`add_module` / `edit_module_attribute` recipes are not a current contract.
+This is not a change to the DiviOps tool inventory or proof of hosted-AI behavior.
+See the [source-diff audit](../../../../docs/divi-version-audits/divi-5.12.1-audit.md)
+for evidence and pending runtime gates.
+
 ## Response shape
 
 Every `diviops_*` tool returns the standard envelope documented in the [diviops/](../../diviops/SKILL.md) primer (`{ ok, data?, error: { code, message, hint?, data? } }`). This includes WordPress REST framework parameter-validation failures on `/diviops/v1/*` routes: `rest_invalid_param` and `rest_missing_callback_param` are wrapped as canonical `invalid_input` with the original WP code preserved in `error.data.wp_error_code`. The slice-specific error codes the Divi-builder tools emit are listed below; the canonical codes (`not_found`, `invalid_input`, `validation_failed`, `conflict`, `capability_missing`, `forbidden`, `wp_error`, `divi_error`) come from the primer.
@@ -108,7 +129,7 @@ All namespaces have adopted the envelope as of the last wave (`module_*` + `sect
 - `diviops_preset_update` / `diviops_preset_delete` — update or delete individual presets
 - `diviops_library_save` — save block markup to Divi Library for reuse
 - `diviops_tb_layout_update` — update Theme Builder header/footer/body content
-- `diviops_tb_template_create` — create Theme Builder template with header/footer and conditions
+- `diviops_tb_template_create` — create a Free Theme Builder template with optional `header_content`, `body_content`, `footer_content` and conditions. Nonempty `body_content` requires plugin capability `tb_template_create_body` (older plugins refuse before dispatch); omitted/empty retains the existing no-custom-body behavior. Returns `body_layout_id` (0 when absent), alongside header/footer/template/master IDs. `dry_run:true` includes body creation/linking without writes; all supplied regions share the existing shape limits, permissions and core sanitization path. No global Theme Builder save or legacy-template cleanup. Discover exact conditions and obtain authorization before creation; this source contract is not runtime/VB qualification.
 - `diviops_tb_template_trash` — atomic cleanup: trash (or `force=true` permanently delete) a Theme Builder template + its linked header/body/footer layouts + scrub orphan `_et_template` meta refs on the master post. Closes the orphan-meta gap left by `page_trash` on linked layouts. Default trash mode is idempotent (silent-success on already-clean; pre-state checks skip already-trashed targets on partial-cleanup retry); `force=true` is one-shot. Supports `dry_run`
 - `diviops_canvas_create` — create off-canvas workspace (popups, modals, menus) linked to a page
 - `diviops_canvas_duplicate` — deep-copy a canvas (content + parent/append/z-index meta). Default copy title `<source> (Copy)` auto-suffixes on collision; explicit `title` collisions return 409. Supports `dry_run`

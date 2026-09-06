@@ -3,7 +3,7 @@
  * Plugin Name: DiviOps Agent
  * Plugin URI: https://github.com/oaris-dev/diviops
  * Description: REST API bridge for DiviOps — connects Claude Code to your Divi 5 site for AI-powered page building and design management.
- * Version: 1.5.16
+ * Version: 1.5.17
  * Author: oaris.de
  * Author URI: https://oaris.de
  * Text Domain: diviops-agent
@@ -70,7 +70,7 @@ class DiviOps_Agent {
 	 * Plugin version — surfaced in /handshake for self-diagnosis only;
 	 * server no longer gates on it (capability map is the gate).
 	 */
-	const VERSION = '1.5.16';
+	const VERSION = '1.5.17';
 
 	/**
 	 * Minimum MCP server version this plugin is compatible with.
@@ -129,7 +129,7 @@ class DiviOps_Agent {
 		'section_append', 'section_append_backup', 'section_get', 'section_remove', 'section_remove_backup', 'section_replace', 'section_replace_backup',
 		// theme builder
 		'cross_env_source_export_get', 'cross_env_target_context_get', 'cross_env_footer_layout_evidence',
-		'tb_layout_block_insert', 'tb_layout_block_insert_backup', 'tb_layout_get', 'tb_layout_update', 'tb_layout_update_backup', 'tb_template_create', 'tb_template_list',
+		'tb_layout_block_insert', 'tb_layout_block_insert_backup', 'tb_layout_get', 'tb_layout_update', 'tb_layout_update_backup', 'tb_template_create', 'tb_template_create_body', 'tb_template_list',
 		'tb_template_trash',
 		// validate
 		'validate_blocks',
@@ -479,11 +479,15 @@ class DiviOps_Agent {
 		$post_types = [ 'et_theme_builder', 'et_template' ];
 		$header_content = $request->get_param( 'header_content' );
 		$footer_content = $request->get_param( 'footer_content' );
+		$body_content   = $request->get_param( 'body_content' );
 		if ( is_string( $header_content ) && '' !== $header_content ) {
 			$post_types[] = 'et_header_layout';
 		}
 		if ( is_string( $footer_content ) && '' !== $footer_content ) {
 			$post_types[] = 'et_footer_layout';
+		}
+		if ( is_string( $body_content ) && '' !== $body_content ) {
+			$post_types[] = 'et_body_layout';
 		}
 		return self::fixed_publish_route_permission( 'manage_options', $post_types );
 	}
@@ -1200,6 +1204,7 @@ class DiviOps_Agent {
 				'condition'      => [ 'required' => true, 'type' => 'string' ],
 				'header_content' => [ 'required' => false, 'type' => 'string', 'default' => '' ],
 				'footer_content' => [ 'required' => false, 'type' => 'string', 'default' => '' ],
+				'body_content'   => [ 'required' => false, 'type' => 'string', 'default' => '' ],
 			],
 		] );
 
