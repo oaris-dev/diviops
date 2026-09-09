@@ -57,6 +57,28 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 trait DiviOps_Agent_ThemeBuilder {
+	/** Internal Pro bridge to the existing Free recovery store; not a REST route. */
+	public static function cross_env_staff_body_backup_create( $post ) {
+		if ( ! $post || 'et_body_layout' !== $post->post_type || ! current_user_can( 'edit_post', $post->ID ) ) { return new WP_Error( 'forbidden', 'Cannot back up this body layout.', [ 'status' => 403 ] ); }
+		return self::rollback_snapshot_create_for_post_write( $post, 'diviops_cross_env_layout_apply', [ 'tool_operation' => 'cross_env.staff_body' ] );
+	}
+
+	public static function cross_env_staff_body_backup_finish( array $snapshot, $result ) {
+		if ( is_wp_error( $result ) ) {
+			if ( 'cross_env.content_write_corruption' === $result->get_error_code() ) {
+				$data = $result->get_error_data();
+				$status = true === ( $data['rollback']['verified'] ?? null ) ? 'write_failed_restored' : 'write_failed';
+				$post = get_post( $snapshot['target']['id'] );
+				$snapshot = self::rollback_snapshot_mark_post_write( $snapshot, $status, $post ? (string) $post->post_content : null );
+			} else {
+				$snapshot = self::rollback_snapshot_mark_from_write_error( $snapshot, $result );
+			}
+			return self::rollback_snapshot_error_with_summary( $result, $snapshot );
+		}
+		$post = get_post( $snapshot['target']['id'] );
+		$snapshot = self::rollback_snapshot_mark_post_write( $snapshot, 'write_applied', (string) $post->post_content );
+		return self::rollback_snapshot_summary_for_record( $snapshot );
+	}
 
 	/**
 	 * Resolve the active Theme Builder master post.
@@ -271,8 +293,15 @@ trait DiviOps_Agent_ThemeBuilder {
 		$attachments = self::cross_env_attachment_candidates( $hints['assets'], $hints['source_ids'] );
 		$remaps      = self::cross_env_attachment_remaps( $attachments, $hints['source_ids'] );
 		$linkage     = self::cross_env_template_linkage( $destination_id, $destination_kind, $expected_type );
+		$body = [];
+		if ( 'tb_body_layout' === $destination_kind ) {
+			require_once __DIR__ . '/class-cross-env-staff-body.php';
+			$proof = DiviOps_Cross_Env_Staff_Body::target( $linkage['evidence'] );
+			if ( is_wp_error( $proof ) ) { return self::envelope_error( $proof->get_error_code(), $proof->get_error_message(), null, 409 ); }
+			$body['staff_body'] = $proof;
+		}
 
-		return self::envelope_success( [
+		return self::envelope_success( $body + [
 			'origin'                       => self::cross_env_site_origin(),
 			'destination_kind'             => $destination_kind,
 			'destination_id'               => $destination_id,
@@ -365,8 +394,15 @@ trait DiviOps_Agent_ThemeBuilder {
 
 		$markup = self::cross_env_sanitize_markup_for_export( (string) $post->post_content );
 		$module_preset_ids = self::cross_env_module_preset_ids_from_markup( $markup );
+		$body = [];
+		if ( 'tb_body_layout' === $source_kind ) {
+			require_once __DIR__ . '/class-cross-env-staff-body.php';
+			$proof = DiviOps_Cross_Env_Staff_Body::source( $markup );
+			if ( is_wp_error( $proof ) ) { return self::envelope_error( $proof->get_error_code(), $proof->get_error_message(), null, 409 ); }
+			$body['staff_body'] = $proof;
+		}
 
-		return self::envelope_success( [
+		return self::envelope_success( $body + [
 			'origin'          => self::cross_env_site_origin(),
 			'object_kind'     => $source_kind,
 			'object_id'       => $source_id,
@@ -395,11 +431,12 @@ trait DiviOps_Agent_ThemeBuilder {
 		return [
 			'tb_header_layout' => 'et_header_layout',
 			'tb_footer_layout' => 'et_footer_layout',
+			'tb_body_layout' => 'et_body_layout',
 		];
 	}
 
 	private static function cross_env_template_linkage( int $layout_id, string $kind, string $post_type ): array {
-		$slot = 'tb_header_layout' === $kind ? 'header' : 'footer';
+		$slot = [ 'tb_header_layout' => 'header', 'tb_footer_layout' => 'footer', 'tb_body_layout' => 'body' ][ $kind ];
 		$id_key = '_et_' . $slot . '_layout_id';
 		$enabled_key = '_et_' . $slot . '_layout_enabled';
 		$master_id = self::find_active_master();

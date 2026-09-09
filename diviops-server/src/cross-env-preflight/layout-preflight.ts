@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { staffCanonical, staffSourceProof, validStaffTarget } from "./staff-body.js";
 import {
   preflightCrossEnvHeaderSync,
   type CrossEnvVerdict,
@@ -16,6 +17,7 @@ import {
 export const THEME_BUILDER_LAYOUT_KIND_POST_TYPES = {
   tb_header_layout: "et_header_layout",
   tb_footer_layout: "et_footer_layout",
+  tb_body_layout: "et_body_layout",
 } as const;
 
 export type CrossEnvThemeBuilderLayoutKind = keyof typeof THEME_BUILDER_LAYOUT_KIND_POST_TYPES;
@@ -24,8 +26,8 @@ export const THEME_BUILDER_LAYOUT_VALIDATOR_VERSION =
   "diviops.cross_env.theme_builder_layout.validator.v1" as const;
 
 export interface CrossEnvThemeBuilderLayoutPreflightInput {
-  source: SourceLayoutPayload;
-  target: TargetLayoutContext;
+  source: SourceLayoutPayload & { staff_body?: unknown };
+  target: TargetLayoutContext & { staff_body?: unknown };
 }
 export interface CrossEnvThemeBuilderLayoutPreflightReport {
   type: "cross_env_theme_builder_layout_preflight";
@@ -160,6 +162,16 @@ export function preflightCrossEnvThemeBuilderLayoutSync(
   const targetKind = String(input.target.destination_kind ?? "");
   const sourceExpectedType = expectedPostType(sourceKind);
   const targetExpectedType = expectedPostType(targetKind);
+  const body = sourceKind === "tb_body_layout" || targetKind === "tb_body_layout";
+  if (body) {
+    try {
+      if (staffCanonical(staffSourceProof(input.source.markup)) !== staffCanonical(input.source.staff_body)) throw Error("missing or mismatched source proof");
+      if (!validStaffTarget(input.target.staff_body, input.target.template_linkage, input.target.destination_id)) throw Error("missing or unsupported target proof");
+      if (input.target.template_linkage_digest?.computed !== sha256(staffCanonical(input.target.template_linkage))) throw Error("linkage digest mismatch");
+    } catch {
+      blockers.push({ code: "staff_body_proof_invalid", message: "Body promotion requires the native staff recipe and versioned isolated target prerequisite evidence." });
+    }
+  }
 
   if (!sourceExpectedType) {
     blockers.push({
@@ -242,6 +254,7 @@ export function preflightCrossEnvThemeBuilderLayoutSync(
       ...base.source,
       object_kind: sourceKind,
       object_post_type: input.source.object_post_type,
+      ...(body ? { staff_body: input.source.staff_body } : {}),
     },
     target: {
       ...base.target,
@@ -249,6 +262,7 @@ export function preflightCrossEnvThemeBuilderLayoutSync(
       destination_post_type: input.target.destination_post_type,
       template_linkage: input.target.template_linkage,
       template_linkage_digest: input.target.template_linkage_digest,
+      ...(body ? { staff_body: input.target.staff_body } : {}),
     },
     findings: base.findings,
     source_origin_rule: sourceOriginRule,
@@ -264,6 +278,7 @@ export function preflightCrossEnvThemeBuilderLayoutSync(
   };
 
   const bindingInput = {
+    ...(body ? { staff_body: { source: input.source.staff_body, target: input.target.staff_body } } : {}),
     source: {
       origin: reportWithoutBinding.source.origin,
       object_kind: sourceKind,

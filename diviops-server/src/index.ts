@@ -3126,14 +3126,16 @@ function registerCrossEnvEvidenceTools(): void {
   const capabilities =
     handshakeState.kind === "ok" ? handshakeState.capabilities : {};
   const layoutKinds = crossEnvEvidenceLayoutKinds(capabilities);
-  const supportsFooter = layoutKinds.length === 2;
-  const layoutLabel = supportsFooter ? "header or footer" : "header";
+  const supportsFooter = layoutKinds.includes("tb_footer_layout");
+  const supportsStaffBody = layoutKinds.includes("tb_body_layout");
+  const layoutLabel = ["header", ...(supportsFooter ? ["footer"] : []), ...(supportsStaffBody ? ["bounded staff body"] : [])].join(" or ");
+  const staffNote = supportsStaffBody ? " Staff body promotion requires the native current-post recipe, existing role field, and an isolated target body assignment." : "";
 
   registerPluginTool(
     "diviops_cross_env_target_context_get",
     {
       description:
-        `Export read-only, secret-free target-site context for an offline cross-environment Theme Builder ${supportsFooter ? "header/footer" : "header"} preflight. Returns exact kind/post-type identity, the current post_content checksum without content exposure, canonical template-linkage evidence/digest, dependency evidence, and cache scope. Free/core and read-only: no content, assignment, dependency, or cache mutation.`,
+        `Export read-only, secret-free target-site context for an offline cross-environment Theme Builder ${layoutLabel} preflight. Returns exact kind/post-type identity, the current post_content checksum without content exposure, canonical template-linkage evidence/digest, dependency evidence, and cache scope. Free/core and read-only: no content, assignment, dependency, or cache mutation.${staffNote}`,
       inputSchema: {
         destination_id: z
           .number()
@@ -3145,9 +3147,7 @@ function registerCrossEnvEvidenceTools(): void {
           .optional()
           .default("tb_header_layout")
           .describe(
-            supportsFooter
-              ? "Destination kind. Header and footer existing-layout evidence is supported."
-              : "Destination kind. This connected plugin proves header evidence only; update it to expose footer support.",
+            `Destination kind. Existing ${layoutLabel} layout evidence is supported.${staffNote}`,
           ),
         source_asset_hints: z
           .array(z.string())
@@ -3209,7 +3209,7 @@ function registerCrossEnvEvidenceTools(): void {
     "diviops_cross_env_source_export_get",
     {
       description:
-        `Export read-only, secret-free source-site payload for an offline cross-environment Theme Builder ${supportsFooter ? "header/footer" : "header"} preflight. Returns exact kind/post-type identity, sanitized markup and checksum, dependency inventories, and a bounded source_payload_ref. Free/core and read-only: no WordPress content, assignment, dependency, or cache mutation.`,
+        `Export read-only, secret-free source-site payload for an offline cross-environment Theme Builder ${layoutLabel} preflight. Returns exact kind/post-type identity, sanitized markup and checksum, dependency inventories, and a bounded source_payload_ref. Free/core and read-only: no WordPress content, assignment, dependency, or cache mutation.${staffNote}`,
       inputSchema: {
         source_id: z
           .number()
@@ -3221,9 +3221,7 @@ function registerCrossEnvEvidenceTools(): void {
           .optional()
           .default("tb_header_layout")
           .describe(
-            supportsFooter
-              ? "Source kind. Header and footer existing-layout evidence is supported."
-              : "Source kind. This connected plugin proves header evidence only; update it to expose footer support.",
+            `Source kind. Existing ${layoutLabel} layout evidence is supported.${staffNote}`,
           ),
         dry_run: z
           .boolean()
@@ -5145,6 +5143,15 @@ const ManagedRecoveryConfirmationSchema = {
 };
 
 function registerProTools(): void {
+  const staffBodyApply = handshakeState.kind === "ok"
+    && handshakeState.capabilities.cross_env_staff_body_evidence === true
+    && handshakeState.capabilities.cross_env_staff_body_apply === true;
+  const rolloutKinds: [CrossEnvThemeBuilderLayoutKind, ...CrossEnvThemeBuilderLayoutKind[]] = ["tb_header_layout", "tb_footer_layout"];
+  if (staffBodyApply) rolloutKinds.push("tb_body_layout");
+  const rolloutSourceSchema = staffBodyApply ? CrossEnvSourcePayloadSchema.extend({
+    object_kind: z.enum(rolloutKinds),
+    object_post_type: z.enum(["et_header_layout", "et_footer_layout", "et_body_layout"]).optional(),
+  }) : CrossEnvSourcePayloadSchema;
   registerProTool(
     "diviops_managed_recovery_policy_get",
     {
@@ -5436,9 +5443,10 @@ function registerProTools(): void {
     "diviops_cross_env_layout_apply",
     {
       description:
-        "Apply one reviewed Theme Builder header or footer payload to one existing same-kind target layout (Pro tier; cross_env module). Requires fresh Free source/target evidence, the generic versioned confirmation fingerprint, and confirm_apply: true. Independently refuses kind/post-type mismatch, checksum or template-linkage drift, unsafe dependency evidence, off-canvas wiring, foreign CSS variables, invalid serialization, and readback mismatch before claiming success. A converged target returns already_converged without a write or cache mutation; successful mutation returns rollout_applied with readback, checksums, rollback, supported-meta, and cache evidence. Never creates layouts, mutates template assignment, or reconciles dependencies.",
+        "Apply one reviewed Theme Builder header or footer payload to one existing same-kind target layout (Pro tier; cross_env module). Requires fresh Free source/target evidence, the generic versioned confirmation fingerprint, and confirm_apply: true. Independently refuses kind/post-type mismatch, checksum or template-linkage drift, unsafe dependency evidence, off-canvas wiring, foreign CSS variables, invalid serialization, and readback mismatch before claiming success. A converged target returns already_converged without a write or cache mutation; successful mutation returns rollout_applied with readback, checksums, rollback, supported-meta, and cache evidence. Never creates layouts, mutates template assignment, or reconciles dependencies." + (staffBodyApply ? " Also supports the exact current-post native diviops_staff body recipe with same-selector text role, raw HTML off, and an existing isolated body assignment. Body-only dry_run validates current proof without mutation; real body writes retain a recovery snapshot." : ""),
       inputSchema: {
-        source_payload: CrossEnvSourcePayloadSchema.optional().describe(
+        ...(staffBodyApply ? { dry_run: z.boolean().optional().describe("Body only: validate the reviewed staff proof without writing. True refuses header/footer requests.") } : {}),
+        source_payload: rolloutSourceSchema.optional().describe(
           "Free source export payload. Use source_payload_ref for large layouts.",
         ),
         source_payload_ref: CrossEnvSourcePayloadRefSchema.optional().describe(
@@ -5448,7 +5456,7 @@ function registerProTools(): void {
           "Existing target Theme Builder layout post ID.",
         ),
         destination_kind: z
-          .enum(["tb_header_layout", "tb_footer_layout"])
+          .enum(rolloutKinds)
           .describe("Exact target kind; must match source_payload.object_kind."),
         reviewed_fingerprint: z
           .string()
@@ -5468,6 +5476,7 @@ function registerProTools(): void {
       destination_kind,
       reviewed_fingerprint,
       confirm_apply,
+      dry_run,
     }: {
       source_payload?: SourceLayoutPayload;
       source_payload_ref?: SourcePayloadRef;
@@ -5475,8 +5484,15 @@ function registerProTools(): void {
       destination_kind: CrossEnvThemeBuilderLayoutKind;
       reviewed_fingerprint: string;
       confirm_apply: boolean;
+      dry_run?: boolean;
     }) => {
       const result = await wrapResponse(async () => {
+        if (dry_run === true && destination_kind !== "tb_body_layout") {
+          withCode("invalid_input", "dry_run is supported only for the bounded staff body.");
+        }
+        if (destination_kind === "tb_body_layout" && !staffBodyApply) {
+          withCode("capability_missing", "Affirmative Free and Pro staff body capabilities are required.");
+        }
         if (confirm_apply !== true) {
           withCode(
             "cross_env.confirmation_required",
@@ -5597,6 +5613,7 @@ function registerProTools(): void {
               source_checksum: resolvedSourcePayload.checksum,
               destination_checksum: report.target.destination_checksum,
               template_linkage_digest: report.target.template_linkage_digest,
+              ...(destination_kind === "tb_body_layout" ? { dry_run: dry_run === true } : {}),
               reviewed_fingerprint: reviewed,
               preflight_report: report,
             },
@@ -5987,6 +6004,9 @@ function registerProTools(): void {
           .describe(
             "Product title (post_title). 1-200 chars. Used verbatim as the default variation's variation_title.",
           ),
+        slug: z.string().min(1).max(200).optional().describe(
+          "Create-only requested product slug, normalized by WordPress; must normalize nonempty and not to \"0\". Requires Pro capability fluentcart_product_create_slug. Omit to derive from title. Dry-run reports intent, not a reservation; WordPress owns collision handling and product.slug returns the stored result. Later product_update title changes regenerate the slug; no slug update or redirect support.",
+        ),
         status: z
           .enum(["draft", "publish", "pending", "private"])
           .optional()
@@ -6036,6 +6056,7 @@ function registerProTools(): void {
     },
     async ({
       title,
+      slug,
       status,
       content,
       excerpt,
@@ -6046,6 +6067,7 @@ function registerProTools(): void {
       dry_run,
     }: {
       title: string;
+      slug?: string;
       status?: string;
       content?: string;
       excerpt?: string;
@@ -6055,7 +6077,15 @@ function registerProTools(): void {
       sku?: string;
       dry_run?: boolean;
     }) => {
+      if (slug !== undefined && handshakeState.kind === "ok" && !handshakeState.capabilities["fluentcart_product_create_slug"]) {
+        const err = new MissingCapabilityError("fluentcart_product_create_slug", handshakeState.proVersion, "pro");
+        return missingCapabilityEnvelope(err, "diviops_fc_product_create", {
+          serverVersion: SERVER_VERSION,
+          hint: capabilityUpgradeHint(err.capability, err.pluginComponent, "Omit slug only when title-derived URLs are intended."),
+        });
+      }
       const body: Record<string, unknown> = { title };
+      if (slug !== undefined) body.slug = slug;
       if (status !== undefined) body.status = status;
       if (content !== undefined) body.content = content;
       if (excerpt !== undefined) body.excerpt = excerpt;

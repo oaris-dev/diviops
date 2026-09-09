@@ -3,7 +3,7 @@ Contributors: diviops
 Tags: divi, mcp, ai, rest-api, site-builder
 Requires at least: 6.5
 Tested up to: 7.1
-Stable tag: 1.5.17
+Stable tag: 1.5.18
 Requires PHP: 7.4
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -67,6 +67,12 @@ All endpoints require WordPress Application Password authentication. Read endpoi
 No. The Free plugin backs the core useful surface. Some higher-leverage workflows and paid coverage slices require Pro plugin handlers. The MCP server checks the plugin capability handshake and only exposes or runs tools supported by the connected site.
 
 == Changelog ==
+
+= 1.5.18 =
+
+* Adds bounded source/target evidence and prerequisite checks for an existing native staff-detail Theme Builder body through the cross_env_staff_body_evidence capability.
+* Keeps inspection and preflight Free; applying the reviewed body design requires Pro staff-body support. Target records, field definitions and template assignments are not created or changed.
+* Bridges changed Pro body writes to the existing Free recovery store; dry-run and already-converged requests create no snapshots. This is not general body migration or arbitrary custom-field mapping.
 
 = 1.5.17 =
 
@@ -145,6 +151,10 @@ No. The Free plugin backs the core useful surface. Some higher-leverage workflow
 * Keeps `Stable tag` aligned with the plugin header version.
 
 == Upgrade Notice ==
+
+= 1.5.18 =
+
+Adds bounded staff-body evidence and recovery support. Apply requires a body-aware MCP client and Pro staff-body capability. Restart MCP after updates to refresh the capability handshake. Unrelated tools retain their compatibility gates.
 
 = 1.5.17 =
 

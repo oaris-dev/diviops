@@ -3,12 +3,14 @@ export const CROSS_ENV_FOOTER_LAYOUT_EVIDENCE_CAPABILITY =
 
 export type CrossEnvEvidenceLayoutKind =
   | "tb_header_layout"
-  | "tb_footer_layout";
+  | "tb_footer_layout"
+  | "tb_body_layout";
 
 export function crossEnvEvidenceLayoutKinds(
   capabilities: Record<string, boolean>,
-): ["tb_header_layout"] | ["tb_header_layout", "tb_footer_layout"] {
-  return capabilities[CROSS_ENV_FOOTER_LAYOUT_EVIDENCE_CAPABILITY] === true
-    ? ["tb_header_layout", "tb_footer_layout"]
-    : ["tb_header_layout"];
+): [CrossEnvEvidenceLayoutKind, ...CrossEnvEvidenceLayoutKind[]] {
+  const kinds: [CrossEnvEvidenceLayoutKind, ...CrossEnvEvidenceLayoutKind[]] = ["tb_header_layout"];
+  if (capabilities[CROSS_ENV_FOOTER_LAYOUT_EVIDENCE_CAPABILITY] === true) kinds.push("tb_footer_layout");
+  if (capabilities.cross_env_staff_body_evidence === true) kinds.push("tb_body_layout");
+  return kinds;
 }

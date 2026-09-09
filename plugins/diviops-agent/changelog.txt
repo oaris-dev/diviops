@@ -9,6 +9,13 @@ Policy:
 - Keep entries customer-facing. Avoid internal issue numbers unless they are needed to explain a user-visible change.
 - Do not include secrets, credentials, customer data, or environment-specific URLs.
 
+## 1.5.18
+
+- Adds `cross_env_staff_body_evidence` for bounded source/target inspection of the native `diviops_staff` detail-body recipe, including current-post bindings, the existing plain-text role field and isolated body assignment prerequisites.
+- Keeps inspection/preflight and snapshot storage in Free. Pro applies the reviewed design to one existing target body without creating records, fields, layouts or template assignments.
+- Bridges changed Pro body writes to the existing Free recovery store; dry-run and converged no-op do not create snapshots. Missing, ambiguous or changed prerequisites refuse the bounded workflow rather than enabling general body migration or field mapping.
+- Source candidate only: the prior bounded technical proof is not user visual acceptance or new-package qualification. No Visual Builder save or executed rollback was tested in that promotion proof.
+
 ## 1.5.17
 
 - Adds optional `body_content` to the existing Theme Builder template-create operation; no new tool is introduced. Successful creation returns `body_layout_id` alongside the existing template, header/footer and master identities.

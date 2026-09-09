@@ -29,7 +29,7 @@ OPTIONS
   --apply               Refused. No write/apply path exists in this MVP.
   --help                Show this help.
 
-Supported kinds are tb_header_layout and tb_footer_layout. Existing header-only
+Supported kinds are tb_header_layout, tb_footer_layout, and proof-gated native staff tb_body_layout. Existing header-only
 inputs retain the shipped header-v1 report and fingerprint contract unless
 --contract layout-v1 is explicitly selected.`;
 

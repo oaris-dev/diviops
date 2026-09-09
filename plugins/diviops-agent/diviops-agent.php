@@ -3,7 +3,7 @@
  * Plugin Name: DiviOps Agent
  * Plugin URI: https://github.com/oaris-dev/diviops
  * Description: REST API bridge for DiviOps — connects Claude Code to your Divi 5 site for AI-powered page building and design management.
- * Version: 1.5.17
+ * Version: 1.5.18
  * Author: oaris.de
  * Author URI: https://oaris.de
  * Text Domain: diviops-agent
@@ -70,7 +70,7 @@ class DiviOps_Agent {
 	 * Plugin version — surfaced in /handshake for self-diagnosis only;
 	 * server no longer gates on it (capability map is the gate).
 	 */
-	const VERSION = '1.5.17';
+	const VERSION = '1.5.18';
 
 	/**
 	 * Minimum MCP server version this plugin is compatible with.
@@ -128,7 +128,7 @@ class DiviOps_Agent {
 		// section
 		'section_append', 'section_append_backup', 'section_get', 'section_remove', 'section_remove_backup', 'section_replace', 'section_replace_backup',
 		// theme builder
-		'cross_env_source_export_get', 'cross_env_target_context_get', 'cross_env_footer_layout_evidence',
+		'cross_env_source_export_get', 'cross_env_target_context_get', 'cross_env_footer_layout_evidence', 'cross_env_staff_body_evidence',
 		'tb_layout_block_insert', 'tb_layout_block_insert_backup', 'tb_layout_get', 'tb_layout_update', 'tb_layout_update_backup', 'tb_template_create', 'tb_template_create_body', 'tb_template_list',
 		'tb_template_trash',
 		// validate

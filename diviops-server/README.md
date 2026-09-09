@@ -8,6 +8,35 @@ The Node.js MCP server inside the DiviOps harness. It gives Claude Code, Codex, 
 Claude Code <-> MCP Server (stdio) <-> WordPress REST API <-> DiviOps Agent plugin
 ```
 
+## 1.5.49 candidate release note
+
+- Adds bounded staff-body source/target evidence and preflight, plus guarded Pro
+  apply dispatch to one existing isolated target body. Target records supply
+  their own title, portrait, biography and plain-text role; records, fields and
+  assignments are not created or changed. General body migration and arbitrary
+  CPT/field mapping remain unsupported.
+- Forwards an optional create-only product `slug` independently of SKU when Pro
+  advertises `fluentcart_product_create_slug`. Omission retains the existing
+  create workflow. Dry-run reports intent without reserving a URL; read stored
+  `product.slug` after creation and later publication. Changed product titles
+  still regenerate slugs; no slug update, URL preservation or redirects are added.
+
+Selected source metadata is MCP `1.5.49`, Free `1.5.18`, Pro `1.0.14-beta` and
+FluentCart skill `0.14`. Staff-body evidence requires Free's
+`cross_env_staff_body_evidence`; apply also requires Pro's
+`cross_env_staff_body_apply` and existing Pro/module gates. Component versions
+remain independent: Free's minimum MCP requirement and Pro's existing Free
+floor are unchanged. Restart MCP after supported updates to refresh capabilities.
+
+This is source-only candidate preparation, not publication or packaged proof.
+The prior bounded staff-body technical proof passed, but user visual acceptance
+remains pending; no Visual Builder save or executed rollback was tested. That
+proof does not qualify FluentCart creation or live WordPress slug collisions.
+New-package inventories, build, production-only startup and runtime qualification
+remain separate validation work. SCF `1.1`, builder, Free primer, Design and
+launcher are unchanged; modern health remains default-disabled and repository-only,
+and the setup prototype remains uninstalled and unqualified.
+
 ## Use cases
 
 DiviOps fits multiple WordPress workflows where AI-driven authoring + management is the value:
@@ -169,6 +198,7 @@ Additional **conditionally-registered Pro tools** appear only on sites that have
 |----------|------------------|------------|
 | FluentCart reads (V1) | Pro plugin + FluentCart installed + module enabled | `diviops_fc_product_list`, `diviops_fc_product_get` |
 | FluentCart simple product writes (V2) | Pro plugin + FluentCart installed + module enabled | `diviops_fc_product_create`, `diviops_fc_product_update`, `diviops_fc_product_delete` |
+| Optional product-create slug | Existing create tool; supplying `slug` additionally requires Pro capability `fluentcart_product_create_slug` from a fresh startup handshake | Native WordPress normalization/collision handling; dry-run reports intent without reservation, apply reads stored `product.slug`. Omission stays compatible; changed product titles still regenerate slugs. No slug-update/redirect support. |
 | FluentCart variation read/write (V3) | Pro plugin + FluentCart installed + module enabled | `diviops_fc_variation_list`, `diviops_fc_variation_update` |
 | FluentCart license-settings read/write, incl. update-file pointer + readiness (V3/V3.3) | Pro plugin + FluentCart Pro installed + module enabled | `diviops_fc_license_settings_get`, `diviops_fc_license_settings_update` |
 | FluentCart managed downloads + license changelog (V3.4) | Pro plugin + FluentCart installed + module enabled | `diviops_fc_download_list`, `diviops_fc_download_attach`, `diviops_fc_license_changelog_get`, `diviops_fc_license_changelog_update` |
@@ -236,9 +266,10 @@ diviops-cross-env-preflight --source source.json --target target.json --dry-run
 
 This command reads two secret-free JSON files and prints a report. It does not
 connect to WordPress, does not accept credentials, and has no write/apply path.
-The CLI supports `tb_header_layout` and `tb_footer_layout` source payloads
-preflighted against existing same-kind targets. Header-only inputs retain the
-shipped header-v1 report/fingerprint; footer inputs use the generic layout-v1
+The CLI supports `tb_header_layout`, `tb_footer_layout`, and the bounded
+staff-detail `tb_body_layout` recipe described below, preflighted against existing
+same-kind targets. Header-only inputs retain the
+shipped header-v1 report/fingerprint; footer and supported body inputs use the generic layout-v1
 binding by default. Pass `--contract layout-v1` to emit the generic binding for
 a header rollout through `diviops_cross_env_layout_apply`; `--contract
 header-v1` explicitly selects the compatibility contract and accepts header
@@ -260,10 +291,38 @@ The Free plugin advertises `cross_env_footer_layout_evidence` when its source
 export and target-context routes support footer kinds. The server selects those
 two tools' public enums only after handshake: older or unproven plugins retain
 the shipped header-only schemas instead of advertising unsupported footer input.
+Body evidence requires `cross_env_staff_body_evidence`; body apply additionally
+requires `cross_env_staff_body_apply` alongside the existing Pro/module gates.
+The existing footer/generic-apply flags alone do not authorize body promotion.
+
+The body exception is limited to the existing `diviops_staff` recipe: native
+current-post title, featured image, Post Content and the unchanged
+`custom_meta_diviops_staff_role` binding with raw HTML off. The target must have
+the registered CPT, one active applicable top-level text field named
+`diviops_staff_role` with key `field_diviops_staff_role`, and one enabled,
+non-default existing body assignment for all singular staff posts, with no
+exclusions or conflicting same-condition assignment. Source/proposed content
+must match this recipe; the existing target body can be replaced without already
+containing it. Field definitions, target staff records and assignments are not
+changed. Other CPTs/selectors, fixed-post/loop contexts, missing or ambiguous
+fields, and prerequisite drift refuse. There is no general body migration or
+field mapping. Source and target exports include a `staff_body` proof with
+versioned evidence and a SHA-256 digest; the generic body confirmation binds both.
+The field group must contain a standalone `post_type == diviops_staff` location
+branch; other OR branches are allowed and remain part of the reviewed evidence.
+Current prerequisite evidence is bound into confirmation and
+independently recomputed by the target apply route. Source tests do not certify
+a live cross-site rollout or authorize installation/release.
+
+For this body recipe, `diviops_cross_env_layout_apply` accepts `dry_run: true`
+with the reviewed fingerprint and confirmation to validate without mutation.
+That option refuses non-body requests rather than silently applying them.
+A real body write retains a snapshot through the existing Free recovery store;
+dry-run and already-converged requests create no snapshot.
 
 To collect the source JSON from the source WordPress site, call the Free/core
 read-only MCP tool `diviops_cross_env_source_export_get` and save the returned
-`data` object as `source.json`. The export includes the source origin, header
+`data` object as `source.json`. The export includes the source origin, same-kind
 layout metadata, sanitized markup, a bare SHA-256 checksum of the exported
 markup, export metadata, and best-effort attachment inventory from upload URLs
 and attachment IDs. It also inventories referenced `attrs.modulePreset` IDs
@@ -295,11 +354,12 @@ entries that are referenced by source markup.
 It also includes target D5 module preset IDs, without preset definitions, so the
 preflight can fail closed when source markup references a module preset the
 target site does not have.
-For header/footer generic preflight it also includes exact target post type and
+For generic layout preflight it also includes exact target post type and
 a canonical template-linkage digest over the active Theme Builder master ID,
 its exact `_et_template` order, and linked-template slot, enabled, condition,
-and exclusion evidence. Empty linkage uses `master_template_ids: []` and
-`links: []`; assignment state is evidence only and is never mutated by rollout.
+and exclusion evidence. Header/footer empty linkage uses `master_template_ids: []`
+and `links: []`; bounded staff bodies require the isolated assignment above.
+Assignment state is evidence only and is never mutated by rollout.
 
 Workflow:
 
