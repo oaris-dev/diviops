@@ -3,7 +3,7 @@ Contributors: diviops
 Tags: divi, mcp, ai, rest-api, site-builder
 Requires at least: 6.5
 Tested up to: 7.1
-Stable tag: 1.5.18
+Stable tag: 1.5.19
 Requires PHP: 7.4
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -67,6 +67,11 @@ All endpoints require WordPress Application Password authentication. Read endpoi
 No. The Free plugin backs the core useful surface. Some higher-leverage workflows and paid coverage slices require Pro plugin handlers. The MCP server checks the plugin capability handshake and only exposes or runs tools supported by the connected site.
 
 == Changelog ==
+
+= 1.5.19 =
+
+* Fixes native module updates that were refused when WordPress canonically escaped HTML inside unchanged module attributes.
+* Uses the existing canonical serializer for the selected module while preserving strict content integrity, backups and rollback behavior.
 
 = 1.5.18 =
 
@@ -151,6 +156,10 @@ No. The Free plugin backs the core useful surface. Some higher-leverage workflow
 * Keeps `Stable tag` aligned with the plugin header version.
 
 == Upgrade Notice ==
+
+= 1.5.19 =
+
+Fixes false content-integrity refusals when editing native modules containing HTML attributes. Existing permissions, backups and rollback checks remain. MCP and Pro versions do not need to change for this fix.
 
 = 1.5.18 =
 

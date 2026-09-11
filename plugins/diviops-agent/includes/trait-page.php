@@ -1729,7 +1729,15 @@ trait DiviOps_Agent_Page {
 		if ( ! empty( $empty_object_paths ) ) {
 			$block_attrs = self::restore_empty_objects( $block_attrs, $empty_object_paths );
 		}
-		$new_json    = wp_json_encode( $block_attrs, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES );
+		$new_json = self::serialize_block_attrs_canonical( $block_attrs );
+		if ( null === $new_json ) {
+			return self::envelope_error(
+				'divi_error',
+				'Could not serialize block attributes on the matched module.',
+				'Check the supplied module attribute values for JSON-serializable data.',
+				500
+			);
+		}
 		$prefix      = '<!-- wp:divi/' . $type . ' ';
 		$suffix      = $is_self_closing ? ' /-->' : ' -->';
 		$new_comment = $prefix . $new_json . $suffix;

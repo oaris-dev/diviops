@@ -9,6 +9,11 @@ Policy:
 - Keep entries customer-facing. Avoid internal issue numbers unless they are needed to explain a user-visible change.
 - Do not include secrets, credentials, customer data, or environment-specific URLs.
 
+## 1.5.19
+
+- Serializes the selected native module opener with the existing canonical block serializer, avoiding false readback refusals when WordPress escapes HTML-bearing attributes during save.
+- Preserves unchanged surrounding content, strict byte-integrity verification, permissions, backups and rollback. No new capability, API or global MCP/Pro version floor is introduced.
+
 ## 1.5.18
 
 - Adds `cross_env_staff_body_evidence` for bounded source/target inspection of the native `diviops_staff` detail-body recipe, including current-post bindings, the existing plain-text role field and isolated body assignment prerequisites.

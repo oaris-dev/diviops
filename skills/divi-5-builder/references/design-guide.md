@@ -173,6 +173,51 @@ Hide a mobile nav/link Group with Divi's native visibility control:
 - Attr: `module.decoration.disabledOn.phone.value = "on"`
 - Do not rely on `module.decoration.layout.phone.value.display = "none"` for this case. That value can exist in block attrs without hiding the Group on the frontend.
 
+## Service-Page Authoring Lessons
+
+Context: 2026-09-10 service-page demonstration, frontend checked on installed Divi 5.12.1.
+Existing Free authoring tools sufficed; no missing API or new paid primitive was
+demonstrated. Apply these lessons when the design calls for repeated process rows
+or an inline enquiry reveal, not as a requirement to add a form or helper to every page.
+
+### Matching repeated rows
+
+Content-sized flex children with `space-between` let different heading lengths
+shift column starts between rows. Give corresponding number, heading and copy
+modules matching native responsive widths across the repeated rows, sized for
+their content rather than a universal percentage recipe. For a stacked
+tablet/phone layout, override those child widths at the same breakpoints (for
+example, `width: "100%"` where appropriate) and check existing max-width constraints.
+Inspect desktop column left edges and stacked tablet/phone alignment and overflow;
+valid block structure alone does not establish visual alignment.
+
+### One native form, inline reveal
+
+For a service CTA leading to an existing enquiry panel, keep one native Contact
+Form and native fields in that panel. Use `addVisibility` plus `scrollToElement`
+on the primary CTA so repeated activation keeps it open; reserve
+`toggleVisibility` for a separate disclosure control. A stored-visible panel with
+native `load` / `removeVisibility` can progressively hide it when interaction
+JavaScript runs. Stored visibility alone is not proof of a working no-JS fallback.
+
+Native visibility does not establish persistent labels, announced expanded state
+or keyboard focus. When runtime checks are authorized, test actual Enter/Space
+activation, repeated primary activation, close/reopen state (`aria-expanded`),
+focus on reveal, persistent required-field labels, retained input and exactly one
+form. Recheck after responsive DOM replacement: state, focus and draft submit
+precautions must operate on current nodes, not a cached node from initial load.
+If an intentional page-local helper fills observed gaps, keep it scoped and
+inspect native event propagation on the target. Do not copy page-specific IDs or
+helper code as a generic popup/accessibility guarantee.
+
+### Keep evidence separate
+
+The 2026-09-10 demonstration establishes these limits:
+
+- **Presentation:** desktop/tablet/phone frontend review and process alignment passed on installed Divi 5.12.1. Check offer/proof/image provenance independently of block validation; identify generated design-study imagery as illustration, not client work, and do not invent clients, conversion uplift or measured time savings.
+- **Native edit/save:** one representative native Heading edit was saved in VB while retaining draft status; parsed readback showed only that heading leaf changed and other attributes/Code content preserved. Final helper corrections and final sizing were frontend-checked after that save, not separately VB-saved. This is not universal VB certification or a fresh independent review of the final helper.
+- **Fallback/delivery:** no-JS behavior was source-inspected only, not browser-tested with JavaScript disabled. No mail submission, controlled error-path or delivery test was performed. Hidden/disabled send controls and client-side submission prevention are draft precautions, not server-side mail isolation or a security guarantee. Presentation approval does not authorize publication or sending mail.
+
 ## Animation Staggering
 
 Apply entrance animations with incrementing delays for a polished reveal:

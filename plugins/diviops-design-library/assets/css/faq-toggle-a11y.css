@@ -1,0 +1,21 @@
+.et_pb_toggle.et_pb_toggle_item.ddl-faq-a11y > .et_pb_toggle_title > button[data-ddl-faq-a11y-control] {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  white-space: inherit;
+  cursor: inherit;
+}
+
+.et_pb_toggle.et_pb_toggle_item.ddl-faq-a11y > .et_pb_toggle_title > button[data-ddl-faq-a11y-control]:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 3px;
+}

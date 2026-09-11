@@ -3,7 +3,7 @@
  * Plugin Name: DiviOps Design Library
  * Plugin URI: https://github.com/oaris-dev/diviops
  * Description: Modern design effects for Divi 5 with Three.js, CSS animations, and reusable design elements.
- * Version: 1.0.0-beta.22
+ * Version: 1.0.0-beta.23
  * Author: oaris.de
  * Author URI: https://oaris.de
  * Requires at least: 6.0
@@ -19,7 +19,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 class DiviOps_Design_Library {
 
-	const VERSION = '1.0.0-beta.22';
+	const VERSION = '1.0.0-beta.23';
 
 	/**
 	 * Three.js version to bundle.
@@ -58,6 +58,20 @@ class DiviOps_Design_Library {
 			self::VERSION,
 			[ 'in_footer' => true ]
 		);
+
+		wp_register_script(
+			'divi-faq-a11y',
+			$base_url . 'faq-toggle-a11y.js',
+			[ 'divi-script-library-toggle' ],
+			self::VERSION,
+			[ 'in_footer' => true ]
+		);
+		wp_register_style(
+			'divi-faq-a11y',
+			plugin_dir_url( __FILE__ ) . 'assets/css/faq-toggle-a11y.css',
+			[],
+			self::VERSION
+		);
 	}
 
 	/**
@@ -81,6 +95,14 @@ class DiviOps_Design_Library {
 		// Always load design-fx on Divi pages (lightweight).
 		if ( function_exists( 'et_pb_is_pagebuilder_used' ) && et_pb_is_pagebuilder_used( $post_id ) ) {
 			wp_enqueue_script( 'divi-design-fx' );
+		}
+
+		// Page opt-in loads the asset; only explicitly marked native toggles are adjusted.
+		if ( get_post_meta( $post_id, '_divi_design_faq_a11y', true ) === '1'
+			&& function_exists( 'et_pb_is_pagebuilder_used' ) && et_pb_is_pagebuilder_used( $post_id )
+			&& ! ( function_exists( 'et_fb_is_enabled' ) && et_fb_is_enabled() ) ) {
+			wp_enqueue_script( 'divi-faq-a11y' );
+			wp_enqueue_style( 'divi-faq-a11y' );
 		}
 
 		// Three.js only when explicitly requested.

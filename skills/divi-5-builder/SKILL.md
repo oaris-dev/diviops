@@ -26,6 +26,7 @@ Read the right file for the task at hand — don't load everything.
 | Existing SCF plain-text field in one native Text body layout | [SCF + Divi Text workflow](../diviops-scf/references/divi-text-field-workflow.md) (exact local native UI/VB-backed fixture, not general qualification, fresh MCP end-to-end proof, or a new paid primitive; native VB bind, then exact readback before reuse; future operations require authorization) |
 | Staff directory cards and shared CPT detail body | [Staff directory workflow](../diviops-scf/references/staff-directory-workflow.md) (accepted guided local walkthrough; portrait/name/profile-link cards only, native SCF role on details; publication approval and native binding readback required) |
 | Creating/editing pages | [design-guide.md](references/design-guide.md) → [module-formats.md](references/module-formats.md) |
+| Service-page process alignment or inline enquiry reveal | [Service-page authoring lessons](references/design-guide.md#service-page-authoring-lessons) (responsive sizing, show vs toggle, form checks, bounded evidence) |
 | Copy-paste minimum-valid block snippets | [minimal-snippets.md](references/minimal-snippets.md) (Heading, Text, Button, Blurb, Icon, Image) |
 | Module attribute paths | [module-formats.md](references/module-formats.md) (Tier 1 free — Tier 2 patterns + Tier 3 per-module are Pro) |
 | Adding CSS classes to modules | [design-effects.md](references/design-effects.md) — uses `module.decoration.attributes`, NOT `className` |
