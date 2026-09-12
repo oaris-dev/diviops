@@ -88,6 +88,7 @@ Upgrade tier by VB round-trip: have the user save the shape in VB, then dump the
 When generating pages, ALWAYS apply:
 Live visual checks below require task authorization. For planning-only or no-access
 tasks, record them as pending; never imply that an unperformed check passed.
+- **Designer -> Builder -> Reviewer:** Use the [authoring review handoff](references/design-guide.md#authoring-review-handoff) for approved-page comparison, cumulative section spacing, repeated component rhythm and actual link states. These are portable sequential roles, not a required model/runtime; structural validation and persisted readback do not establish visual acceptance. This guidance applies to Free native authoring too.
 - **Entrance animations** on visible modules (`fade`/`slide` with staggered `delay`: 0ms, 150ms, 300ms, 450ms)
 - **Hover states** on cards, buttons, icons (use `desktop.hover` format)
 - **Responsive overrides** (tablet/phone: padding, font sizes, `flexDirection: column`)

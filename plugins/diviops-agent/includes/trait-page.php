@@ -3920,7 +3920,7 @@ trait DiviOps_Agent_Page {
 	}
 
 	/**
-	 * Update a page's post_status (publish/draft/private/pending/future).
+	 * Update a standard post or page's post_status (publish/draft/private/pending/future).
 	 *
 	 * Replaces the wp-cli `post update --post_status=...` route for AI-agent callers.
 	 * Validates the status enum; for `future`, requires a `date_gmt` in the future and
@@ -3935,11 +3935,11 @@ trait DiviOps_Agent_Page {
 		$dry_run  = (bool) $request->get_param( 'dry_run' );
 
 		$post = get_post( $post_id );
-		if ( ! $post || 'page' !== (string) $post->post_type ) {
+		if ( ! $post || ! in_array( (string) $post->post_type, [ 'post', 'page' ], true ) ) {
 			return self::envelope_error(
 				'not_found',
-				"Page #{$post_id} not found.",
-				'Verify the page id via diviops_page_list.',
+				"Standard WordPress post or page #{$post_id} not found.",
+				'Verify the post/page id. Custom post types and attachments are not supported.',
 				404,
 				[ 'page_id' => $post_id ]
 			);
@@ -4024,9 +4024,10 @@ trait DiviOps_Agent_Page {
 			$update['post_date']     = get_date_from_gmt( $now );
 		}
 
+		$type_label = ucfirst( $post->post_type );
 		$summary  = $noop
-			? "Page #{$post_id} (title: '{$title}') already has status='{$status}'" . ( $scheduled_for ? " scheduled for {$scheduled_for}" : '' ) . ' — no-op.'
-			: "Would update page #{$post_id} (title: '{$title}') status: '{$current_status}' → '{$status}'" . ( $scheduled_for ? " (scheduled for {$scheduled_for} UTC)" : '' ) . '.';
+			? "{$type_label} #{$post_id} (title: '{$title}') already has status='{$status}'" . ( $scheduled_for ? " scheduled for {$scheduled_for}" : '' ) . ' — no-op.'
+			: "Would update {$post->post_type} #{$post_id} (title: '{$title}') status: '{$current_status}' → '{$status}'" . ( $scheduled_for ? " (scheduled for {$scheduled_for} UTC)" : '' ) . '.';
 
 		if ( $dry_run ) {
 			return self::dry_run_response(
@@ -4034,7 +4035,7 @@ trait DiviOps_Agent_Page {
 				$noop ? [] : [
 					[
 						'kind'   => 'update_status',
-						'target' => "page#{$post_id}",
+						'target' => "{$post->post_type}#{$post_id}",
 						'before' => $current_status,
 						'after'  => $status,
 					],

@@ -10,7 +10,7 @@ Before generating any page, make three decisions:
 
 2. **One memorable element** — Every page needs one thing someone will remember: an animated hero, a striking color contrast, an unexpected layout, a scroll-triggered reveal. Design around this anchor.
 
-3. **Variety** — Never converge on the same choices across pages. Vary color families, heading weights, section rhythms, card styles. If the last page used dark sections with purple accents, try light sections with teal accents next.
+3. **Variety** — For a new visual direction, vary color families, heading weights, section rhythms and card styles intentionally. When extending an approved existing site/page, preserve recurring styles unless the brief calls for an explicit intentional variation; novelty alone is not a reason to restyle them.
 
 **Design quality checklist:**
 - Typography hierarchy is clear (H1 > H2 > H3 visually distinct, not just smaller)
@@ -20,6 +20,55 @@ Before generating any page, make three decisions:
 - Responsive works (stack on mobile, reduce sizes on tablet)
 
 Use `oa` design tokens ([presets.md](presets.md)) for consistent sizing, spacing, and colors. Override per-instance only for deliberate variation.
+
+### Authoring review handoff
+
+Use these portable roles sequentially in one agent, or hand off between available
+specialists; no particular model or runtime is required. This is generic Free
+native authoring guidance, with inline values or existing tokens/presets, not a
+paid workflow prerequisite.
+
+| Role | Handoff |
+| --- | --- |
+| Designer | Identify the approved reference page/section and permitted changes. Compare recurring typography, buttons and eyebrows; record the reference values or explicit intentional variations, plus which native layer owns each gap. |
+| Builder | Make only scoped, native-first page edits; preserve default/shared presets. Hand off the changed section/module labels, persisted-attribute readback and unresolved visual questions. A page correction does not authorize shared-style mutation. |
+| Reviewer | Compare the result with the brief/reference using the checks below. Return acceptance, concrete corrections for the Builder, or pending checks; do not silently edit during review. |
+
+- **Section boundaries:** Inspect adjoining section bottom + top padding at desktop/phone, plus tablet when it has distinct values or behavior, together with nested row/column/module padding, margins and layout gaps. Judge the cumulative distance, not each value in isolation; identify the layer to correct.
+- **Repeated components:** Compare icon-to-heading and heading-to-body gaps across every repeated group and nearby related content. Check divider presence, thickness, rendered width, horizontal insets, color and space above/below; parent gaps can compound with internal spacing.
+- **Reference consistency:** Compare recurring font size/weight/color, button geometry/states and eyebrow treatment with the approved page, not just semantic tags or preset names. Keep a difference only when it serves the agreed hierarchy; do not impose a universal style recipe.
+- **New links:** Inspect the actual new anchor in normal and hover states, including typography, color/decoration and alignment within its container. A correct href or paragraph style readback does not show that a link has the intended treatment; check inherited body typography and paragraph alignment explicitly.
+
+Report structural validation/persisted readback separately from visual acceptance.
+When authorized, inspect rendered desktop/phone output (plus tablet when it has
+distinct values or behavior) and actual hover behavior;
+HTML previews alone are not live interaction proof. If access or authorization is
+missing, name the exact page/elements and mark those checks pending. Report any
+VB edit/save check separately; do not infer it from frontend appearance.
+
+#### Bad/good review example: agenda and preparation
+
+Illustrative authoring review, not an executed proof, renderer-bug claim or
+universal pixel/color threshold. The page has three agenda groups plus preparation.
+
+**Bad:** "Blocks validate and readback matches, so the page passes." This misses
+adjoining section padding of 84px + 84px on desktop and 52px + 52px on phone;
+the agenda groups have a 1px `#e2e8f0` divider, 30px top padding, 14px internal
+icon/heading/body gaps and a 26px parent gap, while preparation lacks the divider
+and uses 26px internal gaps. It also accepts accidental 18px grey eyebrows where
+the approved page uses 13px, weight 700, blue, and a new link inheriting body
+typography and the paragraph's unintended alignment without checking its hover.
+
+**Good:** "Structural/readback checks pass; visual acceptance needs corrections
+or explicit approval of these differences." Propose a page-local boundary
+correction such as 26px + 0px (26px total rather than 168px desktop / 104px phone),
+with desktop/phone review. Match preparation's internal gaps from 26px to 14px and
+add the matching agenda divider, checking rendered width/insets across all four
+groups; a different treatment needs explicit design intent. Reuse the approved
+eyebrow treatment and inspect the new link's own normal/hover typography and
+alignment. After the Builder's scoped
+correction, recheck readback and rendered results; retain any unperformed live
+checks as pending rather than claiming a visual pass.
 
 ### Contrast and Readability
 

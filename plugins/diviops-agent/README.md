@@ -42,11 +42,18 @@ The plugin includes a WordPress.org-format `readme.txt` and a plugin-local `chan
 
 Current metadata policy:
 
-- `Stable tag` matches the plugin header `Version` (`1.5.19`).
+- `Stable tag` matches the plugin header `Version` (`1.5.20`).
 - `Requires at least` and `Requires PHP` mirror the main plugin header.
 - `Tested up to` is evidence-based for this repo/substrate and should not be raised until the Free plugin is actually tested on that WordPress version.
 - External-service/authentication disclosure must mention the separately distributed npm MCP server, WordPress Application Passwords, and the rule that secrets do not belong in issues, examples, screenshots, or repo files.
 - Free/Pro copy must keep the Free plugin useful while making clear that Pro is the paid workflow-leverage layer and that not every MCP tool is Free-backed.
+
+Free 1.5.20 prepares standard WordPress Posts support alongside Pages through
+the existing status endpoint. Mapped edit and applicable publish permissions
+remain enforced before dry-run plans and no-op responses. Custom post types
+and attachments remain unsupported by this endpoint; scheduling is not expanded.
+MCP 1.5.50 clarifies the existing tool description; request shapes and the
+capability contract are unchanged. No new MCP or Pro version floor is introduced.
 
 Free 1.5.19 prepares a canonical serialization correction for native module
 updates containing HTML-bearing attributes. Strict integrity, backups and

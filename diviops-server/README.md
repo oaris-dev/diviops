@@ -8,7 +8,15 @@ The Node.js MCP server inside the DiviOps harness. It gives Claude Code, Codex, 
 Claude Code <-> MCP Server (stdio) <-> WordPress REST API <-> DiviOps Agent plugin
 ```
 
-## 1.5.49 candidate release note
+## 1.5.50 candidate release note
+
+Clarifies that the existing status tool targets standard WordPress Posts and
+Pages, not custom post types or attachments. Free Agent 1.5.20 corrects the
+endpoint's rejection of standard Posts while preserving edit and applicable
+publish permissions before dry-run plans and no-op responses. Existing request
+shapes and scheduling rules are unchanged; no Pro update is required.
+
+## Previous 1.5.49 candidate release note
 
 - Adds bounded staff-body source/target evidence and preflight, plus guarded Pro
   apply dispatch to one existing isolated target body. Target records supply

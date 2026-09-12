@@ -3,7 +3,7 @@ Contributors: diviops
 Tags: divi, mcp, ai, rest-api, site-builder
 Requires at least: 6.5
 Tested up to: 7.1
-Stable tag: 1.5.19
+Stable tag: 1.5.20
 Requires PHP: 7.4
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -67,6 +67,11 @@ All endpoints require WordPress Application Password authentication. Read endpoi
 No. The Free plugin backs the core useful surface. Some higher-leverage workflows and paid coverage slices require Pro plugin handlers. The MCP server checks the plugin capability handshake and only exposes or runs tools supported by the connected site.
 
 == Changelog ==
+
+= 1.5.20 =
+
+* Supports standard WordPress Posts alongside Pages through the existing status endpoint.
+* Preserves mapped edit and applicable publish permission checks before dry-run plans and no-op responses. Custom post types and attachments remain unsupported; scheduling is not expanded.
 
 = 1.5.19 =
 
@@ -156,6 +161,10 @@ No. The Free plugin backs the core useful surface. Some higher-leverage workflow
 * Keeps `Stable tag` aligned with the plugin header version.
 
 == Upgrade Notice ==
+
+= 1.5.20 =
+
+Fixes status updates for standard Posts alongside Pages. Existing edit/publish permissions, dry-run and no-op checks remain. Custom post types and attachments are unsupported. Scheduling is unchanged; no new MCP or Pro version floor is introduced.
 
 = 1.5.19 =
 

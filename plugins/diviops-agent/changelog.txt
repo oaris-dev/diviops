@@ -9,6 +9,11 @@ Policy:
 - Keep entries customer-facing. Avoid internal issue numbers unless they are needed to explain a user-visible change.
 - Do not include secrets, credentials, customer data, or environment-specific URLs.
 
+## 1.5.20
+
+- Supports standard WordPress Posts alongside Pages through the existing status endpoint, retaining mapped edit and applicable publish permission checks before dry-run plans and no-op responses.
+- Keeps custom post types and attachments outside this endpoint's scope and does not expand scheduling behavior.
+
 ## 1.5.19
 
 - Serializes the selected native module opener with the existing canonical block serializer, avoiding false readback refusals when WordPress escapes HTML-bearing attributes during save.

@@ -3,7 +3,7 @@
  * Plugin Name: DiviOps Agent
  * Plugin URI: https://github.com/oaris-dev/diviops
  * Description: REST API bridge for DiviOps — connects Claude Code to your Divi 5 site for AI-powered page building and design management.
- * Version: 1.5.19
+ * Version: 1.5.20
  * Author: oaris.de
  * Author URI: https://oaris.de
  * Text Domain: diviops-agent
@@ -70,7 +70,7 @@ class DiviOps_Agent {
 	 * Plugin version — surfaced in /handshake for self-diagnosis only;
 	 * server no longer gates on it (capability map is the gate).
 	 */
-	const VERSION = '1.5.19';
+	const VERSION = '1.5.20';
 
 	/**
 	 * Minimum MCP server version this plugin is compatible with.
@@ -558,7 +558,7 @@ class DiviOps_Agent {
 	}
 
 	/**
-	 * Resolve page status-transition authority before a plan or mutation.
+	 * Resolve post/page status-transition authority before a plan or mutation.
 	 *
 	 * @param WP_REST_Request|ArrayAccess $request REST-like request.
 	 * @return true|WP_Error
@@ -570,16 +570,16 @@ class DiviOps_Agent {
 		if ( ! in_array( $status, self::supported_page_statuses(), true ) ) {
 			return new WP_Error(
 				'rest_invalid_param',
-				'Status is not supported for DiviOps page status updates.',
+				'Status is not supported for DiviOps post/page status updates.',
 				[ 'status' => 400 ]
 			);
 		}
 
 		$post = get_post( $post_id );
-		if ( ! $post || 'page' !== (string) $post->post_type ) {
+		if ( ! $post || ! in_array( (string) $post->post_type, [ 'post', 'page' ], true ) ) {
 			return new WP_Error(
 				'rest_cannot_edit',
-				'Sorry, you are not allowed to edit this page.',
+				'Status updates require an editable standard WordPress post or page.',
 				[ 'status' => 403 ]
 			);
 		}
@@ -587,16 +587,16 @@ class DiviOps_Agent {
 		if ( ! current_user_can( 'edit_post', $post_id ) ) {
 			return new WP_Error(
 				'rest_cannot_edit',
-				'Sorry, you are not allowed to edit this page.',
+				'Sorry, you are not allowed to edit this post or page.',
 				[ 'status' => 403 ]
 			);
 		}
 
-		$post_type = get_post_type_object( 'page' );
+		$post_type = get_post_type_object( $post->post_type );
 		if ( ! $post_type ) {
 			return new WP_Error(
 				'rest_cannot_edit',
-				'The page post type does not expose the capability required for status updates.',
+				'The post type does not expose the capability required for status updates.',
 				[ 'status' => 403 ]
 			);
 		}
@@ -608,7 +608,7 @@ class DiviOps_Agent {
 		) {
 			return new WP_Error(
 				'rest_cannot_publish',
-				'Sorry, you are not allowed to publish pages or make pages private.',
+				'Sorry, you are not allowed to publish or make this post or page private.',
 				[
 					'status'              => 403,
 					'required_capability' => $publish_capability,
