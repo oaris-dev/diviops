@@ -1,0 +1,149 @@
+/* Keep this presentation asset identical in Free and Pro; each plugin enqueues its own copy. */
+.diviops-admin {
+	--diviops-background: #fff;
+	--diviops-foreground: #18181b;
+	--diviops-primary: #3854f4;
+	--diviops-primary-foreground: #fff;
+	--diviops-muted: #f4f4f5;
+	--diviops-muted-foreground: #61616b;
+	--diviops-border: #e4e4e7;
+	--diviops-ring: #3854f4;
+	--diviops-radius: 6px;
+	clear: both;
+	max-width: 1180px;
+	margin: 20px 0;
+	background: var(--diviops-background);
+	color: var(--diviops-foreground);
+	font-size: 13px;
+	line-height: 1.55;
+}
+.diviops-admin *,
+.diviops-admin *::before,
+.diviops-admin *::after { box-sizing: border-box; letter-spacing: 0; }
+.diviops-admin h2 { margin: 0 0 12px; font-size: 17px; line-height: 1.4; font-weight: 600; }
+.diviops-admin h3 { margin: 0; font-size: 14px; font-weight: 600; }
+.diviops-admin p { margin: 0 0 12px; font-size: inherit; }
+.diviops-admin a { color: var(--diviops-primary); text-underline-offset: 3px; }
+.diviops-admin code { padding: 0; background: transparent; font-size: 12px; }
+.diviops-admin small,
+.diviops-admin .diviops-muted { color: var(--diviops-muted-foreground); }
+.diviops-admin small { font-size: 12px; }
+.diviops-admin :focus-visible { outline: 2px solid var(--diviops-ring); outline-offset: 3px; }
+.diviops-admin .button {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 7px;
+	min-height: 36px;
+	max-width: 100%;
+	padding: 6px 13px;
+	border: 1px solid var(--diviops-border);
+	border-radius: var(--diviops-radius);
+	background: var(--diviops-background);
+	color: var(--diviops-foreground);
+	box-shadow: 0 1px 2px #18181b08;
+	font-size: 13px;
+	line-height: 1.5;
+	text-decoration: none;
+	white-space: normal;
+	cursor: pointer;
+}
+.diviops-admin .button:hover { background: var(--diviops-muted); border-color: #a1a1aa; }
+.diviops-admin .button-primary { background: var(--diviops-primary); border-color: var(--diviops-primary); color: var(--diviops-primary-foreground); }
+.diviops-admin .button-primary:hover { background: #2943d5; border-color: #2943d5; color: var(--diviops-primary-foreground); }
+.diviops-admin .button.delete { color: #9b252a; }
+.diviops-admin .dashicons { flex-shrink: 0; }
+.diviops-admin .diviops-header { padding: 18px 28px; display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; border-bottom: 1px solid var(--diviops-border); }
+.diviops-admin .diviops-brand { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.diviops-admin .diviops-brand img { display: block; width: 166px; max-width: 100%; height: auto; }
+.diviops-admin .diviops-edition { padding: 4px 7px; border: 1px solid var(--diviops-border); border-radius: 4px; background: var(--diviops-muted); color: var(--diviops-muted-foreground); font-size: 11px; font-weight: 600; text-transform: uppercase; }
+.diviops-admin .diviops-header p { margin: 3px 0 0; font-size: 12px; color: var(--diviops-muted-foreground); }
+.diviops-admin .diviops-nav { display: flex; flex-wrap: wrap; gap: 4px; width: fit-content; max-width: calc(100% - 56px); margin: 18px 28px 0; padding: 4px; background: var(--diviops-muted); border-radius: var(--diviops-radius); }
+.diviops-admin .diviops-nav a { padding: 6px 13px; min-height: 34px; border-radius: 4px; color: var(--diviops-muted-foreground); text-decoration: none; font-weight: 500; }
+.diviops-admin .diviops-nav a[aria-current="page"] { background: var(--diviops-background); color: var(--diviops-primary); box-shadow: 0 1px 3px #18181b1a; }
+.diviops-admin .diviops-nav a:hover { color: var(--diviops-foreground); }
+.diviops-admin .diviops-content { padding: 22px 28px 0; }
+.diviops-admin .diviops-intro { margin-bottom: 20px; }
+.diviops-admin .diviops-intro h2 { margin-bottom: 5px; font-size: 22px; }
+.diviops-admin .diviops-intro p { max-width: 740px; color: var(--diviops-muted-foreground); }
+.diviops-admin .diviops-callout { padding: 12px 14px; margin-bottom: 20px; border: 1px solid #e9d7a7; border-radius: var(--diviops-radius); background: #fffbeb; color: #78540b; }
+.diviops-admin .diviops-callout--error { border-color: #efc6ca; background: #fff5f5; color: #902329; }
+.diviops-admin .diviops-callout p { margin: 3px 0 0; }
+.diviops-admin .diviops-facts { margin: 0; }
+.diviops-admin .diviops-facts > div { display: grid; grid-template-columns: 130px minmax(0, 1fr); gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--diviops-border); }
+.diviops-admin dt { color: var(--diviops-muted-foreground); }
+.diviops-admin dd { margin: 0; }
+.diviops-admin .diviops-installation-facts { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); column-gap: 32px; margin-bottom: 20px; }
+.diviops-admin .diviops-installation-facts > div { grid-template-columns: 115px minmax(0, 1fr); }
+.diviops-admin .diviops-status { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 500; }
+.diviops-admin .diviops-status::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
+.diviops-admin .diviops-status--success { color: #166534; }
+.diviops-admin .diviops-status--neutral { color: var(--diviops-muted-foreground); }
+.diviops-admin .diviops-status--warning { color: #795600; }
+.diviops-admin .diviops-status--error { color: #9b252a; }
+.diviops-admin .diviops-status--info { color: #174ea6; }
+.diviops-admin .diviops-section-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 6px; }
+.diviops-admin .diviops-section-heading h2 { margin: 0; }
+.diviops-admin .diviops-snapshots { padding: 20px 0; border-top: 1px solid var(--diviops-border); }
+.diviops-admin .diviops-snapshot-columns { display: grid; grid-template-columns: minmax(0, 1fr) 160px 155px; gap: 16px; padding: 9px 12px; border-bottom: 1px solid var(--diviops-border); background: var(--diviops-muted); font-size: 11px; text-transform: uppercase; color: var(--diviops-muted-foreground); }
+.diviops-admin .diviops-snapshot { border-bottom: 1px solid var(--diviops-border); }
+.diviops-admin .diviops-snapshot summary { display: grid; grid-template-columns: minmax(0, 1fr) 160px 155px; align-items: center; gap: 16px; min-height: 64px; padding: 12px; list-style: none; cursor: pointer; }
+.diviops-admin .diviops-snapshot summary::-webkit-details-marker { display: none; }
+.diviops-admin .diviops-snapshot summary:hover { background: #fafafa; }
+.diviops-admin .diviops-snapshot[open] summary { background: var(--diviops-muted); }
+.diviops-admin .diviops-snapshot-title { display: flex; align-items: flex-start; gap: 8px; }
+.diviops-admin .diviops-snapshot-title .dashicons { font-size: 16px; }
+.diviops-admin .diviops-snapshot[open] .diviops-snapshot-title .dashicons { transform: rotate(90deg); }
+.diviops-admin .diviops-snapshot-title strong { display: block; font-size: 13px; }
+.diviops-admin .diviops-snapshot-title code { display: block; font-size: 11px; color: var(--diviops-muted-foreground); }
+.diviops-admin .diviops-snapshot-time { font-size: 12px; color: var(--diviops-muted-foreground); }
+.diviops-admin .diviops-snapshot-meta { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); column-gap: 28px; margin: 0; padding: 4px 18px 18px 34px; background: #fafafa; }
+.diviops-admin .diviops-snapshot-meta > div { padding: 10px 0; border-bottom: 1px solid var(--diviops-border); }
+.diviops-admin .diviops-snapshot-meta dt { font-size: 11px; margin-bottom: 3px; }
+.diviops-admin .diviops-snapshot-meta dd { font-size: 12px; }
+.diviops-admin .diviops-empty { padding: 28px 0; margin: 0; border-block: 1px solid var(--diviops-border); color: var(--diviops-muted-foreground); }
+.diviops-admin .diviops-overview-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 34px; padding-bottom: 22px; }
+.diviops-admin .diviops-rate-values { display: flex; flex-wrap: wrap; gap: 25px; margin: 12px 0; }
+.diviops-admin .diviops-rate-values strong { font-size: 18px; font-weight: 600; }
+.diviops-admin .diviops-rate-values small { display: block; }
+.diviops-admin .diviops-support-title { margin-top: 22px; }
+.diviops-admin .diviops-support-list { display: flex; flex-wrap: wrap; gap: 6px 17px; margin: 12px 0; padding: 0; list-style: none; font-size: 12px; }
+.diviops-admin .diviops-support-list li { display: flex; gap: 3px; align-items: center; margin: 0; }
+.diviops-admin .diviops-addon { padding: 12px 0 16px; border-bottom: 1px solid var(--diviops-border); }
+.diviops-admin .diviops-addon p { margin: 6px 0; color: var(--diviops-muted-foreground); }
+.diviops-admin .diviops-updates { display: grid; grid-template-columns: 170px minmax(0, 1fr); gap: 20px; padding: 22px 0 14px; border-top: 1px solid var(--diviops-border); }
+.diviops-admin .diviops-updates p { font-size: 12px; color: var(--diviops-muted-foreground); }
+.diviops-admin .diviops-license-layout { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 36px; padding-bottom: 28px; }
+.diviops-admin .diviops-license-controls { border-left: 1px solid var(--diviops-border); padding-left: 28px; }
+.diviops-admin .diviops-activation label { display: block; margin: 20px 0 7px; font-weight: 600; }
+.diviops-admin .diviops-activation input[type="password"] { display: block; width: 100%; min-width: 0; min-height: 40px; border: 1px solid #a1a1aa; border-radius: var(--diviops-radius); padding: 8px 10px; background: var(--diviops-background); color: var(--diviops-foreground); }
+.diviops-admin .diviops-activation .submit { margin: 16px 0; padding: 0; }
+.diviops-admin .diviops-license-actions { display: flex; flex-wrap: wrap; gap: 10px; margin: 20px 0; }
+.diviops-admin .diviops-license-actions form { max-width: 100%; }
+.diviops-admin .diviops-replace-license { padding: 16px 0; margin-bottom: 16px; border-block: 1px solid var(--diviops-border); }
+.diviops-admin .diviops-replace-license summary { cursor: pointer; font-weight: 500; padding: 4px 0; }
+.diviops-admin .diviops-footer { border-top: 1px solid var(--diviops-border); padding: 16px 28px; color: var(--diviops-muted-foreground); font-size: 11px; }
+.diviops-admin :where(div, section, span, dd, dt, p, code, a, strong, small, summary, input) { min-width: 0; overflow-wrap: anywhere; }
+@media (max-width: 1100px) {
+	.diviops-admin .diviops-installation-facts,
+	.diviops-admin .diviops-overview-grid,
+	.diviops-admin .diviops-license-layout { grid-template-columns: minmax(0, 1fr); }
+	.diviops-admin .diviops-license-controls { border-left: 0; border-top: 1px solid var(--diviops-border); padding: 24px 0 0; }
+	.diviops-admin .diviops-snapshot-columns,
+	.diviops-admin .diviops-snapshot summary { grid-template-columns: minmax(0, 1fr) 120px 120px; }
+}
+@media (max-width: 782px) {
+	.diviops-admin { margin-top: 16px; }
+	.diviops-admin .diviops-header { padding: 18px; gap: 12px; }
+	.diviops-admin .diviops-brand img { width: 140px; }
+	.diviops-admin .diviops-nav { margin: 16px 18px 0; max-width: calc(100% - 36px); }
+	.diviops-admin .diviops-content { padding: 22px 18px 0; }
+	.diviops-admin .diviops-snapshot-columns { display: none; }
+	.diviops-admin .diviops-snapshot summary { grid-template-columns: minmax(0, 1fr) minmax(0, 105px); gap: 8px 10px; padding: 14px 4px; min-height: 76px; }
+	.diviops-admin .diviops-snapshot-time { grid-column: 1 / -1; grid-row: 2; padding-left: 28px; }
+	.diviops-admin .diviops-snapshot summary > .diviops-status { align-self: start; margin-top: 3px; }
+	.diviops-admin .diviops-snapshot-meta { grid-template-columns: minmax(0, 1fr); padding: 0 12px 16px 22px; }
+	.diviops-admin .diviops-facts > div { grid-template-columns: 105px minmax(0, 1fr); }
+	.diviops-admin .diviops-updates { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+	.diviops-admin .diviops-footer { padding: 16px 18px; }
+}

@@ -9,6 +9,11 @@ Policy:
 - Keep entries customer-facing. Avoid internal issue numbers unless they are needed to explain a user-visible change.
 - Do not include secrets, credentials, customer data, or environment-specific URLs.
 
+## 1.5.21
+
+- Refreshes the scoped native WordPress admin dashboard with a clearer installed-component overview and expandable read-only snapshot metadata.
+- Preserves existing access and compatibility requirements. Displayed status does not verify MCP connectivity; snapshots are not full-site backups.
+
 ## 1.5.20
 
 - Supports standard WordPress Posts alongside Pages through the existing status endpoint, retaining mapped edit and applicable publish permission checks before dry-run plans and no-op responses.
