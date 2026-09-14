@@ -5131,6 +5131,11 @@ const ManagedRecoveryRequestIdSchema = z
   .regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{2,127}$/)
   .describe("Caller-stable request ID used for confirmation binding and exact replay/conflict detection.");
 
+const ManagedRecoverySnapshotIdSchema = z
+  .string()
+  .regex(/^[A-Za-z0-9][A-Za-z0-9_-]{2,127}$/)
+  .describe("Existing rollback snapshot ID to restore to its original supported page or layout target.");
+
 const ManagedRecoveryConfirmationSchema = {
   confirmation_fingerprint: z
     .string()
@@ -5267,6 +5272,52 @@ function registerProTools(): void {
       return { content: [{ type: "text" as const, text: serializeEnvelope(result, "diviops_managed_recovery_audit_list") }] };
     },
     { target: "managed_recovery", capabilityKey: "managed_recovery_audit_v1" },
+  );
+
+  registerProTool(
+    "diviops_managed_recovery_plan_check",
+    {
+      description:
+        "Pure-read managed recovery plan for one existing rollback snapshot (Pro Phase 1B). Requires manage_options and current target edit permission. Returns value-free intended before-state and supported metadata actions, checksums, limits/exclusions, cache/readback expectations, and capture-on-apply readiness, not an already-created recovery point. Uses Free-owned protected dry-run validation and issues a maximum-15-minute site/actor/request/snapshot/state/policy/inventory-bound confirmation for restore_apply. Writes no options, snapshots, content, cache, or audit state and returns no raw content or metadata.",
+      inputSchema: z.object({
+        snapshot_id: ManagedRecoverySnapshotIdSchema,
+        request_id: ManagedRecoveryRequestIdSchema,
+      }).strict(),
+      annotations: { readOnlyHint: true, idempotentHint: true },
+      _meta: { idempotent: "true" },
+    },
+    async ({ snapshot_id, request_id }) => {
+      const result = await wp.requestEnveloped("/pro/managed-recovery/plan/check", { method: "POST", body: { snapshot_id, request_id } });
+      return { content: [{ type: "text" as const, text: serializeEnvelope(result, "diviops_managed_recovery_plan_check") }] };
+    },
+    { target: "managed_recovery", capabilityKey: "managed_recovery_plan_v1" },
+  );
+
+  registerProTool(
+    "diviops_managed_recovery_restore_apply",
+    {
+      description:
+        "Apply exactly the snapshot restore reviewed by managed_recovery_plan_check (Pro Phase 1B). Rechecks live permissions, compatibility, current plan, and signed confirmation binding before any target write. Non-dry apply durably reserves the request and delegates once to the Free protected restore service, which captures the current state before restoring. No force, target override, raw payload, automatic retry, or second apply. Exact completed request replay returns the prior redacted success or failure without further capture, restore, or audit; conflicting or incomplete requests refuse. Reports verified success, recovery after failure, partial failure, and audit persistence failure distinctly. dry_run performs zero option, snapshot, content, cache, or audit writes and no capture. " +
+        DRY_RUN_DESC_SUFFIX,
+      inputSchema: z.object({
+        snapshot_id: ManagedRecoverySnapshotIdSchema,
+        request_id: ManagedRecoveryRequestIdSchema,
+        confirmation_fingerprint: ManagedRecoveryConfirmationSchema.confirmation_fingerprint
+          .describe("Exact fingerprint returned by the matching managed_recovery_plan_check operation."),
+        confirmation_token: ManagedRecoveryConfirmationSchema.confirmation_token
+          .describe("Short-lived signed token returned by the matching managed_recovery_plan_check operation."),
+        dry_run: DRY_RUN_FIELD,
+      }).strict(),
+      annotations: { readOnlyHint: false, idempotentHint: false },
+      _meta: { idempotent: "false" },
+    },
+    async ({ snapshot_id, request_id, confirmation_fingerprint, confirmation_token, dry_run }) => {
+      const body: Record<string, unknown> = { snapshot_id, request_id, confirmation_fingerprint, confirmation_token };
+      if (dry_run) body.dry_run = true;
+      const result = await wp.requestEnveloped("/pro/managed-recovery/restore/apply", { method: "POST", body });
+      return { content: [{ type: "text" as const, text: serializeEnvelope(result, "diviops_managed_recovery_restore_apply") }] };
+    },
+    { target: "managed_recovery", capabilityKey: "managed_recovery_plan_v1" },
   );
 
   // diviops_cross_env_header_apply — guarded Pro apply for reviewed header preflight

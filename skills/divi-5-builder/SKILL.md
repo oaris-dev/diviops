@@ -26,6 +26,7 @@ Read the right file for the task at hand — don't load everything.
 | Existing SCF plain-text field in one native Text body layout | [SCF + Divi Text workflow](../diviops-scf/references/divi-text-field-workflow.md) (exact local native UI/VB-backed fixture, not general qualification, fresh MCP end-to-end proof, or a new paid primitive; native VB bind, then exact readback before reuse; future operations require authorization) |
 | Staff directory cards and shared CPT detail body | [Staff directory workflow](../diviops-scf/references/staff-directory-workflow.md) (accepted guided local walkthrough; portrait/name/profile-link cards only, native SCF role on details; publication approval and native binding readback required) |
 | Creating/editing pages | [design-guide.md](references/design-guide.md) → [module-formats.md](references/module-formats.md) |
+| Figma reference to native Divi | [Figma-to-native guidance](references/figma-to-native.md) (Design-frame context vs Make source/export; mapping, interpretations and bounded acceptance) |
 | Service-page process alignment or inline enquiry reveal | [Service-page authoring lessons](references/design-guide.md#service-page-authoring-lessons) (responsive sizing, show vs toggle, form checks, bounded evidence) |
 | Copy-paste minimum-valid block snippets | [minimal-snippets.md](references/minimal-snippets.md) (Heading, Text, Button, Blurb, Icon, Image) |
 | Module attribute paths | [module-formats.md](references/module-formats.md) (Tier 1 free — Tier 2 patterns + Tier 3 per-module are Pro) |
@@ -107,29 +108,31 @@ Every page you generate uses one of three tiers for any given style value:
 
 | Tier | What it is | When to use |
 |------|-----------|-------------|
-| **Inline values** | Colors, sizes, fonts hardcoded in each block | Always works. Default. |
-| **Token variables** | Divi global tokens referenced via `$variable({...payload...})$` (full JSON payload required, trailing `$` is load-bearing — see [presets.md](references/presets.md#variable-tokens)) | When global tokens exist in Divi |
-| **Presets** | Module-level style templates referenced via UUID (`modulePreset: [uuid]` or `groupPreset.<slot>.presetId: [uuid]`) | When presets exist + a manifest maps roles to UUIDs |
+| **Inline values** | Reviewed page-local literal colors, sizes and other styles | Default when no shared identity is trusted; intentional local exceptions |
+| **Token variables** | Divi global tokens referenced via `$variable({...payload...})$` (full JSON payload required, trailing `$` is load-bearing — see [presets.md](references/presets.md#variable-tokens)) | Audited site-local identity fits the approved shared role and native attr path |
+| **Presets** | Shared style templates referenced via UUID (`modulePreset: [uuid]` or `groupPreset.<slot>.presetId: [uuid]`) | Audited preset identity, type/slot and styles fit the approved role |
 
 **DiviOps generates working, design-complete pages at any tier.** Tokens and presets are consistency optimizations for projects that need them — they are NOT prerequisites.
+
+For an existing brand, follow [the consumption convention](references/presets.md#when-to-use-presets-vs-inline-styles): reuse audited identities where appropriate, not names alone. Token presence does not require a preset system or authorize migration; a hybrid must identify which properties stay shared and which are page-local.
 
 ### First time on a project? Start here
 
 **You don't need to set anything up.** Page generation works out of the box with inline values using patterns from [design-guide.md](references/design-guide.md). Skip the rest of this section unless you want design-system reuse across many pages.
 
 Come back here when:
-- You want colors/sizes shared across many pages without duplicating values → bootstrap tokens
+- You want colors/sizes shared across many pages without duplicating values → inspect existing tokens first; bootstrap only if separately requested
 - You want a reusable design system with our `oa` token + preset naming → run the full bootstrap workflow
 
 ### Runtime resolution cascade (how pages are actually styled)
 
-Every page generation follows this cascade — you'll land at whichever tier your project has set up:
+For generic native authoring, choose the source of each style before generating:
 
-1. Read `.claude/design-system.json` → look up `presets.<role-key>.id` (fast path, if the manifest exists)
-2. If manifest missing → `diviops_preset_audit`, match presets by name, build an in-memory map (if `oa`-prefixed presets exist)
-3. If no `oa` presets found → inline styling from [design-guide.md](references/design-guide.md) patterns
+1. Treat names and optional `.claude/design-system.json` role IDs as discovery hints, not proof. No manifest or filesystem access is required.
+2. When reusing the brand, audit/inspect candidate presets and list their referenced variables on the intended site; confirm exact identities, current values and native type/slot suitability. An `oa` prefix is not required. Missing, stale or ambiguous mappings return to review, not automatic repair.
+3. If no shared identity is trusted, use reviewed page-local values from the brief/reference. Independently audited tokens can still be used without presets; follow the consumption convention above. A preset-required workflow keeps its own stop conditions, not an invented inline fallback.
 
-Most first-time runs hit step 3 and that's fine — output is still polished, animated, responsive, VB-editable.
+Style selection does not authorize token, preset or default changes. Preserve existing bindings and intentional local overrides unless the scoped task calls for changing them.
 
 ### About the `oa` convention (optional)
 
@@ -150,11 +153,11 @@ Use this to figure out which cascade path you're on without reading code:
 | State | oa tokens? | oa presets? | Manifest? | DiviOps behavior |
 |-------|-----------|-------------|-----------|------------------|
 | **Fresh site** (default, most common) | No | No | No | Inline values via design-guide.md — no action needed |
-| Branded, not normalized | No (has project-local colors) | No | No | Inline values; full bootstrap suggested if you want tokens |
-| Partially bootstrapped | Some | No | No | Use available tokens inline; complete bootstrap when ready |
-| Tokens complete, presets pending | Yes | No | No | Tokens via `$variable()$`; inline font/button styling |
-| Fully bootstrapped | Yes | Yes | Yes | Full preset-driven generation via manifest |
-| Bootstrapped, stale manifest | Yes | Yes | Outdated | Re-run Step 1 audit + Step 4 manifest regeneration |
+| Branded, not normalized | No (has project-local colors) | No | No | Reviewed page-local values; no automatic bootstrap |
+| Partially bootstrapped | Some | No | No | Reuse audited tokens for approved shared roles; reviewed literals elsewhere |
+| Tokens complete, presets pending | Yes | No | No | Same per-property choice; token presence alone is not trust |
+| Fully bootstrapped | Yes | Yes | Yes | Revalidate manifest identities/styles before preset reuse |
+| Bootstrapped, stale manifest | Yes | Yes | Outdated | Discard stale mapping and reinspect; no automatic manifest/registry repair |
 
 ### Bootstrap workflow (optional, power-user)
 

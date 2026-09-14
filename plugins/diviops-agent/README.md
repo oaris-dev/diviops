@@ -42,13 +42,23 @@ The plugin includes a WordPress.org-format `readme.txt` and a plugin-local `chan
 
 Current metadata policy:
 
-- `Stable tag` matches the plugin header `Version` (`1.5.21`).
+- `Stable tag` matches the plugin header `Version` (`1.5.22`).
 - `Requires at least` and `Requires PHP` mirror the main plugin header.
 - `Tested up to` is evidence-based for this repo/substrate and should not be raised until the Free plugin is actually tested on that WordPress version.
 - External-service/authentication disclosure must mention the separately distributed npm MCP server, WordPress Application Passwords, and the rule that secrets do not belong in issues, examples, screenshots, or repo files.
 - Free/Pro copy must keep the Free plugin useful while making clear that Pro is the paid workflow-leverage layer and that not every MCP tool is Free-backed.
 
-Free 1.5.21 refreshes the native WordPress admin dashboard presentation with a
+Free 1.5.22 prepares clearer Not active labels for unloaded optional add-ons and
+read-only snapshot history after the component overview, collapsed by default
+with its count visible. It also supplies the internal Free-owned protection
+service for reviewed recovery: capture the current layout, verify the recovery
+point against the actual after-state and permit at most one bounded recovery
+attempt on failure. Basic snapshot inspection and guarded restore remain Free;
+direct Free restore behavior is unchanged. No public tool, restore UI, full-site
+backup or global MCP/Pro version floor is added. Candidate package validation
+and publication remain separate from this source preparation.
+
+Free 1.5.21 refreshed the native WordPress admin dashboard presentation with a
 clearer installed-component overview and expandable read-only snapshot metadata.
 Existing access and compatibility requirements remain unchanged. Displayed status
 does not verify MCP connectivity; snapshots are not full-site backups.

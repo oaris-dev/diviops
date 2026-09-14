@@ -650,10 +650,20 @@ A future tool (`preset_attach_inline` or similar) could automate step 3 by attri
 
 **If you're starting a new project, presets are optional.** DiviOps generates polished pages using hardcoded values from [design-guide.md](design-guide.md) patterns without any preset setup. See [SKILL.md "First time on a project?"](../SKILL.md#first-time-on-a-project-start-here) for the shortest path.
 
-The guidance below applies once you've bootstrapped the `oa` system on a site (via SKILL.md's bootstrap workflow):
+**Consumption convention (generic Free native authoring):**
+
+- **Tokens exist, but no manifest/preset system is trusted:** default to reviewed page-local literal values, not automatic token binding. For an existing-brand brief, prefer exact audited token/preset identities for suitable shared roles. A token can be audited independently of presets: no manifest or full bootstrap is needed. Review any unresolved role as a local-value choice or a separately approved minimum setup; do not guess or silently repair it.
+- **Audit before reuse:** names and manifests are discovery hints. Use `diviops_preset_audit` / `diviops_preset_inspect` to confirm the intended site's preset ID, type/slot, styles, storage ambiguity and consumers; use `diviops_variable_list` to confirm actual referenced IDs, types and current values. `prefix` filters stored IDs, not labels. Use the canonical payload for the exact supported native path, not a made-up ID or CSS alias. Recheck relevant values before a later write; changed token values need not change serialized preset references or page checksums.
+- **Review a per-property handoff:** identify the token/preset binding, resolved value and intended shared role, or the literal value and reason for keeping it local (for example, source-specific responsive sizing). Reuse existing bindings on edits unless a change is scoped. Do not copy an audited preset's covered styles inline merely to make the page look branded; see [the override exceptions](#inline-tokens-as-fallback-not-duplication).
+- **Describe propagation honestly:** a literal copied from a brand token is a snapshot, not a binding. A direct token reference can follow that token's value, but an inline override still masks the corresponding preset property, including a later change of token identity in that preset. Reusing a preset does not make every property or page automatically follow a rebrand. Rendering and VB preservation remain path/version-specific; keep unperformed checks pending.
+- **Keep scope local:** page approval is not permission to create/update variables, presets or defaults, strip intentional overrides, normalize registries, or migrate other pages. Existing preset-required workflows retain their own required roles and refusal behavior; this convention adds no inline fallback or paid feature.
+
+**Existing diviops.com / A0 pages stay inline-by-value.** Convert only named pages/properties for a separately approved token-consumption workflow or rebrand demo, with exact bindings, prior-content recovery and scoped render/VB checks. No bulk migration or new demo follows from this convention.
+
+The guidance below applies once you've explicitly chosen the `oa` system on a site and audited its roles; these are role examples, not a requirement to rename or create tokens/presets:
 
 **Use attribute-level presets (`groupPreset`) when:**
-- Typography: heading sizes, body text sizes — always use `oa Heading H*` / `oa Text *` presets
+- Typography: heading sizes, body text sizes — reuse suitable audited `oa Heading H*` / `oa Text *` presets
 - Button styling: use `oa Button *` presets via `groupPreset.button`
 - Any style shared across 3+ modules
 

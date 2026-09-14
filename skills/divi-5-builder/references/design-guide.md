@@ -19,7 +19,7 @@ Before generating any page, make three decisions:
 - Animation is purposeful (entrance cascade on hero, subtle scroll effects on content, not random)
 - Responsive works (stack on mobile, reduce sizes on tablet)
 
-Use `oa` design tokens ([presets.md](presets.md)) for consistent sizing, spacing, and colors. Override per-instance only for deliberate variation.
+Choose audited brand identities or reviewed page-local values using [the consumption convention](presets.md#when-to-use-presets-vs-inline-styles). The literal values in these patterns are examples, not automatic brand bindings; `oa` naming and bootstrap are optional. Override per-instance only for deliberate variation.
 
 ### Authoring review handoff
 
@@ -448,7 +448,7 @@ Common styling: small size (12-14px), bold weight (600-700), uppercase, wide let
 
 ## Preset-Driven Generation
 
-When the oa design system is set up (see [presets.md](presets.md)), use `groupPreset` references instead of inline font styling. This reduces token count and ensures design consistency.
+Use `groupPreset` references for audited shared font roles under [the consumption convention](presets.md#when-to-use-presets-vs-inline-styles), not merely because `oa` presets exist. Keep reviewed page-local values where no suitable shared identity is trusted.
 
 ### Before (inline — ~250 chars per heading)
 ```jsonc
@@ -464,7 +464,7 @@ Size, weight, and line height come from the preset. Color uses a `$variable()$` 
 
 ### Available presets — Quick lookup
 
-Resolve preset role keys to UUIDs via `.claude/design-system.json`. Full catalog with weights, tokens, and markup examples: [presets.md](presets.md).
+Treat `.claude/design-system.json` role-to-UUID mappings as optional discovery hints. Before use, confirm the target site, exact preset identity, type/slot, styles and referenced token identities/current values under [the consumption convention](presets.md#when-to-use-presets-vs-inline-styles). Full catalog with weights, tokens, and markup examples: [presets.md](presets.md).
 
 | Category | groupId | groupName | Role keys |
 |----------|---------|-----------|-----------|

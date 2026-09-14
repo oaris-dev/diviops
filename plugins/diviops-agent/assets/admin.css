@@ -85,6 +85,12 @@
 .diviops-admin .diviops-section-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 6px; }
 .diviops-admin .diviops-section-heading h2 { margin: 0; }
 .diviops-admin .diviops-snapshots { padding: 20px 0; border-top: 1px solid var(--diviops-border); }
+.diviops-admin .diviops-snapshots > summary { display: block; list-style: none; cursor: pointer; }
+.diviops-admin .diviops-snapshots > summary::-webkit-details-marker { display: none; }
+.diviops-admin .diviops-snapshots > summary h2 { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin: 0; }
+.diviops-admin .diviops-snapshots > summary h2 > span { display: inline-flex; align-items: center; gap: 8px; }
+.diviops-admin .diviops-snapshots[open] > summary { margin-bottom: 12px; }
+.diviops-admin .diviops-snapshots[open] > summary .dashicons { transform: rotate(90deg); }
 .diviops-admin .diviops-snapshot-columns { display: grid; grid-template-columns: minmax(0, 1fr) 160px 155px; gap: 16px; padding: 9px 12px; border-bottom: 1px solid var(--diviops-border); background: var(--diviops-muted); font-size: 11px; text-transform: uppercase; color: var(--diviops-muted-foreground); }
 .diviops-admin .diviops-snapshot { border-bottom: 1px solid var(--diviops-border); }
 .diviops-admin .diviops-snapshot summary { display: grid; grid-template-columns: minmax(0, 1fr) 160px 155px; align-items: center; gap: 16px; min-height: 64px; padding: 12px; list-style: none; cursor: pointer; }

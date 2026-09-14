@@ -3,7 +3,7 @@
  * Plugin Name: DiviOps Agent
  * Plugin URI: https://github.com/oaris-dev/diviops
  * Description: REST API bridge for DiviOps — connects Claude Code to your Divi 5 site for AI-powered page building and design management.
- * Version: 1.5.21
+ * Version: 1.5.22
  * Author: oaris.de
  * Author URI: https://oaris.de
  * Text Domain: diviops-agent
@@ -70,7 +70,7 @@ class DiviOps_Agent {
 	 * Plugin version — surfaced in /handshake for self-diagnosis only;
 	 * server no longer gates on it (capability map is the gate).
 	 */
-	const VERSION = '1.5.21';
+	const VERSION = '1.5.22';
 
 	/**
 	 * Minimum MCP server version this plugin is compatible with.
@@ -2034,14 +2034,14 @@ class DiviOps_Agent {
 
 	private static function render_admin_rollback_snapshots_card( array $snapshots ): void {
 		?>
-		<section class="diviops-snapshots" aria-labelledby="diviops-snapshots-title">
-			<div class="diviops-section-heading">
-				<h2 id="diviops-snapshots-title"><?php esc_html_e( 'Rollback Backups', 'diviops-agent' ); ?></h2>
+		<details class="diviops-snapshots" aria-labelledby="diviops-snapshots-title">
+			<summary>
+				<h2 id="diviops-snapshots-title"><span><span class="dashicons dashicons-arrow-right-alt2" aria-hidden="true"></span><?php esc_html_e( 'Rollback Backups', 'diviops-agent' ); ?></span>
 				<small><?php
 					/* translators: %d: number of snapshots visible to the current user. */
 					echo esc_html( sprintf( __( '%d visible / latest 8 maximum', 'diviops-agent' ), count( $snapshots ) ) );
-				?></small>
-			</div>
+				?></small></h2>
+			</summary>
 			<p class="diviops-muted"><?php esc_html_e( 'Temporary rollback snapshots created by backup-enabled DiviOps content writes. These are not full site backups and this dashboard is read-only.', 'diviops-agent' ); ?></p>
 			<?php if ( empty( $snapshots ) ) : ?>
 				<p class="diviops-empty"><?php esc_html_e( 'No rollback snapshots are currently visible for this user.', 'diviops-agent' ); ?></p>
@@ -2106,7 +2106,7 @@ class DiviOps_Agent {
 					</details>
 				<?php endforeach; ?>
 			<?php endif; ?>
-		</section>
+		</details>
 		<?php
 	}
 	public static function render_admin_page() {
@@ -2184,7 +2184,6 @@ class DiviOps_Agent {
 							<div><dt><?php esc_html_e( 'REST URL', 'diviops-agent' ); ?></dt><dd><code><?php echo esc_url( $rest_url ); ?></code></dd></div>
 						</dl>
 					</section>
-					<?php self::render_admin_rollback_snapshots_card( $rollback_snapshots ); ?>
 					<div class="diviops-overview-grid">
 						<section aria-labelledby="diviops-rate-title">
 							<div class="diviops-section-heading">
@@ -2213,7 +2212,7 @@ class DiviOps_Agent {
 						<section aria-labelledby="diviops-addons-title">
 							<h2 id="diviops-addons-title"><?php esc_html_e( 'Add-ons', 'diviops-agent' ); ?></h2>
 							<div class="diviops-addon">
-								<div class="diviops-section-heading"><h3><?php esc_html_e( 'DiviOps Pro', 'diviops-agent' ); ?></h3><span class="diviops-status <?php echo $pro_active ? 'diviops-status--success' : 'diviops-status--neutral'; ?>"><?php echo esc_html( $pro_active ? __( 'Active', 'diviops-agent' ) : __( 'Not installed', 'diviops-agent' ) ); ?></span></div>
+								<div class="diviops-section-heading"><h3><?php esc_html_e( 'DiviOps Pro', 'diviops-agent' ); ?></h3><span class="diviops-status <?php echo $pro_active ? 'diviops-status--success' : 'diviops-status--neutral'; ?>"><?php echo esc_html( $pro_active ? __( 'Active', 'diviops-agent' ) : __( 'Not active', 'diviops-agent' ) ); ?></span></div>
 								<?php if ( $pro_version ) : ?>
 									<p><?php /* translators: %s: installed plugin version. */ echo esc_html( sprintf( __( 'Version %s', 'diviops-agent' ), $pro_version ) ); ?></p>
 								<?php endif; ?>
@@ -2223,7 +2222,7 @@ class DiviOps_Agent {
 								<?php endif; ?>
 							</div>
 							<div class="diviops-addon">
-								<div class="diviops-section-heading"><h3><?php esc_html_e( 'Design Library', 'diviops-agent' ); ?></h3><span class="diviops-status <?php echo $ddl_active ? 'diviops-status--success' : 'diviops-status--neutral'; ?>"><?php echo esc_html( $ddl_active ? __( 'Active', 'diviops-agent' ) : __( 'Not installed', 'diviops-agent' ) ); ?></span></div>
+								<div class="diviops-section-heading"><h3><?php esc_html_e( 'Design Library', 'diviops-agent' ); ?></h3><span class="diviops-status <?php echo $ddl_active ? 'diviops-status--success' : 'diviops-status--neutral'; ?>"><?php echo esc_html( $ddl_active ? __( 'Active', 'diviops-agent' ) : __( 'Not active', 'diviops-agent' ) ); ?></span></div>
 								<?php if ( $ddl_version ) : ?>
 									<p><?php /* translators: %s: installed plugin version. */ echo esc_html( sprintf( __( 'Version %s', 'diviops-agent' ), $ddl_version ) ); ?></p>
 								<?php endif; ?>
@@ -2231,6 +2230,7 @@ class DiviOps_Agent {
 							</div>
 						</section>
 					</div>
+					<?php self::render_admin_rollback_snapshots_card( $rollback_snapshots ); ?>
 					<section class="diviops-updates" aria-labelledby="diviops-updates-title">
 						<h2 id="diviops-updates-title"><?php esc_html_e( 'Updates & setup', 'diviops-agent' ); ?></h2>
 						<div>

@@ -3,7 +3,7 @@ Contributors: diviops
 Tags: divi, mcp, ai, rest-api, site-builder
 Requires at least: 6.5
 Tested up to: 7.1
-Stable tag: 1.5.21
+Stable tag: 1.5.22
 Requires PHP: 7.4
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -67,6 +67,12 @@ All endpoints require WordPress Application Password authentication. Read endpoi
 No. The Free plugin backs the core useful surface. Some higher-leverage workflows and paid coverage slices require Pro plugin handlers. The MCP server checks the plugin capability handshake and only exposes or runs tools supported by the connected site.
 
 == Changelog ==
+
+= 1.5.22 =
+
+* Shows unloaded optional add-ons as Not active and places read-only snapshot history after the component overview, collapsed by default with its count visible.
+* Adds internal protected-restore support: capture the current layout before restoration, verify the recovery point against the actual after-state, and allow at most one bounded recovery attempt on failure.
+* Keeps basic snapshot inspection and guarded restore Free. Direct Free restore behavior is unchanged; this adds no public tool, restore UI or full-site backup.
 
 = 1.5.21 =
 
@@ -166,6 +172,10 @@ No. The Free plugin backs the core useful surface. Some higher-leverage workflow
 * Keeps `Stable tag` aligned with the plugin header version.
 
 == Upgrade Notice ==
+
+= 1.5.22 =
+
+Clarifies add-on status and collapses snapshot history by default. Supplies the Free-owned protection service for reviewed recovery workflows. Basic Free restore remains available with its existing behavior; no global MCP or Pro version floor is raised.
 
 = 1.5.21 =
 

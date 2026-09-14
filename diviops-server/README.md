@@ -8,7 +8,24 @@ The Node.js MCP server inside the DiviOps harness. It gives Claude Code, Codex, 
 Claude Code <-> MCP Server (stdio) <-> WordPress REST API <-> DiviOps Agent plugin
 ```
 
-## 1.5.50 candidate release note
+## 1.5.51 candidate release note
+
+Adds `diviops_managed_recovery_plan_check` and
+`diviops_managed_recovery_restore_apply` for an opt-in, reviewed one-site
+recovery workflow. Plan and apply dry-run do not capture or restore; confirmed
+apply delegates to the shared Free protection service. An exact completed
+request replay returns the prior result without another restore, capture or
+audit append. Inspect the separate recovery, readback and audit evidence rather
+than inferring success from request completion.
+
+The two tools require the active Pro managed-recovery target and
+`managed_recovery_plan_v1`. Older compatible Free/Pro pairs retain the existing
+policy, retention and audit tools; basic snapshot inspection and guarded undo
+remain Free. Restart MCP after supported updates to refresh its capability
+handshake. No dependency, transport, global version floor or restore UI change
+is included. Candidate validation and publication are still separate steps.
+
+## Previous 1.5.50 candidate release note
 
 Clarifies that the existing status tool targets standard WordPress Posts and
 Pages, not custom post types or attachments. Free Agent 1.5.20 corrects the
@@ -215,6 +232,7 @@ Additional **conditionally-registered Pro tools** appear only on sites that have
 | FluentCart checkout readiness / gateway inspection (V3.2) | Pro plugin + FluentCart installed + module enabled | `diviops_fc_status`, `diviops_fc_gateway_list`, `diviops_fc_gateway_get` |
 | Cross-env reviewed layout rollout | Pro plugin + `cross_env` module enabled | `diviops_cross_env_header_apply`, `diviops_cross_env_layout_apply` |
 | Managed recovery Phase 1A | Pro plugin + opt-in `managed_recovery` module enabled | `diviops_managed_recovery_policy_get`, `diviops_managed_recovery_policy_preview`, `diviops_managed_recovery_policy_update`, `diviops_managed_recovery_retention_preview`, `diviops_managed_recovery_retention_apply`, `diviops_managed_recovery_audit_list` |
+| Managed recovery Phase 1B | Same opt-in module + Free protected restore service + `managed_recovery_plan_v1` | `diviops_managed_recovery_plan_check`, `diviops_managed_recovery_restore_apply` |
 
 When the gates are not satisfied, the tools simply don't appear on the MCP surface — no error envelope, no missing-capability hint. See the `diviops-fluentcart` skill bundle for the operator-side guide.
 

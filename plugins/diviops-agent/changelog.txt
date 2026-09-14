@@ -9,6 +9,12 @@ Policy:
 - Keep entries customer-facing. Avoid internal issue numbers unless they are needed to explain a user-visible change.
 - Do not include secrets, credentials, customer data, or environment-specific URLs.
 
+## 1.5.22
+
+- Shows unloaded optional add-ons as Not active and moves read-only snapshot history after the component overview, collapsed by default with its count visible. Existing per-snapshot metadata, permissions and result limits remain.
+- Adds an internal protected-restore service that captures the current layout, verifies the recovery point against the actual after-state and permits at most one bounded recovery attempt on failure.
+- Keeps snapshot storage and basic guarded restore in Free. Direct Free restore behavior is unchanged; no new public capability, tool, restore UI or full-site backup is introduced.
+
 ## 1.5.21
 
 - Refreshes the scoped native WordPress admin dashboard with a clearer installed-component overview and expandable read-only snapshot metadata.

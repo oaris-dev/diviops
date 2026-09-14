@@ -126,7 +126,7 @@ Section (bg: gradient primary→secondary, padding: 100px)
 
 ## Using with presets
 
-When `oa` presets are available, reference them instead of inline font styling. Resolve `<role-key>` placeholders from `.claude/design-system.json`:
+Use preset references only for audited shared roles under [the consumption convention](../presets.md#when-to-use-presets-vs-inline-styles); availability alone does not require them. Treat optional `.claude/design-system.json` mappings for `<role-key>` placeholders as discovery hints, then confirm the target site, exact preset identity, type/slot, styles and referenced token identities/current values before use. Keep reviewed page-local values where no suitable shared identity is trusted:
 
 ```jsonc
 // Heading with preset — no inline size/weight/lineHeight needed

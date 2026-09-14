@@ -878,37 +878,65 @@ trait DiviOps_Agent_Rollback {
 	}
 
 	public static function rollback_snapshot_restore( $request ) {
-		$snapshot_id = self::rollback_snapshot_validate_id( $request->get_param( 'snapshot_id' ) );
+		return self::rollback_snapshot_restore_service(
+			$request->get_param( 'snapshot_id' ),
+			rest_sanitize_boolean( $request->get_param( 'dry_run' ) ?? false )
+		);
+	}
+
+	/** Shared Free restore; protection is an internal choice, never a REST input. */
+	public static function rollback_snapshot_restore_service( $snapshot_id, bool $dry_run = false, bool $protect_current = false ) {
+		$point = null;
+		$respond = static function ( $response ) use ( $protect_current, &$point ) {
+			if ( ! $protect_current ) {
+				return $response;
+			}
+			$body = $response->get_data();
+			if ( empty( $body['ok'] ) ) {
+				// Keep the original failure, but do not expose content or historical meta.
+				$data = self::rollback_snapshot_as_array( $body['error']['data'] ?? [] );
+				$body['error']['data'] = array_intersect_key( $data, array_flip( [ 'snapshot_id', 'record_id', 'committed', 'changed_fields', 'prior_checksum', 'intended_checksum', 'expected_checksum', 'restored_checksum' ] ) );
+				$body['error']['data']['recovery_point'] = null !== $point
+					? self::rollback_snapshot_finish_recovery_point( $point, true )
+					: [ 'created' => false, 'finalized' => false, 'usable' => false, 'recovery_attempted' => false, 'recovery_verified' => false ];
+				if ( null !== $point && ! array_key_exists( 'committed', $body['error']['data'] ) ) {
+					$body['error']['data']['committed'] = $body['error']['data']['recovery_point']['state_changed'] ?? null;
+				}
+				$response->set_data( $body );
+			}
+			return $response;
+		};
+		$snapshot_id = self::rollback_snapshot_validate_id( $snapshot_id );
 		if ( false === $snapshot_id ) {
-			return self::envelope_error( 'invalid_input', 'Invalid rollback snapshot id.', 'Use the snapshot_id returned by diviops_rollback_snapshot_list.', 400 );
+			return $respond( self::envelope_error( 'invalid_input', 'Invalid rollback snapshot id.', 'Use the snapshot_id returned by diviops_rollback_snapshot_list.', 400 ) );
 		}
 
 		$option_name = self::rollback_snapshot_option_name( $snapshot_id );
 		$record      = get_option( $option_name, null );
 		if ( ! is_array( $record ) ) {
-			return self::envelope_error( 'not_found', 'Rollback snapshot not found.', null, 404, [ 'snapshot_id' => $snapshot_id ] );
+			return $respond( self::envelope_error( 'not_found', 'Rollback snapshot not found.', null, 404, [ 'snapshot_id' => $snapshot_id ] ) );
 		}
 		$summary = self::rollback_snapshot_normalize_record( $record, $option_name, $record );
 		if ( null === $summary ) {
-			return self::envelope_error( 'invalid_input', 'Rollback snapshot record is malformed.', null, 400, [ 'snapshot_id' => $snapshot_id ] );
+			return $respond( self::envelope_error( 'invalid_input', 'Rollback snapshot record is malformed.', null, 400, [ 'snapshot_id' => $snapshot_id ] ) );
 		}
 
 		// Do not read or copy before.value until the live target's row-level edit gate passes.
 		$post = self::rollback_snapshot_target_post( $summary );
 		if ( ! $post ) {
-			return self::envelope_error( 'not_found', 'Rollback snapshot target no longer exists.', null, 404, [ 'snapshot_id' => $snapshot_id, 'target' => $summary['target'] ] );
+			return $respond( self::envelope_error( 'not_found', 'Rollback snapshot target no longer exists.', null, 404, [ 'snapshot_id' => $snapshot_id, 'target' => $summary['target'] ] ) );
 		}
 		if ( ! self::can_inspect_post_object( $post ) ) {
-			return self::envelope_error( 'forbidden', 'You cannot restore this rollback snapshot target.', null, 403, [ 'snapshot_id' => $snapshot_id, 'target' => $summary['target'] ] );
+			return $respond( self::envelope_error( 'forbidden', 'You cannot restore this rollback snapshot target.', null, 403, [ 'snapshot_id' => $snapshot_id, 'target' => $summary['target'] ] ) );
 		}
 		if ( ! self::rollback_snapshot_supported_target( $post ) ) {
-			return self::envelope_error( 'invalid_input', 'This rollback snapshot target type is not supported by the restore MVP.', null, 400, [ 'snapshot_id' => $snapshot_id, 'post_type' => (string) $post->post_type ] );
+			return $respond( self::envelope_error( 'invalid_input', 'This rollback snapshot target type is not supported by the restore MVP.', null, 400, [ 'snapshot_id' => $snapshot_id, 'post_type' => (string) $post->post_type ] ) );
 		}
 
 		$before = self::rollback_snapshot_as_array( $record['before'] ?? [] );
 		$after  = self::rollback_snapshot_as_array( $record['after'] ?? [] );
 		if ( empty( $summary['restore']['restorable'] ) || ! array_key_exists( 'value', $before ) || empty( $after['checksum'] ) ) {
-			return self::envelope_error( 'conflict', 'Rollback snapshot is not in a restorable state.', null, 409, [ 'snapshot_id' => $snapshot_id, 'status' => $summary['status'] ] );
+			return $respond( self::envelope_error( 'conflict', 'Rollback snapshot is not in a restorable state.', null, 409, [ 'snapshot_id' => $snapshot_id, 'status' => $summary['status'] ] ) );
 		}
 
 		$current_content      = (string) ( $post->post_content ?? '' );
@@ -918,7 +946,7 @@ trait DiviOps_Agent_Rollback {
 		$content_drift        = ! hash_equals( (string) $after['checksum'], $current_checksum );
 		$side_effect_drift    = ! empty( $after_side_effects ) && ! self::rollback_snapshot_side_effects_equal( $after_side_effects, $current_side_effects );
 		if ( $content_drift || $side_effect_drift ) {
-			return self::envelope_error(
+			return $respond( self::envelope_error(
 				'conflict',
 				'Rollback refused because the target changed after the snapshot write.',
 				'Inspect the drift and create a fresh guarded backup before any later restore attempt. This MVP has no force override.',
@@ -934,15 +962,33 @@ trait DiviOps_Agent_Rollback {
 						'current_side_effects'        => $current_side_effects,
 					],
 				]
-			);
+			) );
 		}
 
 		$restore_content = (string) $before['value'];
-		if ( rest_sanitize_boolean( $request->get_param( 'dry_run' ) ?? false ) ) {
+		if ( $protect_current ) {
+			foreach ( [ $restore_content, $current_content ] as $content ) {
+				$preflight = self::assert_divi_full_content_safe_for_write( $content, 'content' );
+				if ( is_wp_error( $preflight ) ) {
+					return $respond( self::envelope_from_content_write_error( $preflight ) );
+				}
+			}
+		}
+		if ( $dry_run ) {
 			return self::dry_run_response(
 				"Would restore rollback snapshot {$snapshot_id} to {$post->post_type}#{$post->ID}.",
 				[ [ 'kind' => 'rollback_snapshot.restore', 'target' => "{$post->post_type}#{$post->ID}", 'before' => [ 'checksum' => $current_checksum ], 'after' => [ 'checksum' => self::rollback_snapshot_checksum( $restore_content ) ] ] ]
 			);
+		}
+		if ( $protect_current ) {
+			$captured = self::rollback_snapshot_create_for_post_write( $post, 'rollback_snapshot_restore', [ 'snapshot_id' => $snapshot_id ] );
+			if ( is_wp_error( $captured ) ) {
+				return $respond( self::envelope_from_content_write_error( $captured ) );
+			}
+			if ( ! self::rollback_snapshot_record_persisted( $captured ) ) {
+				return self::envelope_error( 'rollback_snapshot.capture_readback_failed', 'Pre-restore recovery point did not verify in storage.', null, 500, [ 'snapshot_id' => $snapshot_id, 'committed' => false, 'recovery_point' => [ 'snapshot_id' => $captured['snapshot_id'], 'created' => true, 'capture_verified' => false, 'finalized' => false, 'usable' => false, 'recovery_attempted' => false, 'recovery_verified' => false ] ] );
+			}
+			$point = $captured;
 		}
 
 		$result = self::update_post_content_with_integrity_guard(
@@ -953,14 +999,14 @@ trait DiviOps_Agent_Rollback {
 			$current_content
 		);
 		if ( is_wp_error( $result ) ) {
-			return self::envelope_from_content_write_error( $result );
+			return $respond( self::envelope_from_content_write_error( $result ) );
 		}
 
 		$side_effect_readback = self::rollback_snapshot_restore_side_effects( (int) $post->ID, self::rollback_snapshot_as_array( $before['side_effects'] ?? [] ) );
 		if ( is_wp_error( $side_effect_readback ) ) {
 			$error_data = $side_effect_readback->get_error_data();
 			self::invalidate_divi_cache( (int) $post->ID );
-			return self::envelope_error(
+			return $respond( self::envelope_error(
 				'rollback_snapshot.side_effect_readback_failed',
 				'Rollback content was written, but captured Divi post-meta did not verify after restore.',
 				'The target content changed; inspect the side-effect diagnostics before retrying.',
@@ -974,7 +1020,7 @@ trait DiviOps_Agent_Rollback {
 					'intended_checksum' => self::rollback_snapshot_checksum( $restore_content ),
 					'side_effects'      => is_array( $error_data ) ? ( $error_data['side_effects'] ?? null ) : null,
 				]
-			);
+			) );
 		}
 
 		$readback          = get_post( (int) $post->ID );
@@ -983,7 +1029,7 @@ trait DiviOps_Agent_Rollback {
 		$expected_checksum = self::rollback_snapshot_checksum( $restore_content );
 		if ( ! hash_equals( $expected_checksum, $restored_checksum ) ) {
 			self::invalidate_divi_cache( (int) $post->ID );
-			return self::envelope_error(
+			return $respond( self::envelope_error(
 				'readback_failed',
 				'Rollback restore readback checksum did not match after the content write.',
 				'The target content may have changed; inspect checksums before retrying.',
@@ -997,7 +1043,13 @@ trait DiviOps_Agent_Rollback {
 					'expected_checksum' => $expected_checksum,
 					'restored_checksum' => $restored_checksum,
 				]
-			);
+			) );
+		}
+
+		$protection = null !== $point ? self::rollback_snapshot_finish_recovery_point( $point, false ) : null;
+		if ( null !== $protection && empty( $protection['usable'] ) ) {
+			self::invalidate_divi_cache( (int) $post->ID );
+			return self::envelope_error( 'rollback_snapshot.finalization_failed', 'Restore wrote content, but its recovery point did not verify.', null, 500, [ 'snapshot_id' => $snapshot_id, 'committed' => true, 'changed_fields' => [ 'post_content', 'post_meta' ], 'recovery_point' => $protection ] );
 		}
 
 		self::invalidate_divi_cache( (int) $post->ID );
@@ -1008,8 +1060,11 @@ trait DiviOps_Agent_Rollback {
 		$record['restore']['prior_current_checksum'] = $current_checksum;
 		$record['restore']['restored_checksum']      = $restored_checksum;
 		update_option( $option_name, $record, false );
+		if ( $protect_current && ! self::rollback_snapshot_record_persisted( $record ) ) {
+			return $respond( self::envelope_error( 'rollback_snapshot.status_readback_failed', 'Restore wrote content, but its snapshot status did not verify in storage.', null, 500, [ 'snapshot_id' => $snapshot_id, 'committed' => true ] ) );
+		}
 
-		return self::envelope_success( [
+		$data = [
 			'snapshot_id'           => $snapshot_id,
 			'target'                => [ 'kind' => 'post', 'id' => (int) $post->ID, 'post_type' => (string) $post->post_type ],
 			'prior_current_checksum' => $current_checksum,
@@ -1019,6 +1074,51 @@ trait DiviOps_Agent_Rollback {
 			'status'                 => [ 'before' => $summary['status'], 'after' => 'restore_applied', 'restored_at' => $record['restore']['restored_at'] ],
 			'force'                  => [ 'supported' => false, 'used' => false ],
 			'restore_backup'         => [ 'created' => false, 'deferred' => true, 'reason' => 'Strict checksum binding prevents intervening-state overwrite in this MVP.' ],
-		] );
+		];
+		if ( $protect_current ) {
+			unset( $data['readback']['side_effects'] );
+			$data['restore_backup'] = $protection;
+		}
+		return self::envelope_success( $data );
+	}
+
+	private static function rollback_snapshot_record_persisted( array $record ): bool {
+		$stored = get_option( self::rollback_snapshot_option_name( $record['snapshot_id'] ), null );
+		return is_array( $stored ) && self::rollback_snapshot_normalize_nested_value( $stored ) === self::rollback_snapshot_normalize_nested_value( $record );
+	}
+
+	/** Finalize observed state before allowing one strict, unprotected recovery. */
+	private static function rollback_snapshot_finish_recovery_point( array $point, bool $failed ): array {
+		$evidence = [ 'snapshot_id' => $point['snapshot_id'], 'created' => true, 'capture_verified' => true, 'finalized' => false, 'usable' => false, 'before_checksum' => $point['before']['checksum'], 'recovery_attempted' => false, 'recovery_verified' => false ];
+		$post = self::rollback_snapshot_target_post( [ 'target' => $point['target'] ] );
+		if ( ! $post || ! self::can_inspect_post_object( $post ) ) {
+			return $evidence;
+		}
+		$content = (string) $post->post_content;
+		$meta = self::rollback_snapshot_capture_side_effects( (int) $post->ID );
+		$unchanged = $point['before']['value'] === $content && self::rollback_snapshot_side_effects_equal( $point['before']['side_effects'], $meta );
+		$evidence['state_changed'] = ! $unchanged;
+		$point = self::rollback_snapshot_mark_post_write( $point, $failed && $unchanged ? 'aborted_before_write' : 'write_applied', $content );
+		$evidence['after_checksum'] = $point['after']['checksum'];
+		$evidence['finalized'] = self::rollback_snapshot_record_persisted( $point );
+		$evidence['usable'] = $evidence['finalized'] && 'write_applied' === $point['status'];
+		if ( ! $failed || $unchanged || ! $evidence['usable'] ) {
+			return $evidence;
+		}
+		$evidence['recovery_attempted'] = true;
+		$recovery = self::rollback_snapshot_restore_service( $point['snapshot_id'], false, false )->get_data();
+		$readback = get_post( (int) $post->ID );
+		$restored_point = $point;
+		$restored_point['status'] = 'restore_applied';
+		$restored_point['restore']['restored_at'] = $recovery['data']['status']['restored_at'] ?? null;
+		$restored_point['restore']['restored_by'] = [ 'user_id' => self::rollback_snapshot_current_user_id(), 'login' => self::rollback_snapshot_user_login() ];
+		$restored_point['restore']['prior_current_checksum'] = $point['after']['checksum'];
+		$restored_point['restore']['restored_checksum'] = $point['before']['checksum'];
+		$evidence['recovery_verified'] = ! empty( $recovery['ok'] ) && $readback
+			&& $point['before']['value'] === (string) $readback->post_content
+			&& self::rollback_snapshot_side_effects_equal( $point['before']['side_effects'], self::rollback_snapshot_capture_side_effects( (int) $post->ID ) )
+			&& self::rollback_snapshot_record_persisted( $restored_point );
+		$evidence['usable'] = false;
+		return $evidence;
 	}
 }
