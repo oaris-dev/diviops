@@ -3,7 +3,7 @@
  * Plugin Name: DiviOps Agent
  * Plugin URI: https://github.com/oaris-dev/diviops
  * Description: REST API bridge for DiviOps — connects Claude Code to your Divi 5 site for AI-powered page building and design management.
- * Version: 1.5.22
+ * Version: 1.5.23
  * Author: oaris.de
  * Author URI: https://oaris.de
  * Text Domain: diviops-agent
@@ -35,6 +35,7 @@ require_once __DIR__ . '/includes/trait-page.php';
 require_once __DIR__ . '/includes/trait-preset.php';
 require_once __DIR__ . '/includes/trait-render.php';
 require_once __DIR__ . '/includes/trait-rollback.php';
+require_once __DIR__ . '/includes/trait-scf.php';
 require_once __DIR__ . '/includes/trait-seo.php';
 require_once __DIR__ . '/includes/trait-theme-builder.php';
 require_once __DIR__ . '/includes/trait-validate.php';
@@ -61,6 +62,7 @@ class DiviOps_Agent {
 	use DiviOps_Agent_Preset;
 	use DiviOps_Agent_Render;
 	use DiviOps_Agent_Rollback;
+	use DiviOps_Agent_SCF;
 	use DiviOps_Agent_SEO;
 	use DiviOps_Agent_ThemeBuilder;
 	use DiviOps_Agent_Validate;
@@ -70,7 +72,7 @@ class DiviOps_Agent {
 	 * Plugin version — surfaced in /handshake for self-diagnosis only;
 	 * server no longer gates on it (capability map is the gate).
 	 */
-	const VERSION = '1.5.22';
+	const VERSION = '1.5.23';
 
 	/**
 	 * Minimum MCP server version this plugin is compatible with.
@@ -121,6 +123,8 @@ class DiviOps_Agent {
 		'render_preview',
 		// rollback snapshots
 		'rollback_snapshot_delete', 'rollback_snapshot_get', 'rollback_snapshot_list', 'rollback_snapshot_restore',
+		// existing SCF text-value authoring
+		'scf_text_value_update',
 		// semantic SEO metadata
 		'seo_provider_list', 'seo_metadata_get', 'seo_metadata_update',
 		// schema
@@ -670,6 +674,14 @@ class DiviOps_Agent {
 			] );
 			return;
 		}
+
+		register_rest_route( self::REST_NAMESPACE, '/scf/text-value/update', [
+			'methods'             => 'POST',
+			'callback'            => [ __CLASS__, 'scf_text_value_update' ],
+			'permission_callback' => [ __CLASS__, 'check_authenticated_permission' ],
+			// Validate without coercion in the handler; framework diagnostics must
+			// not reflect rejected field values. Omission means preview, never apply.
+		] );
 
 		// ── Read Operations ──────────────────────────────────────────
 

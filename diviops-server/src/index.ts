@@ -3865,6 +3865,30 @@ registerLocalTool(
 
 // ── SCF (Secure Custom Fields / ACF) wrappers ───────────────────────
 //
+// Free REST writer; deliberately separate from the existing CLI schema tools.
+const scfTextValueInput = z.string().min(1).max(4096).regex(/^[^<>\x00-\x1f\x7f]+$/)
+  .refine((value) => value.trim() !== "" && value !== "0" && Buffer.byteLength(value, "utf8") <= 4096,
+    "Expected single-line plain UTF-8 text (1-4096 bytes); whitespace-only and literal 0 are excluded.");
+registerPluginTool(
+  "diviops_scf_text_value_update",
+  {
+    description: "Update one existing applicable top-level SCF text value on an editable post. Free authoring; requires the scf_text_value_update plugin capability and active SCF 6.9.4, not WP-CLI or Pro. Exact expected_value precheck is not atomic CAS. Defaults to dry-run; preview before explicit apply. Single-line plain UTF-8 strings, at most 4096 bytes; empty, whitespace-only, literal 0, markup and control characters excluded in this initial contract. Calls field validation, not full native form-save validation. Provider hooks may transform values or have side effects. One update call with persisted value/reference readback; no snapshot backup, automatic rollback or retry. No definition, Divi binding/design or template writes. Error diagnostics omit values. Returns the standard envelope; stale state is scf.conflict, unchanged persisted state after an attempted change is scf.write_failed, unverified/changed readback is scf.mutation_uncertain.",
+    inputSchema: z.object({
+      post_id: z.number().int().positive(),
+      field_key: z.string().regex(/^field_[A-Za-z0-9_]+$/),
+      expected_value: scfTextValueInput,
+      value: scfTextValueInput,
+      dry_run: z.boolean().default(true),
+    }).strict(),
+    annotations: { idempotentHint: false },
+    _meta: { idempotent: "conditional" },
+  },
+  async (args) => {
+    const result = await wp.requestEnveloped("/scf/text-value/update", { method: "POST", body: args });
+    return { content: [{ type: "text" as const, text: serializeEnvelope(result, "diviops_scf_text_value_update") }] };
+  },
+);
+
 // Typed wrappers over SCF 6.8.4+'s `wp scf json {status,sync,import,export}`
 // CLI family (also reachable as `wp acf json …`). The plugin file at
 // wp-content/plugins/secure-custom-fields/src/CLI/JsonCommand.php is the

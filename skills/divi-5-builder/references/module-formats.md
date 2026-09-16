@@ -380,15 +380,18 @@ or infer a new swipe default from the new UI. Old-dot preservation and explicit
 new-swipe authoring need separate runtime/VB checks; neither was performed for
 this source adoption. Other Slider-family modules are outside this evidence.
 
-## Divi 5.12.1 fixture provenance
+## Divi 5.13 fixture provenance
 
-The cached 89-module fixture is a source-derived refresh, not a live schema
-capture. It follows `schema_get_module` / dump-all's six fields and PHP array
-serialization, using the exact target's static metadata and registration
-defaults, while preserving WordPress boilerplate and the synthetic layout block.
-Separate render/printed defaults are not registry attribute defaults. Locale,
-registration filters, conditional providers and runtime/VB behavior remain
-unverified; earlier version-specific proofs above are not promoted to 5.12.1.
+The cached 89-module fixture is a static source projection for the exact adopted
+Divi 5.13 package, not a live schema capture. Five public module records are
+refreshed from vendor metadata, together with the Divi version and preset-map
+hash. It preserves `schema_get_module` / dump-all's six fields and PHP array
+serialization, existing registration defaults, WordPress boilerplate and the
+registration-only layout block; module inventory and tiers are unchanged.
+Separate render/printed defaults are not registry attribute defaults. This
+projection does not verify locale, registration filters, conditional providers
+or runtime/VB behavior; earlier version-specific proofs above are not promoted
+to 5.13.
 
 <!-- BEGIN GENERATED:header -->
 
@@ -396,7 +399,7 @@ unverified; earlier version-specific proofs above are not promoted to 5.12.1.
 
 > Generated mechanically by `diviops-server/scripts/regen-module-formats.mjs` from `diviops_schema_get_module` dump-all output. Each module block lives between `BEGIN GENERATED:module:divi/<slug>` / `END GENERATED:module:divi/<slug>` HTML-comment sentinels (see `diviops-server/CONTRIBUTING.md` for the full convention). Do **not** edit between sentinels — edits are clobbered on regen.
 
-> Generated against Divi `5.12.1`, schema `f9de6c827de8…`.
+> Generated against Divi `5.13`, schema `4ae1b5c87949…`.
 
 Per CLAUDE.md "Suite architecture coherence": schema dump is the canonical index; VB-verified prose above is the canonical interpretation. The two sections are complementary, not competing — prose explains surprises, this index enumerates paths exhaustively. On conflicts, the prose above wins (per `feedback_vb_first_verification`).
 

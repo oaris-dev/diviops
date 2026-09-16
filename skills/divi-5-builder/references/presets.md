@@ -78,6 +78,20 @@ clean_post_cache($id);
 
 **Attribute-level presets** (`type: "group"`) — stored under `group.*`. Apply to a specific attribute group (font, button, border, etc.). **Shareable across module types.** Referenced in block markup via `groupPreset`.
 
+### HTML ID Ownership (Divi 5.13)
+
+**Source-verified, with bounded Heading runtime verification below:** Divi 5.13 `Module::render()` no longer suppresses preset-sourced custom-attribute rows named `id`. The inspected 5.12.1 source did suppress them; that historical finding remains valid. Repeated modules inheriting the same preset-provided HTML ID can therefore emit duplicate IDs in 5.13, with no per-instance uniqueness repair in this render path.
+
+- Use **classes**, not static HTML IDs, in reusable module/group presets. When an instance needs an ID, author a unique module-local custom-attribute row in `module.decoration.attributes.desktop.value.attributes` with `name: "id"` and `targetElement: "main"`.
+- A local custom-attribute row overrides a preset row with the same `name` and `targetElement` through `ArrayUtility::apply_mergeable_fields_logic()`. This is attribute-row precedence, not a blanket guarantee that every local-ID input wins.
+- The separate CSS-ID field (`module.advanced.htmlAttributes`) is applied earlier. A resolved preset custom-attribute `id` is merged later and can replace that wrapper ID through `AttributeUtils::merge_attribute_values()`. Do not rely on the separate CSS-ID field to override an inherited custom ID.
+
+**Bounded runtime verification (2026-09-14):** On Divi 5.13 / WordPress 7.1 / PHP 8.4.18, the same two Heading modules sharing one nondefault module preset were tested in three states: inherited custom IDs rendered duplicates; unique module-local custom-ID rows rendered distinct IDs; separate CSS-ID fields did not override the inherited custom ID. One completed native VB Save per state preserved WordPress-parsed module attributes and the expected HTTP-rendered IDs before/after. This verifies Divi behavior only: the test used older DiviOps Free 1.5.13 / Pro 1.0.8-beta. Other modules, group-preset configurations, current DiviOps package compatibility, and full Divi 5.13 adoption are not qualified by this test.
+
+### Map Height Defaults (Divi 5.13, source-verified)
+
+Map and Fullwidth Map move the `440px` module-height fallback from default render attributes to default printed-style attributes. Keep intentional preset/local heights at `module.decoration.sizing.desktop.value.height`; do not seed `440px` into every module instance to reproduce the fallback, as that creates an explicit local override. This is default/preset ownership, not a new authoring path or a native VB/runtime verification claim.
+
 ### Storage Format
 
 ```

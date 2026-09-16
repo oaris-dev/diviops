@@ -5,7 +5,7 @@ compatibility: Requires diviops-mcp MCP server connected to a WordPress site wit
 metadata:
   author: oaris-dev
   version: "1.0"
-  divi-version: "5.12.1"
+  divi-version: "5.13"
 ---
 
 # Divi 5 Builder Skill
@@ -34,6 +34,7 @@ Read the right file for the task at hand — don't load everything.
 | CSS effects & WebGL shaders | [design-effects.md](references/design-effects.md) |
 | Mega menus & navigation | [mega-menu-pattern.md](references/mega-menu-pattern.md) |
 | Presets & cleanup | [presets.md](references/presets.md) |
+| Native page or Theme Builder package import and destination setup | [Native portability workflow](references/native-portability.md) (readiness, mechanical handoff, saved-state readback; not package qualification) |
 | Design system setup | [SKILL.md](#design-system-lifecycle) (below) → [presets.md](references/presets.md) |
 | Page templates | [patterns/](references/patterns/) — SaaS landing, more coming |
 

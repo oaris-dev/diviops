@@ -3,7 +3,7 @@ Contributors: diviops
 Tags: divi, mcp, ai, rest-api, site-builder
 Requires at least: 6.5
 Tested up to: 7.1
-Stable tag: 1.5.22
+Stable tag: 1.5.23
 Requires PHP: 7.4
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -67,6 +67,11 @@ All endpoints require WordPress Application Password authentication. Read endpoi
 No. The Free plugin backs the core useful surface. Some higher-leverage workflows and paid coverage slices require Pro plugin handlers. The MCP server checks the plugin capability handshake and only exposes or runs tools supported by the connected site.
 
 == Changelog ==
+
+= 1.5.23 =
+
+* Adds basic Free updates for one existing SCF 6.9.4 top-level text field, with preview by default, expected-state checks and persisted readback.
+* No atomic CAS, SCF snapshot rollback or full native-form equivalence; existing Divi bindings/design are not authored.
 
 = 1.5.22 =
 
@@ -172,6 +177,10 @@ No. The Free plugin backs the core useful surface. Some higher-leverage workflow
 * Keeps `Stable tag` aligned with the plugin header version.
 
 == Upgrade Notice ==
+
+= 1.5.23 =
+
+Adds the basic Free SCF text-value writer for MCP 1.5.52. Requires SCF 6.9.4 and an existing applicable text field. Preview first; restart MCP to refresh capabilities. Expected-state/readback checks are not atomic CAS, rollback or full native-form save.
 
 = 1.5.22 =
 

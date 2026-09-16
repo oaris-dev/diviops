@@ -9,6 +9,11 @@ Policy:
 - Keep entries customer-facing. Avoid internal issue numbers unless they are needed to explain a user-visible change.
 - Do not include secrets, credentials, customer data, or environment-specific URLs.
 
+## 1.5.23
+
+- Adds basic Free updates for one existing SCF 6.9.4 top-level text field, with preview by default, expected-state checks and persisted readback.
+- No atomic CAS, SCF snapshot rollback or full native-form equivalence; existing Divi bindings/design are not authored.
+
 ## 1.5.22
 
 - Shows unloaded optional add-ons as Not active and moves read-only snapshot history after the component overview, collapsed by default with its count visible. Existing per-snapshot metadata, permissions and result limits remain.

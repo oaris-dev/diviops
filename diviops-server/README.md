@@ -8,7 +8,33 @@ The Node.js MCP server inside the DiviOps harness. It gives Claude Code, Codex, 
 Claude Code <-> MCP Server (stdio) <-> WordPress REST API <-> DiviOps Agent plugin
 ```
 
-## 1.5.51 candidate release note
+## 1.5.52 candidate release note
+
+Adds `diviops_scf_text_value_update` for basic Free authoring of one existing
+applicable top-level SCF 6.9.4 text field. It previews by default, requires exact
+expected text, validates the field and verifies persisted value/reference after
+one provider update. Free 1.5.23 supplies the capability-gated REST handler;
+older plugins refuse before dispatch. No Pro or WP-CLI dependency is added.
+Existing Divi bindings/design are not authored by this operation. Expected-state
+checks are not atomic CAS, SCF snapshot rollback or full native-form equivalence.
+
+SCF member 1.2 carries the writer's scope, failure handling and bounded local MCP
+proof, distinct from historical native-editor evidence. That proof used temporary
+Free 1.5.22/MCP 1.5.51, not this candidate pair. The feature remains a source
+candidate until separately validated and published; restart MCP after supported
+updates to refresh capabilities. No dependencies or global compatibility floors change.
+
+Builder companion 1.4.5 carries the accepted Divi 5.13 source-derived schema
+references, Contact Form Show Labels and Map-height ownership guidance, and
+preset custom-ID precedence: use classes in reusable presets and unique
+module-local custom-ID rows, not the separate CSS-ID field as an override.
+It also carries native-portability guidance for importer/file handoffs, explicit
+preset references versus effective defaults, empty-array resets and saved-state
+readback. These are bounded guidance changes, not automatic preset repair,
+cross-version import fidelity or blanket native-save compatibility. The builder
+package version is independent of the SCF member version.
+
+## Previous 1.5.51 candidate release note
 
 Adds `diviops_managed_recovery_plan_check` and
 `diviops_managed_recovery_restore_apply` for an opt-in, reviewed one-site
@@ -197,7 +223,7 @@ The skill enforces the Divi block format, the design system, and the response co
 
 ## Tools at a glance
 
-The server exposes **94 always-on tools** across the categories below. Each category links to representative tools; the full table lives in [server-reference.md](../docs/server-reference.md).
+The server exposes **95 always-on tools** across the categories below. Each category links to representative tools; the full table lives in [server-reference.md](../docs/server-reference.md).
 
 | Category | Use case | Tool prefixes |
 |----------|----------|---------------|
@@ -212,6 +238,17 @@ The server exposes **94 always-on tools** across the categories below. Each cate
 | Render + validate | Preview HTML, validate block markup | `render_preview`, `validate_blocks` |
 | WP-CLI passthrough | Escape hatch for site ops | `meta_wp_cli` |
 | Cache + meta | Connection probe, identity, icons, cache flush | `meta_*` |
+
+Source candidate: `diviops_scf_text_value_update` is a Free REST writer, separate
+from the existing SCF CLI schema tools. It previews by default and updates one
+existing applicable top-level text field on an editable post, with exact expected
+value, SCF 6.9.4 field validation and persisted value/reference readback. It requires
+the precise Free plugin capability, not Pro or WP-CLI. Empty/literal-"0", multiline,
+markup, nested/conditional fields and schema changes are outside its initial
+scope. See the separately supplied DiviOps SCF skill's text-value contract
+for exact inputs and failure semantics. No full native-form equivalence, atomic
+CAS, SCF snapshot backup or automatic rollback/retry. The retained one-field
+local proof does not qualify the new candidate packages or another runtime.
 
 Use `diviops_meta_info` as the S0 preflight before dogfooding or product work. It returns `server_version`, a numeric `tool_count`, a `tools` catalog summary (`registered_total`, always-on count, Pro possible/registered counts by target), `plugins` version records for `diviops-agent`, `diviops-agent-pro`, FluentCart, and FluentCart Pro when available, plus the existing handshake and slice state. In regular npm/stdio sessions, successfully observed plugin, module, capability, and registered-tool fields are the immutable handshake snapshot that built the session catalog. The additive `startup_capture` record supplies its non-secret timestamp, exact covered evidence, independent-component compatibility rule, and deterministic reconnect guidance. A failed handshake instead reports `startup_unavailable`, a bounded `startup_handshake_failed` reason class, and no covered target evidence. After a supported plugin, theme, or target change, reconnect or restart MCP before treating `meta_info`, the registered tools, or capability gates as current. Live read tools such as `diviops_fc_status` remain separate current observations; they do not rewrite startup registry truth.
 
