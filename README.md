@@ -1,50 +1,68 @@
 # DiviOps
 
-**An AI harness for WordPress site authoring — Divi-native today, WordPress-wide by design.**
+**An AI harness and MCP server for WordPress. Divi-native today, WordPress-wide by design.**
 
 [![npm](https://img.shields.io/npm/v/@diviops/mcp-server.svg?label=%40diviops%2Fmcp-server)](https://www.npmjs.com/package/@diviops/mcp-server)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Divi 5](https://img.shields.io/badge/Divi-5.1.0%2B-7E3DD3.svg)](https://www.elegantthemes.com/gallery/divi/)
 
-DiviOps gives Claude Code, Codex, Claude Desktop, and other MCP clients a typed control layer over WordPress site state. It pairs an MCP server, the DiviOps Agent WordPress plugin, and skill knowledge so AI agents can author Divi pages, inspect schemas, manage design tokens, work with SCF/CPT data models, run safe WP-CLI operations, and extend into target plugin coverage slices.
+Plan, build and improve your WordPress site with **OpenAI Codex or Claude Code**. DiviOps connects your AI client to supported WordPress and Divi operations through an MCP server, WordPress plugins and practical authoring skills. Claude Desktop and other MCP clients can also connect; skill loading depends on the client.
+
+Bring your audience, page goals and design references into your AI client's project context. Use DiviOps to inspect the site, build a focused draft and validate the result. Native Divi pages remain editable in the Visual Builder.
+
+**[Get started](#quick-start)** · [Explore features](https://diviops.com/features/) · [See real use cases](https://diviops.com/use-cases/)
+
+> **Public beta.** DiviOps is under active development. Start on a development or staging site, keep backups and review changes before publishing.
+
+```text
+Project context + authoring skills
+                |
+                v
+   Codex / Claude Code / MCP client
+                ↕
+   DiviOps MCP server (stdio)
+                ↕
+       WordPress REST API
+                ↕
+   DiviOps Agent WordPress plugin
+```
+
+Tool requests and results travel between the client and WordPress. Project files and skills belong to the client workflow; updating the WordPress plugin does not install them.
 
 Divi is a registered trademark of Elegant Themes, Inc. DiviOps Agent is not affiliated with or endorsed by Elegant Themes.
 
-```
-Claude Code ◄──► MCP Server (stdio) ◄──► WordPress REST API ◄──► DiviOps Agent plugin
-                                                ▲
-                                                │
-                                       divi-5-builder skill
-                                       (block format + design rules)
-```
+## What you can build
 
-> **Beta software.** DiviOps is under active development. Use on production sites at your own discretion. Always back up your WordPress site before running write operations.
+| Workflow | See it in practice |
+|---|---|
+| Build and refine editable Divi pages from a brief or design reference | [Figma design to native Divi](https://diviops.com/figma-design-to-editable-divi-page/) |
+| Reuse presets and design context when improving an existing page | [Focused page refinement](https://diviops.com/improve-existing-divi-page-with-ai/) |
+| Create navigation with native Divi modules and review its responsive behavior | [Our Divi 5 mega menu](https://diviops.com/divi-5-mega-menu-ai/) |
+| Connect structured content to layouts with supported SCF tools, loops and dynamic bindings | [Staff-directory workflow](https://diviops.com/build-a-wordpress-staff-directory-with-ai-and-divi/) |
+| Bring external research into the same AI workflow as WordPress content updates | [SEO insights to page improvements](https://diviops.com/seo-insights-wordpress-ai/) |
 
-## What's in this distribution
+Each example explains the implementation and review steps. External research services and target plugins are separate requirements where used.
 
-| Component | What it is | Where it lives |
+[![Published DiviOps desktop navigation with the Use Cases mega menu open](https://diviops.com/wp-content/uploads/2026/09/megamenu-desktop.jpg)](https://diviops.com/divi-5-mega-menu-ai/)
+
+*Real result: the DiviOps navigation, built with native Divi modules plus scoped CSS and a small behavior helper. [Read the build and review process](https://diviops.com/divi-5-mega-menu-ai/).*
+
+## What's in this Free distribution
+
+| Component | Role | Where to find it |
 |---|---|---|
-| **DiviOps Agent** WordPress plugin | REST API endpoints for Divi page data, section targeting, block validation, preset management. The contract layer between WordPress + Divi and the MCP server. | `diviops-agent.zip` at repo root |
-| **`diviops-agent-pro`** WordPress plugin | Pro add-on for paid coverage slices, Pro license activation, and update gating. Requires `diviops-agent`. | `diviops-agent-pro.zip` at repo root in the Pro distribution |
-| **`@diviops/mcp-server`** | Node.js MCP server that bridges MCP clients to WordPress. Distributed via npm — no clone, no build. | `npx -y --package @diviops/mcp-server diviops-mcp` |
-| **`divi-5-builder`** skill | Block format rules, verified attribute paths, design patterns. Without it, agents guess attr formats and produce broken pages. | `skills/divi-5-builder/` (Claude: add marketplace `oaris-dev/diviops`, then install `divi-5-builder@diviops`; Codex: copy `skills/*` into `~/.codex/skills`) |
-| **`diviops-design-library`** plugin | Optional. CSS entrance animations, gradient text, glass effects, Three.js WebGL shaders. | `diviops-design-library.zip` at repo root |
+| **DiviOps Agent** WordPress plugin | WordPress-side tools for supported Divi page operations, validation, presets and other site operations | `diviops-agent.zip` at the repo root |
+| **`@diviops/mcp-server`** | Connects MCP clients to the WordPress plugin | `npx -y --package @diviops/mcp-server diviops-mcp` |
+| **`divi-5-builder`** Free skill | Native block formats, Tier 1 attribute guidance, design patterns and tool references | `skills/divi-5-builder/`; see [skill installation](#4-load-the-divi-5-builder-skill) |
+| **`diviops`** harness primer | Shared conventions for the connected agent workflow | `skills/diviops/` |
+| **`diviops-design-library`** plugin | Optional visual effects, including CSS animations, gradients, glass effects and Three.js shaders | `diviops-design-library.zip` at the repo root |
+
+Core SCF MCP tools are Free. Pro adds extended Divi guidance, the deeper SCF skill guide and supported paid workflows through the separate Pro plugin. **Pro packages are not included in this public Free repository.** See [Free vs Pro](#free-vs-pro) or [compare plans](https://diviops.com/pricing/).
 
 The WordPress plugin, npm MCP server, and client-side skill are three independent
 components. WordPress and npm updates do not install or refresh a manually copied
 skill. A working MCP tool call proves connectivity only; native Divi authoring also
 requires a current `divi-5-builder` skill in the active client session.
-
-## Use cases
-
-DiviOps fits multiple WordPress workflows where AI-driven authoring + management is the value:
-
-- **Page building (Divi authoring)** — create + edit Divi pages, sections, modules, canvases via prompt; preset-driven design system reuse; Theme Builder layouts and templates.
-- **SCF setup + management** — provision Secure Custom Fields field groups, sync schemas, export/import field group definitions; SCF data model becomes a tool surface, not an admin-UI flow.
-- **CPT + post population** — register custom post types via wp-cli passthrough; bulk-populate posts and pages across any post type, not just Divi-built ones.
-- **Data model reasoning** — schema introspection across Divi modules + SCF field groups + post meta; ask Claude what fields a post type carries, what attributes a module accepts, what tokens are defined.
-- **WordPress site auditing** — preset audits, design-token usage scans, orphan detection (presets, variables, dangling references); broader site surveys via wp-cli (`wp option list`, `wp post list --format=json`, `wp user list`).
-- **Hybrid sites (Divi + custom PHP)** — Divi authors the marketing pages; custom PHP templates handle dynamic ones (CPT listings, single-post views, member portals); design tokens harmonized across both surfaces via CSS custom properties driven from the Divi variable system.
 
 ## Quick start
 
@@ -158,7 +176,7 @@ fields are not acceptable fallbacks.
 
 > **You:** Create a hero section on a new page called "Spring Launch" with a heading, subheading, and a CTA button. Use my brand colors.
 
-Claude orchestrates a few tool calls in sequence:
+Your AI client can orchestrate a sequence such as:
 
 1. `diviops_global_color_list` — discovers your brand palette.
 2. `diviops_template_list` / `diviops_template_get` — pulls a verified hero template that matches the request.
@@ -167,11 +185,11 @@ Claude orchestrates a few tool calls in sequence:
 5. `diviops_validate_blocks` with the saved `page_id` — verifies persisted readback.
 6. `diviops_render_preview` — returns the rendered HTML so you can verify before publishing.
 
-The skill enforces the Divi block format, the design system, and the response contract throughout — you stay at the prompt level.
+The skill guides native Divi authoring. Validate the saved content and review the rendered result before publication.
 
 ## Tools at a glance
 
-The suite exposes **74 tools** across the categories below. Per-tool descriptions, request shapes, and response payloads live in the server [README](diviops-server/README.md).
+The suite exposes tools across the categories below. Available tools depend on installed components and the capability handshake. Per-tool descriptions, request shapes, and response payloads live in the server [README](diviops-server/README.md).
 
 | Category | Use case | Tool prefixes |
 |---|---|---|
@@ -252,14 +270,14 @@ A license activation represents one active WordPress environment where DiviOps P
 
 ### Current and future Pro coverage
 
-The harness is designed to grow through **per-target execution coverage slices** — skill knowledge + MCP tools + plugin handlers bundled per target plugin. A per-tool capability handshake at MCP server startup queries the WP plugin for installed capabilities and applies two distinct gating modes: tools whose backing Pro plugin is **not installed** on the site are omitted from the MCP server's exposed tool list entirely (Claude never sees them); tools whose backing Pro plugin is installed but does **not advertise the required capability** fail with a clear `capability_missing` error rather than silent breakage. Server and plugin component versions remain independent. Current and planned slices:
+The harness is designed to grow through **per-target execution coverage slices** — skill knowledge + MCP tools + plugin handlers bundled per target plugin. A per-tool capability handshake at MCP server startup queries the WP plugin for installed capabilities and applies two distinct gating modes: tools whose backing Pro plugin is **not installed** on the site are omitted from the MCP server's exposed tool list entirely (the AI client never sees them); tools whose backing Pro plugin is installed but does **not advertise the required capability** fail with a clear `capability_missing` error rather than silent breakage. Server and plugin component versions remain independent. Current and planned slices:
 
 - **Current — FluentCart Pro pilot.** Product, variation, license-settings, gateway readiness, order, transaction, license, and activation readback tools (`diviops_fc_*`) backed by the `diviops-fluentcart/` skill slice and Pro-plugin handlers in `diviops-agent-pro`. Sequencing reflects the project's own commerce dogfooding on `diviops.com`.
-- **Future slices.** Additional target plugin slices such as Bit Forms Pro, Bit Flows Pro, and deeper Gutenberg interop. Each slice ships as its own `diviops-<target>/` skill plus dedicated handlers, following the same per-target-slice packaging shape.
+- **Future coverage.** See the [public roadmap](https://diviops.com/roadmap/) for areas being explored. Planned integrations are not included in the current package, and their scope and order may change.
 
 **MCP tools always ship in the free MCP package.** What separates Free from Pro on a coverage slice is the *curated skill knowledge* and the *Pro-plugin handlers that back the tools*; the dispatch surface itself is universal. A Free-tier user on a site without the Pro plugin installed simply doesn't see Pro-only tools — they're gated by the per-tool capability handshake, not feature-flagged in the MCP server.
 
-Pro upgrade: <https://diviops.com>
+Explore [DiviOps Pro](https://diviops.com/diviops-pro/) and [compare plans](https://diviops.com/pricing/). For a concrete Pro example, see the [toy-shop product campaign](https://diviops.com/ai-product-campaign-divi-fluentcart/), which requires the relevant commerce plugins.
 
 ## Requirements
 
