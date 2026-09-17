@@ -9,6 +9,11 @@ Policy:
 - Keep entries customer-facing. Avoid internal issue numbers unless they are needed to explain a user-visible change.
 - Do not include secrets, credentials, customer data, or environment-specific URLs.
 
+## 1.5.24
+
+- Corrects the Setup Guide book icon's vertical alignment in the DiviOps dashboard on WordPress 7.1.
+- Presentation only; existing behavior and compatibility requirements remain unchanged.
+
 ## 1.5.23
 
 - Adds basic Free updates for one existing SCF 6.9.4 top-level text field, with preview by default, expected-state checks and persisted readback.

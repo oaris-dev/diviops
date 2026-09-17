@@ -53,6 +53,8 @@
 .diviops-admin .button-primary:hover { background: #2943d5; border-color: #2943d5; color: var(--diviops-primary-foreground); }
 .diviops-admin .button.delete { color: #9b252a; }
 .diviops-admin .dashicons { flex-shrink: 0; }
+/* Override core button line-height so flex centers the glyph inside its 20px box. */
+.wp-core-ui .diviops-admin .button .dashicons { line-height: 1; }
 .diviops-admin .diviops-header { padding: 18px 28px; display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; border-bottom: 1px solid var(--diviops-border); }
 .diviops-admin .diviops-brand { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .diviops-admin .diviops-brand img { display: block; width: 166px; max-width: 100%; height: auto; }
