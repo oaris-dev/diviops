@@ -76,11 +76,11 @@ Upload **`diviops-agent.zip`** (at the root of this repo) via **WP Admin → Plu
 
 Verify: visit `http://your-site.local/wp-json/diviops/v1/schema/settings` — you should get a 401 (auth required).
 
-**Free plugin updates:** the npm MCP server updates through npm. Once the Free WordPress plugin is published on WordPress.org, WordPress delivers plugin updates through the normal **Dashboard → Updates** and **Plugins** screens. For pre-listing test packages or a manual fallback install, replace `diviops-agent.zip` through **Plugins → Add New → Upload Plugin** and choose **Replace current with uploaded**. Your Application Password and MCP config stay unchanged.
+**Free plugin updates:** the npm MCP server updates through npm. [DiviOps Agent is available on WordPress.org](https://wordpress.org/plugins/diviops-agent/), with plugin updates delivered through the normal **Dashboard → Updates** and **Plugins** screens. For a manual fallback install, replace `diviops-agent.zip` through **Plugins → Add New → Upload Plugin** and choose **Replace current with uploaded**. Your Application Password and MCP config stay unchanged.
 
 **Purchased Pro:** upload and activate **`diviops-agent-pro.zip`** after the Free plugin, then open **DiviOps → Pro License** and activate your license key. Pro runtime coverage requires the Pro plugin; license activation gates updates and support.
 
-**WordPress.org metadata:** `diviops-agent.zip` includes the plugin-local `readme.txt`, `changelog.txt`, and asset-plan notes so the Free plugin stays WordPress.org-ready at the metadata level. WordPress.org-distributed installs use the standard WordPress.org plugin update flow; upload-based replacement remains a fallback for pre-listing test packages and environments that intentionally install from the public dist repo. A future submission still needs SVN trunk/tags state plus final production banner, icon, and screenshot assets.
+**WordPress.org distribution:** `diviops-agent.zip` includes the plugin-local `readme.txt` and `changelog.txt`. WordPress.org installs use the standard plugin update flow; upload-based replacement remains a fallback for environments that intentionally install from the public distribution repository. Directory banners, icons and screenshots are maintained separately from installed runtime assets.
 
 ### 2. Create an Application Password
 
