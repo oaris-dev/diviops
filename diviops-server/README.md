@@ -8,7 +8,17 @@ The Node.js MCP server inside the DiviOps harness. It gives Claude Code, Codex, 
 Claude Code <-> MCP Server (stdio) <-> WordPress REST API <-> DiviOps Agent plugin
 ```
 
-## 1.5.52 candidate release note
+## 1.5.53 candidate release note
+
+The only MCP change is an inspector tool-description clarification: direct variable
+references and partial coverage are now explicit. No new tools or input-schema,
+runtime, dependency or compatibility-floor changes are included. This is source
+candidate preparation, not package validation or publication.
+
+Independent builder companion 1.4.6 carries already-merged guidance for native
+megamenu authoring, explicit local override/null semantics and implicit group defaults.
+
+## Previous 1.5.52 candidate release note
 
 Adds `diviops_scf_text_value_update` for basic Free authoring of one existing
 applicable top-level SCF 6.9.4 text field. It previews by default, requires exact

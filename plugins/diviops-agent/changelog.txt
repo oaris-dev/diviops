@@ -9,6 +9,12 @@ Policy:
 - Keep entries customer-facing. Avoid internal issue numbers unless they are needed to explain a user-visible change.
 - Do not include secrets, credentials, customer data, or environment-specific URLs.
 
+## 1.5.25
+
+- Adds a read-only Design System dashboard for existing presets, variables and sampled consumers, with explicit partial coverage and unresolved references.
+- Exposes direct variable-reference IDs in preset inspection; zero references do not mean safe to delete, and stored settings are not computed styles.
+- Accounts for supported preset-provided container layout settings in validation warnings, preserving inline precedence and unresolved-reference warnings. Write behavior and compatibility requirements are unchanged.
+
 ## 1.5.24
 
 - Corrects the Setup Guide book icon's vertical alignment in the DiviOps dashboard on WordPress 7.1.

@@ -3,20 +3,45 @@ Contributors: diviops
 Tags: divi, mcp, ai, rest-api, site-builder
 Requires at least: 6.5
 Tested up to: 7.1
-Stable tag: 1.5.24
+Stable tag: 1.5.25
 Requires PHP: 7.4
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
-REST bridge for the DiviOps MCP server, so AI clients can work with Divi-powered WordPress sites.
+Connect Codex or Claude to WordPress through MCP. Build and improve editable Divi 5 pages with the DiviOps AI harness.
 
 == Description ==
 
-DiviOps Agent is the WordPress-side companion plugin for DiviOps, an AI harness for WordPress site authoring. It exposes authenticated `/diviops/v1/*` REST endpoints that the `@diviops/mcp-server` package can use from Claude Code, Codex, Claude Desktop, and other MCP clients.
+Work on your WordPress website with Codex, Claude Code, Claude Desktop or another compatible MCP client. DiviOps Agent connects the DiviOps AI harness to your site, so your agent can inspect existing content and help build and improve native, editable Divi 5 pages.
 
-The Free plugin is useful on its own as the core REST bridge for Divi 5 page authoring, schema inspection, block validation, design-token management, preset audits, and safe read-only diagnostics. Pro adds paid workflow leverage, including advanced cross-environment apply flows, deeper paid coverage slices, Pro plugin handlers, license/update handling, and higher-support agency or studio workflows. Not every current or future MCP tool is guaranteed to be backed by the Free plugin; tools are advertised through the DiviOps capability handshake for the plugins installed on the connected site.
+DiviOps is in public beta. It targets Divi 5 today, with WordPress as the wider foundation. Your agent works in its own client; this plugin provides the authenticated WordPress REST bridge.
 
-This plugin is not intended to be used as a standalone admin UI. Install and activate the WordPress plugin, create a WordPress Application Password, then configure the DiviOps MCP server for your AI client.
+= What you can do with Free =
+
+* Build and update native Divi page content that remains editable in the Visual Builder.
+* Inspect module schemas and validate block structures before applying supported changes.
+* Inspect and manage supported Divi presets and design variables, including preset audits.
+* Work with supported Divi Library and Theme Builder operations.
+* Inspect site capabilities and diagnose the connected setup.
+* Inspect saved layout snapshots and use supported guarded restore operations. These are not full-site backups.
+
+Available operations depend on your installed versions, WordPress permissions and the capabilities reported by the connected site. A successful structural check does not replace a visual review.
+
+= Bring your project context =
+
+Keep your audience, page goals, design references and review steps in your AI client's project documentation. Use the DiviOps authoring skills alongside that context to guide repeatable workflows. The WordPress plugin does not store or manage those client-side documents.
+
+= How the pieces fit together =
+
+Your AI client runs the separately installed DiviOps MCP server. That server connects to this plugin using a WordPress Application Password. The plugin's WordPress dashboard shows installed components and supported status information; it is not an AI chat interface or proof of an active MCP connection.
+
+Start with a staging site, ask the agent to inspect before editing, and review the result before publishing.
+
+[Setup documentation](https://diviops.com/docs/) | [Real workflows](https://diviops.com/use-cases/)
+
+= Free and optional Pro =
+
+This listing distributes the Free WordPress plugin. Selected advanced workflows, including supported cross-environment apply operations, require separate Pro components. Installing this plugin does not enable every DiviOps tool. The capability handshake identifies what the connected site supports.
 
 Divi is a registered trademark of Elegant Themes, Inc. DiviOps Agent is not affiliated with or endorsed by Elegant Themes.
 
@@ -40,23 +65,31 @@ The plugin does not add analytics or tracking. It exposes authenticated REST end
 
 == Installation ==
 
-1. Upload `diviops-agent.zip` through **Plugins > Add New > Upload Plugin**.
-2. Activate **DiviOps Agent**.
-3. Confirm Divi 5 is active on the site.
-4. Create a WordPress Application Password from **Users > Profile > Application Passwords**.
-5. Configure the DiviOps MCP server for your AI client with your site URL, WordPress username, and Application Password.
+1. Install **DiviOps Agent** from **Plugins > Add New**, or upload `diviops-agent.zip`.
+2. Activate **DiviOps Agent** and confirm Divi 5 is active on the site.
+3. Create a WordPress Application Password from **Users > Profile > Application Passwords**.
+4. Configure the separately installed DiviOps MCP server in your compatible AI client with your site URL, WordPress username and Application Password.
+5. Follow the setup guide to add the DiviOps authoring skills where supported, then ask your agent to inspect the site's capabilities before editing.
 
-For full setup instructions, see the DiviOps setup guide in the distribution package.
+See the [DiviOps setup guide](https://diviops.com/docs/) for client configuration and connection checks.
 
 == Frequently Asked Questions ==
 
+= Can I use Codex or Claude? =
+
+Yes. The DiviOps MCP server connects compatible clients including Codex, Claude Code and Claude Desktop to this plugin. Client configuration and client access are separate from the WordPress plugin.
+
 = Does this plugin work without the MCP server? =
 
-No. DiviOps Agent is the WordPress REST bridge. The MCP server is the client-facing layer that exposes tools to Claude Code, Codex, Claude Desktop, and other MCP clients.
+The plugin can be installed and its dashboard inspected independently, but the AI workflow requires the separately installed MCP server and a compatible AI client.
 
 = Does this plugin require Divi? =
 
 Yes. DiviOps Agent targets Divi 5 today. Authenticated requests return a `divi_unavailable` error when Divi is not active.
+
+= Can I still edit the result in Divi? =
+
+Native Divi modules remain editable in the Visual Builder. Review your agent's output on staging, including responsive layouts, before publishing.
 
 = How are permissions handled? =
 
@@ -64,9 +97,20 @@ All endpoints require WordPress Application Password authentication. Read endpoi
 
 = Is every DiviOps MCP tool included in this Free plugin? =
 
-No. The Free plugin backs the core useful surface. Some higher-leverage workflows and paid coverage slices require Pro plugin handlers. The MCP server checks the plugin capability handshake and only exposes or runs tools supported by the connected site.
+No. Free includes the core site-authoring bridge described above. Selected advanced workflows require separate Pro components. The MCP server checks the capability handshake for the connected site.
+
+== Screenshots ==
+
+1. DiviOps Agent Free dashboard showing installed components, rate limits and setup information. Optional add-ons are not active in this capture.
+2. An agent-authored page open in the Divi 5 Visual Builder, with the native Heading module content controls available for continued editing. Divi is a separate required product.
 
 == Changelog ==
+
+= 1.5.25 =
+
+* Adds a read-only Design System dashboard for existing presets, variables and sampled consumers, with explicit partial coverage and unresolved references.
+* Exposes direct variable-reference IDs in preset inspection. Zero references do not mean safe to delete; stored settings are not computed styles.
+* Accounts for supported preset-provided container layout settings in validation warnings, preserving inline precedence and unresolved-reference warnings. Write behavior and compatibility requirements are unchanged.
 
 = 1.5.24 =
 
@@ -182,6 +226,10 @@ No. The Free plugin backs the core useful surface. Some higher-leverage workflow
 * Keeps `Stable tag` aligned with the plugin header version.
 
 == Upgrade Notice ==
+
+= 1.5.25 =
+
+Adds read-only design-system inspection and preset-aware layout warnings. Usage coverage is partial, not deletion approval or computed styles. Existing write behavior and compatibility requirements remain unchanged.
 
 = 1.5.24 =
 

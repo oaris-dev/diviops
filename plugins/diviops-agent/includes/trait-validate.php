@@ -128,10 +128,9 @@ trait DiviOps_Agent_Validate {
 
 				// Missing layout display on containers — skip if flex properties imply it.
 				if ( in_array( $name, $container_types, true ) ) {
-					$layout  = self::get_nested_array_value( $attrs, [ 'module', 'decoration', 'layout', 'desktop', 'value' ], [] );
-					$layout  = is_array( $layout ) ? $layout : [];
+					$layout  = self::validate_container_layout_value( $name, $attrs, $index, $warnings );
 					$display = $layout['display'] ?? null;
-					if ( null === $display ) {
+					if ( null !== $layout && null === $display ) {
 						$has_flex = isset( $layout['flexWrap'] ) || isset( $layout['flexDirection'] )
 							|| isset( $layout['justifyContent'] ) || isset( $layout['alignItems'] )
 							|| isset( $layout['alignContent'] ) || isset( $layout['flexType'] )
@@ -608,6 +607,106 @@ trait DiviOps_Agent_Validate {
 
 		if ( $owns_nav_refs ) {
 			self::validate_nav_aria_references( $nav_refs, $warnings );
+		}
+	}
+
+	/** Resolve only this warning's layout value; never replace the authored attrs. */
+	private static function validate_container_layout_value( string $name, array $attrs, int $index, array &$warnings ): ?array {
+		$path         = [ 'module', 'decoration', 'layout', 'desktop', 'value' ];
+		$inline       = self::get_nested_array_value( $attrs, $path, [] );
+		$inline       = is_array( $inline ) ? $inline : [];
+		$has_refs     = ! empty( $attrs['modulePreset'] ) || ! empty( $attrs['groupPreset'] );
+		$preset_class = '\\ET\\Builder\\Packages\\GlobalData\\GlobalPreset';
+		$utils_class  = '\\ET\\Builder\\Packages\\ModuleUtils\\ModuleUtils';
+
+		if ( ! $has_refs && isset( $inline['display'] ) ) {
+			return $inline;
+		}
+
+		$warning = [
+			'block' => $name,
+			'index' => $index,
+			'code' => 'preset_layout_resolution_unavailable',
+			'message' => 'Container preset layout could not be resolved; a missing display declaration cannot be determined.',
+			'path' => 'module.decoration.layout.desktop.value.display',
+		];
+		$available = is_callable( [ $utils_class, 'maybe_convert_preset_module_name' ] );
+		foreach ( [ 'get_data', 'normalize_preset_stack', 'get_selected_group_presets', 'get_merged_attrs' ] as $method ) {
+			$available = $available && is_callable( [ $preset_class, $method ] );
+		}
+		if ( ! $available ) {
+			if ( ! $has_refs ) return $inline;
+			$warnings[] = $warning;
+			return null;
+		}
+
+		try {
+			$data        = $preset_class::get_data();
+			$module_name = $utils_class::maybe_convert_preset_module_name( $name, $attrs );
+			$ids         = $preset_class::normalize_preset_stack( $attrs['modulePreset'] ?? '' );
+			if ( empty( $ids ) && ! empty( $data['module'][ $module_name ]['default'] ) ) {
+				$ids = [ $data['module'][ $module_name ]['default'] ];
+			}
+			// The merge API silently skips dangling module IDs; do not call that absence proven.
+			foreach ( $ids as $id ) {
+				if ( ! isset( $data['module'][ $module_name ]['items'][ $id ] ) ) {
+					$warning['code'] = 'preset_layout_reference_missing';
+					$warning['message'] = 'Container references a missing module preset; preset layout could not be resolved.';
+					$warning['path'] = 'modulePreset';
+					$warnings[] = $warning;
+					return null;
+				}
+			}
+			$args = [ 'moduleName' => $name, 'moduleAttrs' => $attrs, 'allData' => $data ];
+			foreach ( $preset_class::get_selected_group_presets( $args ) as $item ) {
+				if ( $item->is_exist() ) continue;
+				// Missing native items discard asDefault and data (including groupName).
+				// Nested identity cannot be recovered from the usage group ID alone.
+				if ( $item->is_nested() ) {
+					$warnings[] = $warning;
+					return null;
+				}
+				$group_id = $item->get_group_id();
+				$binding  = $attrs['groupPreset'][ $group_id ] ?? null;
+				if ( null === $binding ) {
+					$registration = '\\ET\\Builder\\Packages\\ModuleLibrary\\ModuleRegistration';
+					if ( ! is_callable( [ $registration, 'get_module_settings' ] ) || ! is_callable( [ $preset_class, 'get_group_preset_default_attr' ] ) ) {
+						$warnings[] = $warning;
+						return null;
+					}
+					$config   = $registration::get_module_settings( $name );
+					$defaults = $config ? $preset_class::get_group_preset_default_attr( $config ) : [];
+					$binding  = $defaults[ $group_id ] ?? [];
+				}
+				$group_name = $binding['groupName'] ?? '';
+				if ( ! is_string( $group_name ) || '' === $group_name ) {
+					$warnings[] = $warning;
+					return null;
+				}
+				$group_ids = $preset_class::normalize_preset_stack( $binding['presetId'] ?? '' );
+				if ( empty( $group_ids ) && ! empty( $data['group'][ $group_name ]['default'] ) ) {
+					$group_ids = [ $data['group'][ $group_name ]['default'] ];
+				}
+				// No configured default is normal. Existing IDs also cover the vendor's
+				// extra empty groupId placeholder alongside valid stacked selections.
+				foreach ( $group_ids as $id ) {
+					if ( ! isset( $data['group'][ $group_name ]['items'][ $id ] ) ) {
+						$warning['code'] = 'preset_layout_reference_missing';
+						$warning['message'] = 'Container references a missing group preset; preset layout could not be resolved.';
+						$warning['path'] = 'groupPreset';
+						$warnings[] = $warning;
+						return null;
+					}
+				}
+			}
+			// Divi owns priority, nested group/slot mapping and renderAttrs precedence;
+			// its normal merge applies module attrs last (not presetOnly mode).
+			$resolved = $preset_class::get_merged_attrs( $args );
+			$layout   = self::get_nested_array_value( $resolved, $path, [] );
+			return is_array( $layout ) ? $layout : [];
+		} catch ( \Throwable $e ) {
+			$warnings[] = $warning;
+			return null;
 		}
 	}
 

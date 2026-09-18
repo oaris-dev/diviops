@@ -326,6 +326,11 @@ trait DiviOps_Agent_Preset {
 		$chain        = self::collect_group_chain_refs( $d5 );
 		$chain_ids    = $chain['referenced_by'][ $preset_id ] ?? [];
 		$warnings     = self::preset_scope_warnings( $preset );
+		$variable_ids = [];
+		$local_ids    = [];
+		foreach ( [ 'attrs', 'styleAttrs', 'renderAttrs' ] as $bag ) {
+			self::walk_value_for_variable_refs( $preset[ $bag ] ?? [], $variable_ids, $local_ids );
+		}
 		$noncanonical = array_filter( $occurrences, static fn( $o ) => 'd5_top_level' !== $o['provenance'] );
 		if ( count( $occurrences ) > 1 && ! empty( $noncanonical ) ) {
 			$warnings[] = [
@@ -351,6 +356,19 @@ trait DiviOps_Agent_Preset {
 			'styleAttrs'  => isset( $preset['styleAttrs'] ) ? (object) $preset['styleAttrs'] : null,
 			'renderAttrs' => isset( $preset['renderAttrs'] ) ? (object) $preset['renderAttrs'] : null,
 			'storage' => [ 'path' => $source['path'], 'provenance' => $source['provenance'], 'occurrences' => $occurrences ],
+			'variable_references' => [
+				'ids' => array_keys( $variable_ids ),
+				'coverage' => 'Direct gvid-/gcid- names in $variable-marked strings in attrs, styleAttrs and renderAttrs only. No inherited, transitive, font-ID or computed-value resolution. Join IDs to variable_list; absent IDs are unresolved.',
+			],
+			'coverage' => [
+				'status' => 'partial',
+				'block_scan' => $page_refs['scan'],
+				'blocks' => 'Explicit modulePreset/groupPreset references in page/post post_content with publish, draft or private status; targeted ID prefilter then block parsing.',
+				'preset_chains' => 'Stored groupPresets / attrs.groupPreset bindings in D5 module and group registry candidates.',
+				'excluded' => [ 'custom post types', 'library', 'Theme Builder', 'post meta', 'implicit defaults', 'inherited or computed usage' ],
+				'sample_limit' => 10,
+				'zero_references' => 'No references found within this coverage does not mean safe to delete.',
+			],
 			'references' => [
 				'total'            => $page_refs['count'] + ( $chain['counts'][ $preset_id ] ?? 0 ),
 				'block_ref_count'  => $page_refs['count'],
@@ -428,6 +446,7 @@ trait DiviOps_Agent_Preset {
 	private static function collect_preset_consumer_samples( string $preset_id ): array {
 		global $wpdb;
 		$post_ids = [];
+		$scan = 'unavailable';
 		if ( is_object( $wpdb ?? null ) && method_exists( $wpdb, 'get_col' ) && method_exists( $wpdb, 'prepare' ) && method_exists( $wpdb, 'esc_like' ) && ! empty( $wpdb->posts ) ) {
 			// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Table name is WordPress-owned; the preset UUID LIKE value is prepared immediately below.
 			$query = $wpdb->prepare(
@@ -437,9 +456,10 @@ trait DiviOps_Agent_Preset {
 			// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 			// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared, WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Prepared above; this targeted prefilter avoids loading every post before structural block parsing.
 			$post_ids = $wpdb->get_col( $query );
+			$scan = is_array( $post_ids ) && empty( $wpdb->last_error ) ? 'complete_within_scope' : 'unavailable';
 		}
 		if ( empty( $post_ids ) ) {
-			return [ 'count' => 0, 'samples' => [] ];
+			return [ 'count' => 0, 'samples' => [], 'scan' => $scan ];
 		}
 		$count = 0;
 		$samples = [];
@@ -460,7 +480,7 @@ trait DiviOps_Agent_Preset {
 				}
 			}
 		}
-		return [ 'count' => $count, 'samples' => array_slice( $samples, 0, 10 ) ];
+		return [ 'count' => $count, 'samples' => array_slice( $samples, 0, 10 ), 'scan' => $scan ];
 	}
 
 	private static function walk_blocks_for_preset_consumer( array $blocks, string $preset_id, $post, int &$count, array &$samples ): void {

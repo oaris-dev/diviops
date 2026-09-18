@@ -3,7 +3,7 @@
  * Plugin Name: DiviOps Agent
  * Plugin URI: https://github.com/oaris-dev/diviops
  * Description: REST API bridge for DiviOps — connects Claude Code to your Divi 5 site for AI-powered page building and design management.
- * Version: 1.5.24
+ * Version: 1.5.25
  * Author: oaris.de
  * Author URI: https://oaris.de
  * Text Domain: diviops-agent
@@ -72,7 +72,7 @@ class DiviOps_Agent {
 	 * Plugin version — surfaced in /handshake for self-diagnosis only;
 	 * server no longer gates on it (capability map is the gate).
 	 */
-	const VERSION = '1.5.24';
+	const VERSION = '1.5.25';
 
 	/**
 	 * Minimum MCP server version this plugin is compatible with.
@@ -1969,6 +1969,11 @@ class DiviOps_Agent {
 			return;
 		}
 		wp_enqueue_style( 'diviops-agent-admin', plugins_url( 'assets/admin.css', __FILE__ ), [ 'dashicons' ], self::VERSION );
+		if ( current_user_can( 'manage_options' ) && function_exists( 'et_get_option' ) && isset( $_GET['view'] ) && is_string( $_GET['view'] ) && 'design-system' === $_GET['view'] && 'design-system' === sanitize_key( wp_unslash( $_GET['view'] ) ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Fixed read-only navigation; exact-token guard rejects normalization variants. No state change.
+			wp_enqueue_style( 'diviops-design-system', plugins_url( 'assets/design-system.css', __FILE__ ), [ 'diviops-agent-admin' ], self::VERSION );
+			wp_enqueue_script( 'diviops-design-system', plugins_url( 'assets/design-system.js', __FILE__ ), [], self::VERSION, true );
+			wp_localize_script( 'diviops-design-system', 'diviopsDesignSystem', [ 'root' => rest_url( self::REST_NAMESPACE . '/' ), 'nonce' => wp_create_nonce( 'wp_rest' ) ] );
+		}
 	}
 
 	private static function admin_menu_icon(): string {
@@ -2126,6 +2131,7 @@ class DiviOps_Agent {
 			wp_die( esc_html__( 'You do not have permission to view this dashboard.', 'diviops-agent' ) );
 		}
 		$divi_active   = function_exists( 'et_get_option' );
+		$design_system = isset( $_GET['view'] ) && is_string( $_GET['view'] ) && 'design-system' === $_GET['view'] && 'design-system' === sanitize_key( wp_unslash( $_GET['view'] ) ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Fixed read-only navigation; exact-token guard rejects normalization variants. No state change.
 		$divi_version  = $divi_active && defined( 'ET_BUILDER_PRODUCT_VERSION' ) ? ET_BUILDER_PRODUCT_VERSION : null;
 		$rest_url      = rest_url( self::REST_NAMESPACE );
 		$rate_disabled = (bool) DIVIOPS_RATE_LIMIT_DISABLED;
@@ -2157,7 +2163,7 @@ class DiviOps_Agent {
 				return 'limit' === $key ? 8 : null;
 			}
 		};
-		$rollback_snapshots = self::rollback_snapshot_filtered_summaries( $snapshot_request );
+		$rollback_snapshots = $design_system ? [] : self::rollback_snapshot_filtered_summaries( $snapshot_request );
 
 		?>
 		<div class="wrap">
@@ -2174,12 +2180,16 @@ class DiviOps_Agent {
 					<a href="<?php echo esc_url( $docs_url ); ?>" target="_blank" rel="noopener noreferrer" class="button button-primary"><span class="dashicons dashicons-book" aria-hidden="true"></span><?php esc_html_e( 'Setup Guide', 'diviops-agent' ); ?></a>
 				</header>
 				<nav class="diviops-nav" aria-label="<?php esc_attr_e( 'DiviOps pages', 'diviops-agent' ); ?>">
-					<a href="<?php echo esc_url( admin_url( 'admin.php?page=diviops' ) ); ?>" aria-current="page"><?php esc_html_e( 'Overview', 'diviops-agent' ); ?></a>
+					<a href="<?php echo esc_url( admin_url( 'admin.php?page=diviops' ) ); ?>"<?php if ( ! $design_system ) echo ' aria-current="page"'; ?>><?php esc_html_e( 'Overview', 'diviops-agent' ); ?></a>
+					<a href="<?php echo esc_url( admin_url( 'admin.php?page=diviops&view=design-system' ) ); ?>"<?php if ( $design_system ) echo ' aria-current="page"'; ?>><?php esc_html_e( 'Design System', 'diviops-agent' ); ?></a>
 					<?php if ( $pro_active ) : ?>
 						<a href="<?php echo esc_url( $pro_url ); ?>"><?php esc_html_e( 'Pro License', 'diviops-agent' ); ?></a>
 					<?php endif; ?>
 				</nav>
 				<div class="diviops-content">
+					<?php if ( $design_system ) : ?>
+						<?php require __DIR__ . '/includes/admin-design-system.php'; ?>
+					<?php else : ?>
 					<div class="diviops-intro">
 						<h2><?php esc_html_e( 'Installation overview', 'diviops-agent' ); ?></h2>
 						<p><?php esc_html_e( 'Installed components and local configuration. MCP client connectivity is not verified here.', 'diviops-agent' ); ?></p>
@@ -2251,6 +2261,7 @@ class DiviOps_Agent {
 							<p><?php esc_html_e( 'For first-time setup, follow the Setup Guide to install the skill bundle and MCP server, configure a WordPress Application Password, and test the connection from your AI client.', 'diviops-agent' ); ?></p>
 						</div>
 					</section>
+					<?php endif; ?>
 				</div>
 				<footer class="diviops-footer"><?php esc_html_e( 'Divi is a registered trademark of Elegant Themes, Inc. DiviOps Agent is not affiliated with or endorsed by Elegant Themes.', 'diviops-agent' ); ?></footer>
 			</div>

@@ -42,11 +42,20 @@ The plugin includes a WordPress.org-format `readme.txt` and a plugin-local `chan
 
 Current metadata policy:
 
-- `Stable tag` matches the plugin header `Version` (`1.5.24`).
+- `Stable tag` matches the plugin header `Version` (`1.5.25`).
 - `Requires at least` and `Requires PHP` mirror the main plugin header.
 - `Tested up to` is evidence-based for this repo/substrate and should not be raised until the Free plugin is actually tested on that WordPress version.
 - External-service/authentication disclosure must mention the separately distributed npm MCP server, WordPress Application Passwords, and the rule that secrets do not belong in issues, examples, screenshots, or repo files.
 - Free/Pro copy must keep the Free plugin useful while making clear that Pro is the paid workflow-leverage layer and that not every MCP tool is Free-backed.
+
+Free 1.5.25 prepares a read-only Design System dashboard for inspecting existing
+presets, variables and sampled consumers. Preset inspection exposes direct
+variable-reference IDs and explicit partial usage coverage; zero references do
+not establish that deletion is safe, and stored settings are not computed styles.
+Layout warnings now account for supported preset-provided container settings
+while preserving inline precedence and unresolved-reference warnings. No write
+behavior or global MCP/Pro compatibility floor changes. Candidate package
+validation and publication remain separate from this source preparation.
 
 Free 1.5.24 prepares a small correction to the Setup Guide book icon's vertical
 alignment in the DiviOps dashboard on WordPress 7.1. This is a presentation-only

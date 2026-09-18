@@ -2450,7 +2450,7 @@ registerPluginTool(
   "diviops_preset_inspect",
   {
     description:
-      "Inspect one Divi 5 preset UUID without writing. Returns bucket/type/module/group coordinates, attrs/styleAttrs/renderAttrs, storage path and provenance, block plus preset-chain reference counts with sample consumers, geometry-scope warnings for layout/position/sizing/transform attrs, and a warning when the same UUID also exists in nested D5 or legacy _ng storage. This is intentionally narrower than diviops_preset_audit and has no repair mode. Missing UUID returns not_found.",
+      "Inspect one Divi 5 preset UUID without writing. Returns bucket/type/module/group coordinates, attrs/styleAttrs/renderAttrs, storage path and provenance, block plus preset-chain reference counts with sample consumers, explicit partial coverage, and direct variable_references.ids to join with diviops_variable_list (absent IDs remain unresolved). Includes geometry-scope warnings for layout/position/sizing/transform attrs and a warning for nested D5 or legacy _ng duplicates. Zero references is not deletion approval; stored definitions are not computed styles. This is intentionally narrower than diviops_preset_audit and has no repair mode. Missing UUID returns not_found.",
     inputSchema: {
       preset_id: z.string().min(1).describe("Preset UUID to inspect."),
     },
