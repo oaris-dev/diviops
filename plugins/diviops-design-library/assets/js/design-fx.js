@@ -19,6 +19,80 @@
   function init() {
     setupEntranceAnimations();
     injectGooeyFilter();
+    setupImageReveals();
+  }
+
+  /**
+   * Optional native Image wipe. No hidden state before a loaded image is visible.
+   * Observe after load so native lazy loading cannot consume the reveal early.
+   */
+  function setupImageReveals() {
+    if (document.querySelector('#et-fb-app, .et-fb')) return;
+    if (!('IntersectionObserver' in window) || !window.matchMedia ||
+        !window.CSS || !window.CSS.supports ||
+        !window.CSS.supports('clip-path', 'inset(0 0 0 0)')) return;
+
+    var reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+    if (reducedMotion.matches) return;
+
+    forEachNode(document.querySelectorAll('.et_pb_image.ddl-image-reveal'), function (module) {
+      var img = module.querySelector('.et_pb_image_wrap img');
+      if (!img || img.closest('.et_pb_image') !== module) return;
+
+      var observer;
+      var timer;
+      var started = false;
+      var finished = false;
+
+      function cleanup() {
+        finished = true;
+        if (observer) observer.disconnect();
+        window.clearTimeout(timer);
+        img.removeEventListener('load', onLoad);
+        img.removeEventListener('error', cleanup);
+        img.removeEventListener('animationend', onAnimationDone);
+        img.removeEventListener('animationcancel', onAnimationDone);
+        img.classList.remove('ddl-image-reveal-active');
+      }
+
+      function onAnimationDone(event) {
+        if (event.target === img && event.animationName === 'ddl-image-reveal') cleanup();
+      }
+
+      function onLoad() {
+        if (finished || observer) return;
+        img.removeEventListener('load', onLoad);
+        if (!img.naturalWidth) {
+          cleanup();
+          return;
+        }
+
+        observer = new IntersectionObserver(function (entries) {
+          entries.forEach(function (entry) {
+            if (finished || started || !entry.isIntersecting) return;
+            if (reducedMotion.matches || document.querySelector('#et-fb-app, .et-fb')) {
+              cleanup();
+              return;
+            }
+            started = true;
+            observer.disconnect();
+            img.addEventListener('animationend', onAnimationDone);
+            img.addEventListener('animationcancel', onAnimationDone);
+            img.classList.add('ddl-image-reveal-active');
+            // Also clean up if CSS is absent or no animation event is delivered.
+            timer = window.setTimeout(cleanup, 750);
+          });
+        }, { threshold: 0 });
+        observer.observe(img);
+      }
+
+      img.addEventListener('error', cleanup);
+      if (img.complete) {
+        onLoad();
+      } else {
+        img.addEventListener('load', onLoad);
+      }
+    });
   }
 
   /**

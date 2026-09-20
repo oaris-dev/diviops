@@ -8,12 +8,15 @@ WordPress plugin providing modern design effects for Divi 5 pages. CSS animation
 2. Install or copy `diviops-design-library/`.
 3. Activate `DiviOps Design Library`.
 
-## Candidate 1.0.0-beta.23
+## Candidate 1.0.0-beta.24
 
-Prepares the default-off, selected native FAQ accessibility correction below.
-This is the existing Free/GPL Design Library, not a paid Design Library Pro
-artifact. Existing effects, Three.js r128 and native toggle timing are unchanged.
-Candidate preparation does not publish or enable the correction on any site.
+Following the published beta.23 release, beta.24 adds the opt-in native Image
+reveal described below. This remains the Free/GPL Design Library, not a paid
+Design Library Pro artifact. The existing FAQ correction, other effects,
+Three.js r128 and native toggle timing are unchanged. Candidate source
+preparation does not publish or enable the effect on any site. The complete
+beta.24 package is not yet qualified; the accepted bounded effect evidence
+below is not whole-package release qualification.
 
 ## What It Provides
 
@@ -27,6 +30,7 @@ Candidate preparation does not publish or enable the correction on any site.
 | `ddl-animate ddl-slide-left` | Slide in from left |
 | `ddl-animate ddl-slide-right` | Slide in from right |
 | `ddl-delay-1` to `ddl-delay-6` | Stagger delays (0.1s increments) |
+| `ddl-image-reveal` | Native Image only: one 650ms left-to-right wipe when loaded and visible |
 | `ddl-glass` | Glass morphism (dark) |
 | `ddl-glass-light` | Glass morphism (light) |
 | `ddl-hover-lift` | Lift on hover (-4px + shadow) |
@@ -36,6 +40,64 @@ Candidate preparation does not publish or enable the correction on any site.
 | `ddl-text-stroke` | Light text outline (stroke) |
 | `ddl-text-stroke-dark` | Dark text outline (stroke) |
 | `ddl-pulse-dot` | Pulsing green indicator |
+
+### Native Image Reveal
+
+Use `ddl-image-reveal` on a below-fold native Divi Image module (`.et_pb_image`).
+In VB, add a `class` custom attribute targeting the main module. Programmatically,
+append this entry to `module.decoration.attributes.desktop.value.attributes[]`
+(use a unique `id`, preserving existing attributes):
+
+```json
+{
+  "id": "image-reveal-class",
+  "name": "class",
+  "value": "ddl-image-reveal",
+  "adminLabel": "Image reveal",
+  "targetElement": "main"
+}
+```
+
+Do not use the block `className` attribute. Do not combine with `ddl-animate`,
+stagger classes, or Divi native entrance animation. This recipe is not for
+backgrounds, galleries, Blurbs, Fullwidth Images, or arbitrary wrappers.
+
+The actual image receives one horizontal clip-path wipe after successful native
+image load and viewport entry. Native `src`, `srcset`, `alt`, links, focus wrappers
+and layout are untouched; there is no zoom, overlay or decorative control. The
+650ms non-looping animation needs no pause UI. It does not repeat on re-entry;
+observers and listeners are cleaned up when finished. Failed images retain the
+normal native failure with no retries.
+
+The baseline is fully visible, with no hidden pending state. Missing JavaScript,
+IntersectionObserver or clip-path support leaves a static image. Reduced motion
+skips initialization; CSS immediately cancels an active wipe if the preference
+changes. Visual Builder contexts (`#et-fb-app` / `.et-fb`) stay static and visible.
+Modules added dynamically in VB are unsupported and remain static; reload the
+frontend to initialize newly saved modules.
+
+Evidence scope: accepted bounded native Divi 5.13 proof covers desktop, phone,
+reduced motion and a Visual Builder save round trip. That proof used beta.22
+plus the image-reveal effect delta, not the complete beta.24 package. Synthetic
+fixtures provide additional isolated checks, not broader live compatibility
+qualification. The complete beta.24 package is not yet qualified; the bounded
+proof does not establish whole-package upgrade or release readiness.
+
+Run the isolated browser check with an existing installed Chromium and the
+repository's development `playwright-core` (no WordPress or downloads):
+
+```sh
+IMAGE_REVEAL_OUTPUT=/absolute/fresh/evidence node scripts/test-image-reveal.mjs
+```
+
+`IMAGE_REVEAL_CHROMIUM` and `IMAGE_REVEAL_PLAYWRIGHT_MODULE` select existing local
+executables/modules. The default image is a generated four-color test bitmap;
+`IMAGE_REVEAL_IMAGE=/absolute/local-image.webp` (or PNG, matching the fixture's
+1672:700 aspect ratio) supplies retained visual-review media. The check emits an
+offline preview and desktop/phone captures. It covers one natural completion,
+once-only behavior, delayed/failed images, preserved attributes, linked-image
+focus, reduced-motion changes, missing APIs/JS and synthetic Builder contexts.
+Private media is not shipped; the existing browser CI job uses the bitmap.
 
 ### Three.js WebGL
 - Three.js r128 bundled locally (no CDN)

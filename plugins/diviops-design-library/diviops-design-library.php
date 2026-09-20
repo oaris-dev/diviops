@@ -3,7 +3,7 @@
  * Plugin Name: DiviOps Design Library
  * Plugin URI: https://github.com/oaris-dev/diviops
  * Description: Modern design effects for Divi 5 with Three.js, CSS animations, and reusable design elements.
- * Version: 1.0.0-beta.23
+ * Version: 1.0.0-beta.24
  * Author: oaris.de
  * Author URI: https://oaris.de
  * Requires at least: 6.0
@@ -19,7 +19,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 class DiviOps_Design_Library {
 
-	const VERSION = '1.0.0-beta.23';
+	const VERSION = '1.0.0-beta.24';
 
 	/**
 	 * Three.js version to bundle.
@@ -192,6 +192,25 @@ class DiviOps_Design_Library {
 			.ddl-delay-4.ddl-visible { animation-delay: 0.4s; }
 			.ddl-delay-5.ddl-visible { animation-delay: 0.5s; }
 			.ddl-delay-6.ddl-visible { animation-delay: 0.6s; }
+
+			/* ===== Native Image Reveal (visible baseline; JS adds only the active class) ===== */
+			@keyframes ddl-image-reveal {
+				from { clip-path: inset(0 100% 0 0); }
+				to   { clip-path: inset(0 0 0 0); }
+			}
+			.et_pb_image.ddl-image-reveal .et_pb_image_wrap img.ddl-image-reveal-active {
+				animation: ddl-image-reveal 650ms cubic-bezier(0.16, 1, 0.3, 1) 1;
+			}
+			/* Only the image is clipped; native links and focus outlines stay intact. */
+			#et-fb-app .et_pb_image.ddl-image-reveal .et_pb_image_wrap img.ddl-image-reveal-active,
+			.et-fb .et_pb_image.ddl-image-reveal .et_pb_image_wrap img.ddl-image-reveal-active {
+				animation: none !important;
+			}
+			@media (prefers-reduced-motion: reduce) {
+				.et_pb_image.ddl-image-reveal .et_pb_image_wrap img.ddl-image-reveal-active {
+					animation: none !important;
+				}
+			}
 
 			/* ===== Animated Gradient Background ===== */
 			@keyframes ddl-gradient-shift {
