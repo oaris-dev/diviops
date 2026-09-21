@@ -42,11 +42,22 @@ The plugin includes a WordPress.org-format `readme.txt` and a plugin-local `chan
 
 Current metadata policy:
 
-- `Stable tag` matches the plugin header `Version` (`1.5.25`).
+- `Stable tag` matches the plugin header `Version` (`1.5.26`).
 - `Requires at least` and `Requires PHP` mirror the main plugin header.
 - `Tested up to` is evidence-based for this repo/substrate and should not be raised until the Free plugin is actually tested on that WordPress version.
 - External-service/authentication disclosure must mention the separately distributed npm MCP server, WordPress Application Passwords, and the rule that secrets do not belong in issues, examples, screenshots, or repo files.
 - Free/Pro copy must keep the Free plugin useful while making clear that Pro is the paid workflow-leverage layer and that not every MCP tool is Free-backed.
+
+Free 1.5.26 prepares optional bounded `page_get` reads. With MCP 1.5.54,
+`bounded:true` returns UTF-8-safe raw content chunks of at most 4096 bytes and
+the full-content checksum. Continue using `next_offset` and the initial
+`expected_checksum`; on content drift, discard the chunks and restart. The
+precise `page_get_bounded_utf8_v1` capability refuses unsupported older plugins
+before the MCP server fetches a page. Default reads, authentication, permissions,
+writes and global compatibility floors remain unchanged. Each chunk request
+still reads and hashes the full upstream content: this is not memory-bounded
+streaming, a snapshot service or a universal client-delivery guarantee. Candidate
+package validation and publication remain separate from source preparation.
 
 Free 1.5.25 prepares a read-only Design System dashboard for inspecting existing
 presets, variables and sampled consumers. Preset inspection exposes direct

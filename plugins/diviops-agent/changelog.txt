@@ -9,6 +9,12 @@ Policy:
 - Keep entries customer-facing. Avoid internal issue numbers unless they are needed to explain a user-visible change.
 - Do not include secrets, credentials, customer data, or environment-specific URLs.
 
+## 1.5.26
+
+- Adds optional bounded page-content reads with UTF-8-safe chunks and a full-content checksum required for continuation. Content drift refuses continuation rather than mixing versions.
+- Updated MCP servers check the precise bounded-read capability before fetching a page from an older plugin. Default reads, authentication, permissions, writes and compatibility requirements are unchanged.
+- Bounds returned chunks, not upstream memory use: each request still reads and hashes the full content. This is not a snapshot service or a guarantee for every client.
+
 ## 1.5.25
 
 - Adds a read-only Design System dashboard for existing presets, variables and sampled consumers, with explicit partial coverage and unresolved references.

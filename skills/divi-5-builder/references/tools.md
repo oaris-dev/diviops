@@ -87,7 +87,7 @@ All namespaces have adopted the envelope as of the last wave (`module_*` + `sect
 
 **dry_run** plans (where supported) flow through the success branch as `data: { dry_run: true, plan: { summary, changes[, warnings] } }` — same shape as before, now wrapped in the envelope.
 
-## Read Tools (27)
+## Read Tools (28)
 <!-- Distinct-tool count; multiple tools per bullet via `/` separator -->
 
 
@@ -97,6 +97,7 @@ All namespaces have adopted the envelope as of the last wave (`module_*` + `sect
 - `diviops_schema_list_modules` / `diviops_schema_get_module` — discover modules and attributes (optimized schema by default). `diviops_schema_get_module({ mode: "dump_all" })` snapshots every Divi module + a `schema_version` hash + `divi_version` in one call — build-time entry point for the skill regen pipeline, not a normal authoring step
 - `diviops_schema_get_settings` / `diviops_global_color_list` / `diviops_global_font_list` — site config. `diviops_global_font_list` always returns `{count, fonts}` even on empty substrates (never bare `false`)
 - `diviops_meta_find_icon` — search 1,989 icons by keyword (returns unicode, type, weight)
+- `diviops_module_get` — inspect one module by `auto_index`, `label`, or `match_text` (use `occurrence` for duplicate labels); compact metadata by default, `full: true` adds the selected module's attrs and raw markup
 - `diviops_section_get` — get a section's markup by admin label or text content
 - `diviops_template_list` / `diviops_template_get` — load verified block markup templates
 - `diviops_preset_audit` — audit presets with referenced/unreferenced analysis (exposes `block_ref_count`, `group_ref_count`, `referenced_by_presets` chain)
@@ -109,6 +110,20 @@ All namespaces have adopted the envelope as of the last wave (`module_*` + `sect
 - `diviops_canvas_list` / `diviops_canvas_get` — browse and read off-canvas workspaces (popups, modals, menus)
 - `diviops_variable_list` — list design token variables, filter by type (`colors`, `numbers`, etc.) or ID prefix. `prefix` matches the stored ID only; it does not match `label`. For semantic token names such as `oa-*` labels on UUID-backed Divi variables, list by `type` and filter the returned `label` client-side.
 - `diviops_variable_scan_orphans` — find `gvid-`/`gcid-` refs with no backing Variable Manager entry (orphans render as invalid CSS when the `$variable()$` resolver falls through) plus variables defined but referenced nowhere (unused — deletion candidates). Scans pages, Theme Builder layouts (`et_header_layout` / `et_body_layout` / `et_footer_layout`), Divi Library items (`et_pb_layout`), canvas pages (`et_pb_canvas`), and the preset registry. Symmetric to `diviops_preset_scan_orphans`
+
+### Choose the read scope
+
+For local inspection or edits, start with `diviops_page_get_layout` in its default slim mode to discover labels and auto-indices. Then use `diviops_module_get` with `full: true` for the selected module's attrs/raw, or `diviops_section_get` for the selected section's markup. Keep the page/layout ID and duplicate `occurrence` consistent; re-discover positional targets after structural changes. A selected container or section can still be large: narrower scope is not a guaranteed output-size bound.
+
+Targeted reads are not whole-page snapshots or exports. Preserve an explicitly required full-page capture, and use full-layout reads when the task actually needs the complete tree. If the result cannot be captured intact, report that gap rather than substitute a partial read. `diviops_module_get` does not supply a page `content_checksum` or establish a mutation concurrency precondition; obtain any required checksum through the write workflow's documented read contract.
+
+For a lossless bounded raw-content capture, `diviops_page_get({page_id, bounded:true})` requires the optional handshake capability `page_get_bounded_utf8_v1`. Missing or unavailable capability evidence refuses before the page fetch; there is no unbounded fallback. The default call (bounded omitted/false) retains its existing unbounded metadata/raw response.
+
+Bounded success data contains exactly `id`, `encoding: "utf-8"`, `content_raw`, `content_checksum`, `total_bytes`, `offset`, `chunk_bytes`, `next_offset`, and `complete`. The checksum is `sha256:` plus lowercase SHA-256 over **all original post_content bytes**, including non-Divi content and text between sections. Each chunk is at most 4,096 bytes, ending at a UTF-8 character boundary; offsets/counts are bytes, not characters. MCP serialized text is capped at 32 KiB including escaping and metadata (also checked with the surrounding text block). No title, layout tree, or duplicate raw copy accompanies a bounded chunk.
+
+Start at offset zero (the default). Append each `content_raw` unchanged, then call with `offset: next_offset` and `expected_checksum` equal to the **initial** `content_checksum`. Nonzero offsets require this checksum; an optional checksum at zero is also enforced. Stop only at `complete:true` and `next_offset:null`; empty content and an exact EOF offset return an empty completed chunk. Verify reconstructed byte length and SHA-256 against the initial metadata. `page.content_drift` refuses any changed content, including same-length edits: discard prior chunks and restart, never combine different checksums. Invalid offsets/checksums refuse with `invalid_input`; invalid UTF-8 refuses with `page.invalid_encoding` rather than replacing bytes. This is a content-only traversal, not a stored snapshot or a metadata/media/dependency export. Each request still reads and hashes the full page server-side; unchanged content is required across traversal, and later writes still need their documented concurrency/backup checks. The MCP boundary validates metadata/size and replaces invalid, oversized, or unexpected upstream responses/errors with bounded diagnostics without forwarding their payloads.
+
+For supported guarded writes, `backup: true` stores recovery state server-side without requiring a full-page payload in chat. Confirm the connected plugin's capability for the specific write, then verify the actual result's `data.backup` creation evidence and status, including a snapshot ID when one was created (or backup evidence in an error). A no-op can report `created: false` without a snapshot ID. Requesting backup is not proof it exists; a dry-run only plans it. If required recovery evidence is absent or failed, stop before further writes. This write-time recovery layer does not replace a separately requested pre-edit export or checksum check.
 
 ## Write Tools (30)
 
@@ -158,7 +173,7 @@ Every Divi-builder write tool accepts `dry_run: boolean` per the [diviops/](../.
 
 When the native VB setting path is unknown, run this VB calibration loop before shipping a DiviOps attr write or falling back to CSS:
 
-1. Capture the baseline: `diviops_page_get_layout` or `diviops_tb_layout_get` with full attrs, plus desktop and phone screenshots for the relevant frontend state.
+1. Capture the baseline: discover the target with slim layout metadata, then use `diviops_module_get` with `full: true` on the page or Theme Builder layout ID for the selected module's attrs. Use section markup or a full-layout read only when the comparison needs that wider scope. Preserve separately required exports/checksums and capture desktop and phone screenshots for the relevant frontend state.
 2. Ask the project lead to make exactly one Visual Builder setting change and save. Keep every other setting untouched.
 3. Capture the same attrs again and diff the before/after block JSON.
 4. Map the VB path to the DiviOps attr path, including breakpoint and state keys. Record the evidence tier from `SKILL.md`.

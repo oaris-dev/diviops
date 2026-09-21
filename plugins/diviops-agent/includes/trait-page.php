@@ -84,6 +84,54 @@ trait DiviOps_Agent_Page {
 			return self::envelope_object_read_forbidden( $post_id, 'page' );
 		}
 
+		$bounded = rest_sanitize_boolean( $request->get_param( 'bounded' ) ?? false );
+		$offset = $request->get_param( 'offset' );
+		$expected = $request->get_param( 'expected_checksum' );
+		if ( ! $bounded && ( null !== $offset || null !== $expected ) ) {
+			return self::envelope_error( 'invalid_input', 'offset and expected_checksum require bounded:true.', '', 400 );
+		}
+		if ( $bounded ) {
+			$offset = $offset ?? 0;
+			if ( ( ! is_int( $offset ) && ! ( is_string( $offset ) && preg_match( '/^(0|[1-9][0-9]*)$/D', $offset ) ) )
+				|| $offset < 0 || $offset > 9007199254740991
+				|| ( null !== $expected && ( ! is_string( $expected ) || ! preg_match( '/^sha256:[a-f0-9]{64}$/D', $expected ) ) )
+				|| ( $offset > 0 && null === $expected ) ) {
+				return self::envelope_error( 'invalid_input', 'Use a nonnegative byte offset and an exact expected_checksum for every continuation.', '', 400 );
+			}
+			$content = (string) $post->post_content;
+			$checksum = 'sha256:' . hash( 'sha256', $content );
+			if ( null !== $expected && ! hash_equals( $checksum, $expected ) ) {
+				return self::envelope_error( 'page.content_drift', 'Page content changed; restart the bounded read at offset zero.', '', 409 );
+			}
+			$total = strlen( $content );
+			$offset = (int) $offset;
+			if ( $offset > $total ) {
+				return self::envelope_error( 'invalid_input', 'Byte offset exceeds total_bytes.', '', 400 );
+			}
+			if ( 1 !== preg_match( '//u', $content ) ) {
+				return self::envelope_error( 'page.invalid_encoding', 'Bounded UTF-8 reads require valid UTF-8 content; no bytes were returned.', '', 422 );
+			}
+			if ( $offset < $total && ( ord( $content[ $offset ] ) & 0xc0 ) === 0x80 ) {
+				return self::envelope_error( 'invalid_input', 'Byte offset must be a UTF-8 character boundary.', '', 400 );
+			}
+			// 4096 raw bytes leave room for worst-case JSON escaping and MCP metadata.
+			$end = min( $offset + 4096, $total );
+			while ( $end < $total && ( ord( $content[ $end ] ) & 0xc0 ) === 0x80 ) {
+				--$end;
+			}
+			return self::envelope_success( [
+				'id' => (int) $post->ID,
+				'encoding' => 'utf-8',
+				'content_raw' => substr( $content, $offset, $end - $offset ),
+				'content_checksum' => $checksum,
+				'total_bytes' => $total,
+				'offset' => $offset,
+				'chunk_bytes' => $end - $offset,
+				'next_offset' => $end === $total ? null : $end,
+				'complete' => $end === $total,
+			] );
+		}
+
 		return self::envelope_success( [
 			'id'           => $post->ID,
 			'title'        => $post->post_title,

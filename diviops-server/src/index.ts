@@ -14,6 +14,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import { WPClient } from "./wp-client.js";
+import { BOUNDED_PAGE_CAPABILITY, boundedPageError, serializeBoundedPageRead } from "./bounded-page-read.js";
 import { requestAuthoringWrite } from "./authoring-shape-integration.js";
 import {
   capabilityUpgradeHint,
@@ -777,14 +778,39 @@ registerPluginTool(
   "diviops_page_get",
   {
     description:
-      "Get detailed info about a specific page including its raw Divi block content and content_checksum (`sha256:` over the exact post_content bytes) for stale-write protection. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }; missing page_id returns ok:false with code 'not_found' and a hint pointing to diviops_page_list.",
+      "Get detailed info about a specific page including its raw Divi block content and content_checksum (`sha256:` over the exact post_content bytes) for stale-write protection. Default response is unchanged and unbounded. Optional bounded:true requires page_get_bounded_utf8_v1 and returns only raw UTF-8 content chunks (at most 4096 bytes), id, encoding, full-page content_checksum, total_bytes, offset, chunk_bytes, next_offset (null at completion), and complete. MCP text is limited to 32 KiB including escaping/metadata. Start at offset:0; continue with next_offset and the initial expected_checksum until complete:true. Drift refuses even same-length edits; discard chunks and restart. No parser reconstruction, fallback, or snapshot storage. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }; missing page_id returns ok:false with code 'not_found' and a hint pointing to diviops_page_list in legacy mode.",
     inputSchema: {
       page_id: z.number().describe("WordPress post/page ID"),
+      bounded: z.boolean().optional().describe("Opt into checksum-bound UTF-8 chunks; omitted/false preserves the legacy response."),
+      offset: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER).optional().describe("Byte offset for bounded mode; defaults to zero. Use the returned next_offset."),
+      expected_checksum: z.string().regex(/^sha256:[a-f0-9]{64}$/).optional().describe("Required for nonzero bounded offsets; the exact initial full-page content_checksum."),
     },
     annotations: { idempotentHint: true },
     _meta: { idempotent: "true" },
   },
-  async ({ page_id }) => {
+  async ({ page_id, bounded, offset, expected_checksum }) => {
+    if (bounded || offset !== undefined || expected_checksum !== undefined) {
+      const reply = (text: string) => ({ content: [{ type: "text" as const, text }] });
+      if (!bounded || !Number.isSafeInteger(page_id) || page_id <= 0 || ((offset ?? 0) > 0 && expected_checksum === undefined)) {
+        return reply(boundedPageError("invalid_input", "Use bounded:true, a positive integer page_id, and expected_checksum for every nonzero offset."));
+      }
+      // Unlike the legacy gate, unavailable handshake evidence must not dispatch a page read.
+      if (handshakeState.kind !== "ok" || handshakeState.capabilities[BOUNDED_PAGE_CAPABILITY] !== true) {
+        return reply(boundedPageError("capability_missing", "Bounded page read capability page_get_bounded_utf8_v1 is absent or unavailable. Install a compatible plugin and reconnect; no page was fetched."));
+      }
+      try {
+        const result = await wp.requestEnveloped(`/page/get/${page_id}`, {
+          params: {
+            bounded: "true",
+            offset: String(offset ?? 0),
+            ...(expected_checksum === undefined ? {} : { expected_checksum }),
+          },
+        });
+        return reply(serializeBoundedPageRead(result, { page_id, offset: offset ?? 0, expected_checksum }));
+      } catch {
+        return reply(boundedPageError("page.bounded_read_failed", "Bounded page read failed; no upstream payload was forwarded."));
+      }
+    }
     const result = await wp.requestEnveloped(`/page/get/${page_id}`);
     return {
       content: [

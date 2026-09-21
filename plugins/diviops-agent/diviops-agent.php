@@ -3,7 +3,7 @@
  * Plugin Name: DiviOps Agent
  * Plugin URI: https://github.com/oaris-dev/diviops
  * Description: REST API bridge for DiviOps — connects Claude Code to your Divi 5 site for AI-powered page building and design management.
- * Version: 1.5.25
+ * Version: 1.5.26
  * Author: oaris.de
  * Author URI: https://oaris.de
  * Text Domain: diviops-agent
@@ -72,7 +72,7 @@ class DiviOps_Agent {
 	 * Plugin version — surfaced in /handshake for self-diagnosis only;
 	 * server no longer gates on it (capability map is the gate).
 	 */
-	const VERSION = '1.5.25';
+	const VERSION = '1.5.26';
 
 	/**
 	 * Minimum MCP server version this plugin is compatible with.
@@ -114,7 +114,7 @@ class DiviOps_Agent {
 		'module_clone', 'module_get', 'module_lock', 'module_move', 'module_unlock', 'module_update',
 		'module_clone_backup', 'module_lock_backup', 'module_move_backup', 'module_unlock_backup', 'module_update_backup',
 		// page
-		'page_create', 'page_get', 'page_get_layout', 'page_list',
+		'page_create', 'page_get', 'page_get_bounded_utf8_v1', 'page_get_layout', 'page_list',
 		'page_trash', 'page_update_content', 'page_update_content_backup', 'page_update_content_expected_checksum', 'page_update_meta', 'page_update_status',
 		// preset
 		'preset_audit', 'preset_audit_storage', 'preset_cleanup', 'preset_create', 'preset_delete', 'preset_inspect', 'preset_registry_doctor',
@@ -756,6 +756,9 @@ class DiviOps_Agent {
 			'callback'            => [ __CLASS__, 'page_get' ],
 			'permission_callback' => [ __CLASS__, 'check_read_permission' ],
 			'args'                => [
+				'bounded' => [ 'type' => 'boolean', 'required' => false ],
+				'offset' => [ 'type' => 'integer', 'minimum' => 0, 'maximum' => 9007199254740991, 'required' => false ],
+				'expected_checksum' => [ 'type' => 'string', 'pattern' => '^sha256:[a-f0-9]{64}$', 'required' => false ],
 				'id' => [
 					'required'          => true,
 					'validate_callback' => function ( $param ) {

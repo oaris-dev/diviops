@@ -41,7 +41,48 @@ Each attribute entry needs: `id` (unique), `name` ("class"), `value` (space-sepa
 | `ddl-animate ddl-slide-left` | Slide from right on scroll |
 | `ddl-animate ddl-slide-right` | Slide from left on scroll |
 
-### Stagger Delays (combine with above)
+### Native Image Wipe (opt-in, once)
+
+Add only `ddl-image-reveal` to a below-fold native `divi/image` module
+(`.et_pb_image`). Use the native
+`module.decoration.attributes.desktop.value.attributes[]` path shown above,
+with this entry (unique `id`; preserve other attributes):
+
+```json
+{
+  "id": "image-reveal-class",
+  "name": "class",
+  "value": "ddl-image-reveal",
+  "adminLabel": "Image reveal",
+  "targetElement": "main"
+}
+```
+
+Do not use `className`, add `ddl-animate` / stagger classes, or combine this recipe
+with native entrance animation. It supports only native Image modules, not
+Fullwidth Image, Blurb, gallery, background images or arbitrary containers.
+
+The loaded image wipes left-to-right with `clip-path` for 650ms on viewport entry,
+once per frontend initialization. Only the `img` animates, not its link or focus
+wrapper. Native `src` / `srcset` / `alt`, link behavior and layout remain unchanged.
+No zoom, overlay, external library or decorative controls; a short non-looping
+animation needs no pause UI. Observation waits for native image load so lazy
+loading cannot consume the animation while blank. Errors retain native failure
+with no retry, and completion/cancellation removes listeners and observation.
+
+There is no hidden pending state: no JS, no IntersectionObserver, no clip-path
+support, or reduced motion leaves the image static and visible. Reduced motion
+at initialization skips the effect; a CSS media query immediately cancels active
+motion when the preference changes. Existing `#et-fb-app` / `.et-fb` contexts are
+static and visible. Dynamic VB additions are unsupported/static; there is no
+mutation-observer lifecycle. Reload the frontend after saving new modules.
+
+**Evidence boundary:** source-only implementation; browser acceptance is limited
+to synthetic fixtures and tracked separately. This is not live Divi/VB
+qualification or a VB-verified recipe. Synthetic-fixture results do not establish
+native VB round-trip behavior.
+
+### Stagger Delays (combine with entrance animations above)
 | Class | Delay |
 |-------|-------|
 | `ddl-delay-1` | 0.1s |

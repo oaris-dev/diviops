@@ -9,6 +9,7 @@
 - [MCP Generation Examples](#mcp-generation-examples) — preset in blocks, color opacity
 - [MCP Endpoints](#mcp-endpoints-for-presets) — audit, cleanup, update, delete
 - [When to Use Presets vs Inline](#when-to-use-presets-vs-inline-styles)
+- [Optional Role Ownership: Cybersecurity CTA](#optional-role-ownership-cybersecurity-cta)
 - [Manifest Schema](#design-system-manifest-schema) — `.claude/design-system.json` structure
 
 ## Architecture
@@ -696,6 +697,21 @@ The guidance below applies once you've explicitly chosen the `oa` system on a si
 - One-off values that don't fit the design system
 - Content-specific styling (animation delays, specific positioning)
 - You haven't bootstrapped the design system yet (this is the default for new sites — all patterns in design-guide.md work with hardcoded values)
+
+### Optional Role Ownership: Cybersecurity CTA
+
+**Stored-artifact analysis, not runtime proof.** The retained Cybersecurity Home example, "Accelerate Your Cybersecurity Strategy" with "Optimize Security", is native Section > Row > full-width Column > `divi/cta`. Its title, body and button are internal CTA slots, not standalone modules. Preserve that structure; standalone Heading/Text/Button module presets are not interchangeable with CTA styling.
+
+An optional ownership convention separates four responsibilities: **variables** supply shared values; **option-group presets** reuse compatible property families; **module presets** coordinate styling for one module type; a **structural recipe** describes arrangement, content slots and spacing ownership. A recipe implies neither synchronized copies nor native Components support. Assign an intended owner per property and breakpoint/state, recording intentional local exceptions and which shared changes they mask.
+
+`Heading / Section`, `Body / Standard` and `Button / Primary` can describe conceptual roles inside this CTA. They are optional aliases, not a catalog, rename instruction or three-preset mandate. Reuse existing suitable identities; extract families only where needed and slot-compatible. The retained section, row and CTA each bind a module preset; their definitions contain no option-group references.
+
+- **Title/body:** the CTA preset stores title sizes `50px`/`32px`/`26px` for desktop/tablet/phone and line-height `1.3em`; body line-height is `1.8em`, without explicit body size/family in that branch. It also stores title `headingLevel: h2`. For adoption, choose document semantics independently of visual role; do not silently rewrite that source setting.
+- **Button/colors:** the CTA preset stores primary-color binding, literal white text and `16px`/`40px` vertical/horizontal padding. Source inventory gives primary `#fe3c04` and section dark `#0c0c0c`; these are not destination-brand tokens or permission to map by label.
+- **Container exceptions:** row preset padding is `60px`/`30px`/`20px` across breakpoints, but local desktop vertical padding is `8vw`, horizontal `60px`, with `20px` corners, primary border and artwork. CTA local transparent background, centered sizing, block display and `maxWidth: 900px` overlap a preset with empty background color and `maxWidth: none`. Retain pending intent/render checks; even equal horizontal padding is not safe-removal proof.
+- **Instance content:** title, paragraph, button label and link stay local. The stored `#` destination is a placeholder requiring an agreed real destination.
+
+Implicit defaults and effective inheritance remain unknown; absent group references or an unbound column do not prove their absence. Stored inactive/default settings are not cleanup candidates by themselves. No blind stripping: agree on preserve-versus-adopt intent and inspect exact destination identities using the [consumption guidance](#when-to-use-presets-vs-inline-styles) and [consolidation workflow](#consolidation-workflow). This analysis establishes no new runtime/VB acceptance, cross-site portability or general repair proof.
 
 ### Inline tokens as fallback, not duplication
 

@@ -3,7 +3,7 @@ Contributors: diviops
 Tags: divi, mcp, ai, rest-api, site-builder
 Requires at least: 6.5
 Tested up to: 7.1
-Stable tag: 1.5.25
+Stable tag: 1.5.26
 Requires PHP: 7.4
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -105,6 +105,12 @@ No. Free includes the core site-authoring bridge described above. Selected advan
 2. An agent-authored page open in the Divi 5 Visual Builder, with the native Heading module content controls available for continued editing. Divi is a separate required product.
 
 == Changelog ==
+
+= 1.5.26 =
+
+* Adds optional bounded page-content reads with UTF-8-safe chunks and a full-content checksum required for continuation. Content drift refuses continuation rather than mixing versions.
+* Updated MCP servers check the precise bounded-read capability before fetching a page from an older plugin. Default reads, authentication, permissions, writes and compatibility requirements are unchanged.
+* Bounds returned chunks, not upstream memory use: each request still reads and hashes the full content. This is not a snapshot service or a guarantee for every client.
 
 = 1.5.25 =
 
@@ -226,6 +232,10 @@ No. Free includes the core site-authoring bridge described above. Selected advan
 * Keeps `Stable tag` aligned with the plugin header version.
 
 == Upgrade Notice ==
+
+= 1.5.26 =
+
+Adds optional checksum-bound page-content chunks with MCP 1.5.54. Restart the MCP session after updating to refresh capabilities. Default reads and permissions are unchanged; this is not a saved snapshot.
 
 = 1.5.25 =
 

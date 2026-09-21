@@ -8,7 +8,30 @@ The Node.js MCP server inside the DiviOps harness. It gives Claude Code, Codex, 
 Claude Code <-> MCP Server (stdio) <-> WordPress REST API <-> DiviOps Agent plugin
 ```
 
-## 1.5.53 candidate release note
+## 1.5.54 candidate release note
+
+Adds optional `bounded:true` to `diviops_page_get` for UTF-8-safe raw content
+chunks of at most 4096 bytes, with a full-page checksum and byte-offset
+continuation. Start at offset zero, then pass each `next_offset` and the initial
+`expected_checksum` until `complete:true`. Content drift refuses continuation;
+discard collected chunks and restart. Free 1.5.26 supplies the precise
+`page_get_bounded_utf8_v1` capability; unsupported older plugins are refused
+before any page fetch, without an unbounded fallback. Reconnect after supported
+plugin updates to refresh the capability handshake.
+
+Default reads, authentication, permissions, writes, dependencies and global
+compatibility floors are unchanged. Each chunk request still reads and hashes
+the full upstream content. Bounded responses are not memory-bounded streaming,
+a snapshot service or a universal client-delivery guarantee. This is source
+candidate preparation, not new-package qualification or publication.
+
+Independent public builder companion 1.4.7 carries three pending references:
+targeted inspection and checksum-bound continuation in `tools.md`, a native CTA
+preset-ownership example in `presets.md`, and opt-in native image-reveal guidance
+in `design-effects.md`. The image-reveal runtime is already delivered separately
+in Design Library 1.0.0-beta.24; this preparation does not re-release Design.
+
+## Previous 1.5.53 candidate release note
 
 The only MCP change is an inspector tool-description clarification: direct variable
 references and partial coverage are now explicit. No new tools or input-schema,
