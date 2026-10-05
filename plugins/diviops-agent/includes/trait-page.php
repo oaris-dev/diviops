@@ -1534,6 +1534,8 @@ trait DiviOps_Agent_Page {
 			$parts     = explode( ':', $auto_index );
 			$ai_type   = $parts[0];
 			$ai_target = (int) $parts[1];
+			$tokenizer = new WP_Block_Parser();
+			$tokenizer->document = $content;
 		}
 
 		// Scan all blocks in document order (matching get_page_layout's auto_index counting).
@@ -1560,6 +1562,28 @@ trait DiviOps_Agent_Page {
 			}
 			$type = substr( $content, $search_from, $type_end - $search_from );
 
+			$next_char = isset( $content[ $type_end + 1 ] ) ? $content[ $type_end + 1 ] : '';
+			$has_json  = ( ' ' === $content[ $type_end ] && '{' === $next_char );
+			if ( 'auto_index' === $mode ) {
+				// Count core-valid openers independently of narrow repair eligibility,
+				// including space/tab/newline before JSON and attribute-less pairs.
+				$tokenizer->offset = $pos;
+				[ $token_kind, $token_name, , $token_pos ] = $tokenizer->next_token();
+				if ( $token_pos !== $pos || ! in_array( $token_kind, [ 'block-opener', 'void-block' ], true ) ) {
+					// Do not step past malformed canonical JSON to a later target.
+					if ( $has_json ) {
+						break;
+					}
+					$offset = false !== $comment_close ? $comment_close + 3 : $type_end;
+					continue;
+				}
+				$type = substr( $token_name, strlen( 'divi/' ) );
+			} elseif ( ! $has_json && ( false === $comment_close
+				|| ! preg_match( '/\A\s+\/?-->\z/', substr( $content, $type_end, $comment_close + 3 - $type_end ) ) ) ) {
+				$offset = false !== $comment_close ? $comment_close + 3 : $type_end;
+				continue;
+			}
+
 			// Track auto_index counters per type (document order) — count ALL blocks
 			// including those without JSON attrs, to match parse_blocks() counting.
 			if ( ! isset( $type_counters[ $type ] ) ) {
@@ -1567,10 +1591,12 @@ trait DiviOps_Agent_Page {
 			}
 			$type_counters[ $type ]++;
 
-			// Blocks without JSON attrs can't be updated, but still count for auto_index.
-			$next_char = isset( $content[ $type_end + 1 ] ) ? $content[ $type_end + 1 ] : '';
-			$has_json  = ( ' ' === $content[ $type_end ] && '{' === $next_char );
-			if ( ! $has_json ) {
+			// Only an explicitly indexed canonical bare text leaf may start
+			// with empty attrs. Do not treat malformed attrs as an empty object.
+			$bare_text = 'auto_index' === $mode && 'text' === $type
+				&& $type === $ai_type && $type_counters[ $type ] === $ai_target
+				&& substr_compare( $content, '<!-- wp:divi/text /-->', $pos, strlen( '<!-- wp:divi/text /-->' ) ) === 0;
+			if ( ! $has_json && ! $bare_text ) {
 				// Skip to end of comment for non-JSON blocks.
 				$skip_end = strpos( $content, '-->', $pos );
 				$offset   = $skip_end ? $skip_end + 3 : $type_end;
@@ -1594,6 +1620,7 @@ trait DiviOps_Agent_Page {
 				'comment'         => $comment,
 				'type'            => $type,
 				'is_self_closing' => $is_self_closing,
+				'bare_text'       => $bare_text,
 			];
 
 			if ( 'auto_index' === $mode ) {
@@ -1672,7 +1699,7 @@ trait DiviOps_Agent_Page {
 			? strrpos( $comment, '}', strrpos( $comment, '/-->' ) - strlen( $comment ) )
 			: strrpos( $comment, '}', strrpos( $comment, '-->' ) - strlen( $comment ) );
 
-		if ( false === $json_start || false === $json_end ) {
+		if ( ! $found_match['bare_text'] && ( false === $json_start || false === $json_end ) ) {
 			return self::envelope_error(
 				'divi_error',
 				'Could not parse block attributes on the matched module.',
@@ -1682,7 +1709,7 @@ trait DiviOps_Agent_Page {
 			);
 		}
 
-		$json_str    = substr( $comment, $json_start, $json_end - $json_start + 1 );
+		$json_str    = $found_match['bare_text'] ? '{}' : substr( $comment, $json_start, $json_end - $json_start + 1 );
 		$block_attrs = json_decode( $json_str, true );
 
 		// Record which positions held {} before the assoc decode collapsed
@@ -1755,6 +1782,13 @@ trait DiviOps_Agent_Page {
 			unset( $ref );
 		}
 
+		if ( $found_match['bare_text'] && [] === $attrs ) {
+			$preflight = self::assert_divi_full_content_safe_for_write( $content, 'content' );
+			if ( is_wp_error( $preflight ) ) {
+				return self::envelope_from_content_write_error( $preflight );
+			}
+		}
+
 		if ( $dry_run ) {
 			$target_desc = 'auto_index' === $mode ? $auto_index : ( 'label' === $mode ? $label : "text:{$match_text}" );
 			$changes     = [];
@@ -1775,9 +1809,28 @@ trait DiviOps_Agent_Page {
 			);
 		}
 
+		// Empty updates must not normalize the newly supported bare Text opener.
+		if ( $found_match['bare_text'] && [] === $attrs ) {
+			$response = [
+				'success'    => true,
+				'page_id'    => $post_id,
+				'matched_by' => $mode,
+				'target'     => $auto_index,
+				'updated'    => [],
+				'noop'       => true,
+				'message'    => "Module '{$auto_index}' has no requested attr updates (no-op).",
+			];
+			$snapshot = $backup ? self::rollback_snapshot_noop_for_post_write( $post, 'diviops_module_update', [ 'tool_operation' => 'module.update', 'target' => $auto_index, 'updated' => [] ] ) : null;
+			return self::envelope_success( self::rollback_snapshot_add_to_response( $response, $snapshot ) );
+		}
+
 		// Re-encode and replace.
 		if ( ! empty( $empty_object_paths ) ) {
 			$block_attrs = self::restore_empty_objects( $block_attrs, $empty_object_paths );
+		}
+		// An untouched empty object root must not re-encode as a JSON array.
+		if ( [] === $block_attrs && is_object( $objects_decoded ) ) {
+			$block_attrs = new stdClass();
 		}
 		$new_json = self::serialize_block_attrs_canonical( $block_attrs );
 		if ( null === $new_json ) {

@@ -42,11 +42,20 @@ The plugin includes a WordPress.org-format `readme.txt` and a plugin-local `chan
 
 Current metadata policy:
 
-- `Stable tag` matches the plugin header `Version` (`1.5.27`).
+- `Stable tag` matches the plugin header `Version` (`1.5.28`).
 - `Requires at least` and `Requires PHP` mirror the main plugin header.
 - `Tested up to` is evidence-based for this repo/substrate and should not be raised until the Free plugin is actually tested on that WordPress version.
 - External-service/authentication disclosure must mention the separately distributed npm MCP server, WordPress Application Passwords, and the rule that secrets do not belong in issues, examples, screenshots, or repo files.
 - Free/Pro copy must keep the Free plugin useful while making clear that Pro is the paid workflow-leverage layer and that not every MCP tool is Free-backed.
+
+Free 1.5.28 prepares corrections for explicit-index targeting of canonical
+empty native Text modules, preserving existing serialization and write guards.
+An empty attribute update remains a no-op. Inspector consumer scans now report
+unavailable coverage after failed or missing batches while preserving known
+samples; overall coverage remains partial and zero references never establishes
+that deletion is safe. No new MCP capability or compatibility floor is added.
+Source checks do not qualify the new package or prove an installed-site update.
+Package qualification, runtime and publication remain separate decisions.
 
 Free 1.5.27 prepares real preset-deletion previews and guarded exact-ID set
 deletion through `preset_delete_exact_v1`, literal native Code content validation,

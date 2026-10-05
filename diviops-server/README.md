@@ -2,13 +2,38 @@
 
 **An AI harness for WordPress site authoring — Divi-native today, WordPress-wide by design.**
 
-The Node.js MCP server inside the DiviOps harness. It gives Claude Code, Codex, Claude Desktop, and other MCP clients a typed control layer over WordPress site state, dispatching to the DiviOps Agent plugin for Divi 5 page authoring, SCF and CPT data models, design tokens, presets, library and Theme Builder templates, site audits, and safe WP-CLI passthrough. Pairs with the `divi-5-builder` skill so the agent applies Divi's block format and design rules correctly.
+The Node.js MCP server inside the DiviOps harness. It gives Claude Code, Codex, Claude Desktop, and other MCP clients a typed control layer over WordPress site state, dispatching to the DiviOps Agent plugin for Divi 5 page authoring, SCF and CPT data models, design tokens, presets, library and Theme Builder templates, site audits, and safe WP-CLI passthrough. Pairs with the `diviops-divi-5` skill so the agent applies Divi's block format and design rules correctly.
 
 ```
 Claude Code <-> MCP Server (stdio) <-> WordPress REST API <-> DiviOps Agent plugin
 ```
 
-## 1.5.55 candidate release note
+## 1.5.56 candidate release note
+
+Aligns shipped setup documentation and attribute-reference citations with the
+renamed `diviops-divi-5` skill. Updates three pinned production dependencies to
+address reported advisories: `fast-uri` 3.1.8, `hono` 4.13.7 and `ip-address`
+10.7.1. No DiviOps tool implementation, schema or compatibility-floor change
+is included. Dependency advisories do not establish exploitability in DiviOps.
+
+Separately prepared Free 1.5.28 corrects explicit-index targeting of canonical
+empty native Text modules and marks incomplete Inspector consumer reads as
+unavailable. These plugin corrections do not require a new MCP capability or
+raise the minimum MCP version.
+
+Public builder companion 1.4.9 preserves existing Free/Pro guidance boundaries
+and carries the renamed skill and preset typography ownership guidance. The
+marketplace plugin identifier remains `divi-5-builder`; it is not the skill name.
+Existing SCF/FluentCart guidance may still link to the old skill directory.
+Keep that working installation until matching companion guidance is available,
+or use an explicitly reviewed link-only migration. Do not leave two discoverable
+builder copies or overwrite local edits. Updating npm or WordPress does not
+update independently installed skills or refresh already-read instructions.
+
+This is source preparation, not exact-package qualification, runtime acceptance
+or public delivery. Pro, Design Library and paid-skill delivery remain separate.
+
+## Previous 1.5.55 candidate release note
 
 With Free 1.5.27, preset deletion supports real dry-run previews and guarded
 `preset_ids` exact-set apply through `preset_delete_exact_v1`. Review the preview
@@ -252,7 +277,7 @@ change direct npm/stdio support.
 
 For a deeper walkthrough (containerized environments, WP-CLI configuration, troubleshooting installation), see [setup-guide.md](../docs/setup-guide.md).
 
-### 4. Load the `divi-5-builder` skill
+### 4. Load the `diviops-divi-5` skill
 
 Install it for Claude Code by running
 `claude plugin marketplace add oaris-dev/diviops` and then
@@ -260,7 +285,14 @@ Install it for Claude Code by running
 `skills/*` into the supported skill directory for Codex/manual setups. WordPress
 and npm updates do not update manual skill copies. Avoid simultaneous
 plugin-managed and stale manual copies, then restart the client and confirm
-`divi-5-builder` is visible.
+`diviops-divi-5` is visible. The plugin package keeps its historical
+`divi-5-builder` identifier for update continuity; that is not the skill name.
+For an existing installation, use the
+[selected-root replacement procedure](../docs/setup-guide.md) before copying:
+inventory both `divi-5-builder` and `diviops-divi-5` roots, preserve local edits
+and rollback outside discovery roots, and retire only the confirmed old copy.
+Unknown ownership or modified copies require review; do not add a discoverable
+old-name alias. Disk freshness alone does not establish loaded-session freshness.
 
 ### 5. Prove native module authoring
 
@@ -622,7 +654,7 @@ Common quick fixes — full reference in [troubleshooting.md](../docs/troublesho
 - [safety-patterns.md](../docs/safety-patterns.md) — Pattern A (refuse-with-override) + Pattern B (preview-then-commit) + universal `dry_run`
 - [troubleshooting.md](../docs/troubleshooting.md) — common errors and resolutions
 - [idempotency-audit.md](../docs/idempotency-audit.md) — repeat-call semantics per tool
-- **`divi-5-builder` skill** — block format rules, design patterns, workflow guidance (ships in the dist repo)
+- **`diviops-divi-5` skill** — block format rules, design patterns, workflow guidance (ships in the dist repo)
 
 ## Requirements
 

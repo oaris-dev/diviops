@@ -675,6 +675,17 @@ Typical flow for normalizing repeated styling into a reusable preset, **when mod
 
 **Attribute-level (`groupPreset`) consolidation** uses the implemented per-slot stripping and advisories above. Page refs are `attrs.groupPreset.<slot>.presetId`; registry chain refs are top-level `groupPresets.<slot>.presetId` for module-bucket presets and `attrs.groupPreset.<slot>.presetId` for group-bucket presets. Review `chain_details` as well as page changes. Differing overrides are intentionally retained; reassignment is not deliberate adoption of every preset property.
 
+### Effective typography ownership
+
+A preset reference and valid blocks do not prove that the preset controls the rendered text. Review effective ownership before diagnosing a preset-engine defect.
+
+- Inspect the selected preset's actual size and line-height declarations for the intended slot and breakpoint/state. A body preset with only line-height does **not** establish font-size ownership; a role label is not property coverage.
+- Inspect both module-level typography attrs and the HTML inside text content, including nested `p`/`span` styles. For example, `<span style="font-size:13px">Coverage note</span>` can retain local size ownership despite a body preset reference. Check the actual text element's computed style and winning/inherited declarations, not only the module wrapper.
+- For deliberate adoption, remove only the reviewed overlapping property at its owning layer. Preserve text, links, unrelated styles, intentional local exceptions and implicit-default safeguards. Equal-leaf attr stripping does not remove a CSS declaration embedded in an HTML string. Editing that string requires fresh content and a reviewed replacement, not a blanket `style` removal or a `null` attr.
+- After the scoped change, compare computed **font size and line height** before/after on representative desktop and phone text elements, including the retained exception. Record the viewport, intended role, actual owner, measurements and keep/remove decision. For fluid values, compare against the role at that viewport. A retained local size still masks later shared size changes; line-height can remain shared independently.
+
+An offline CSS example does not qualify Divi-emitted CSS, persisted block/readback, implicit preset cascade or native VB save/reopen. Keep those live gates pending unless separately authorized and exercised.
+
 ### When to Use Presets vs Inline Styles
 
 **If you're starting a new project, presets are optional.** DiviOps generates polished pages using hardcoded values from [design-guide.md](design-guide.md) patterns without any preset setup. See [SKILL.md "First time on a project?"](../SKILL.md#first-time-on-a-project-start-here) for the shortest path.

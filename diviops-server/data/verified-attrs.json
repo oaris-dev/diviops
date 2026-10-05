@@ -48,7 +48,7 @@
           "cell_evidence_level": "SCHEMA_OBSERVED",
           "cell_divi_version": "5.5.2",
           "verified_at": "2026-05-19",
-          "source": ".claude/skills/divi-5-builder/references/module-formats.md#tier-1--common-decoration-all-modules",
+          "source": ".claude/skills/diviops-divi-5/references/module-formats.md#tier-1--common-decoration-all-modules",
           "caveats": ["Tier 1 documented as universally applicable in module-formats.md; no module-specific VB capture for divi/heading on this wrapper yet"]
         },
         "divi/text": {
@@ -57,7 +57,7 @@
           "cell_evidence_level": "SCHEMA_OBSERVED",
           "cell_divi_version": "5.5.2",
           "verified_at": "2026-05-19",
-          "source": ".claude/skills/divi-5-builder/references/module-formats.md#tier-1--common-decoration-all-modules",
+          "source": ".claude/skills/diviops-divi-5/references/module-formats.md#tier-1--common-decoration-all-modules",
           "caveats": []
         },
         "divi/button": {
@@ -66,7 +66,7 @@
           "cell_evidence_level": "SCHEMA_OBSERVED",
           "cell_divi_version": "5.5.2",
           "verified_at": "2026-05-19",
-          "source": ".claude/skills/divi-5-builder/references/module-formats.md#button-vb-verified-2026-03-31-for-511-schema-audited-2026-04-12-",
+          "source": ".claude/skills/diviops-divi-5/references/module-formats.md#button-vb-verified-2026-03-31-for-511-schema-audited-2026-04-12-",
           "caveats": ["Button background is canonically authored at button.decoration.background (Tier 2 button group), not module.decoration.background; module-level background works only when intentionally targeting the surrounding wrapper"]
         }
       }
@@ -96,7 +96,7 @@
           "cell_evidence_level": "SCHEMA_OBSERVED",
           "cell_divi_version": "5.5.2",
           "verified_at": "2026-05-19",
-          "source": ".claude/skills/divi-5-builder/references/module-formats.md#tier-1--common-decoration-all-modules",
+          "source": ".claude/skills/diviops-divi-5/references/module-formats.md#tier-1--common-decoration-all-modules",
           "caveats": []
         },
         "divi/text": {
@@ -105,7 +105,7 @@
           "cell_evidence_level": "SCHEMA_OBSERVED",
           "cell_divi_version": "5.5.2",
           "verified_at": "2026-05-19",
-          "source": ".claude/skills/divi-5-builder/references/module-formats.md#tier-1--common-decoration-all-modules",
+          "source": ".claude/skills/diviops-divi-5/references/module-formats.md#tier-1--common-decoration-all-modules",
           "caveats": []
         },
         "divi/button": {
@@ -114,7 +114,7 @@
           "cell_evidence_level": "SCHEMA_OBSERVED",
           "cell_divi_version": "5.5.2",
           "verified_at": "2026-05-19",
-          "source": ".claude/skills/divi-5-builder/references/module-formats.md#button-vb-verified-2026-03-31-for-511-schema-audited-2026-04-12-",
+          "source": ".claude/skills/diviops-divi-5/references/module-formats.md#button-vb-verified-2026-03-31-for-511-schema-audited-2026-04-12-",
           "caveats": ["Button-module padding lives on module.decoration.spacing per Button exception, NOT button.decoration.spacing (which is VB-hidden / non-functional). See module-formats.md."]
         },
         "divi/row": {
@@ -123,7 +123,7 @@
           "cell_evidence_level": "SCHEMA_OBSERVED",
           "cell_divi_version": "5.5.2",
           "verified_at": "2026-05-19",
-          "source": ".claude/skills/divi-5-builder/references/module-formats.md#tier-1--common-decoration-all-modules",
+          "source": ".claude/skills/diviops-divi-5/references/module-formats.md#tier-1--common-decoration-all-modules",
           "caveats": []
         },
         "divi/column": {
@@ -132,7 +132,7 @@
           "cell_evidence_level": "SCHEMA_OBSERVED",
           "cell_divi_version": "5.5.2",
           "verified_at": "2026-05-19",
-          "source": ".claude/skills/divi-5-builder/references/module-formats.md#tier-1--common-decoration-all-modules",
+          "source": ".claude/skills/diviops-divi-5/references/module-formats.md#tier-1--common-decoration-all-modules",
           "caveats": []
         },
         "divi/group": {
@@ -141,7 +141,7 @@
           "cell_evidence_level": "SCHEMA_OBSERVED",
           "cell_divi_version": "5.5.2",
           "verified_at": "2026-05-19",
-          "source": ".claude/skills/divi-5-builder/references/module-formats.md#tier-1--common-decoration-all-modules",
+          "source": ".claude/skills/diviops-divi-5/references/module-formats.md#tier-1--common-decoration-all-modules",
           "caveats": []
         }
       }
@@ -173,7 +173,7 @@
           "cell_evidence_level": "SCHEMA_OBSERVED",
           "cell_divi_version": "5.5.2",
           "verified_at": "2026-05-19",
-          "source": ".claude/skills/divi-5-builder/references/module-formats.md#tier-1--common-decoration-all-modules",
+          "source": ".claude/skills/diviops-divi-5/references/module-formats.md#tier-1--common-decoration-all-modules",
           "caveats": []
         },
         "divi/heading": {
@@ -182,7 +182,7 @@
           "cell_evidence_level": "SCHEMA_OBSERVED",
           "cell_divi_version": "5.5.2",
           "verified_at": "2026-05-19",
-          "source": ".claude/skills/divi-5-builder/references/module-formats.md#tier-1--common-decoration-all-modules",
+          "source": ".claude/skills/diviops-divi-5/references/module-formats.md#tier-1--common-decoration-all-modules",
           "caveats": []
         },
         "divi/text": {
@@ -191,7 +191,7 @@
           "cell_evidence_level": "SCHEMA_OBSERVED",
           "cell_divi_version": "5.5.2",
           "verified_at": "2026-05-19",
-          "source": ".claude/skills/divi-5-builder/references/module-formats.md#tier-1--common-decoration-all-modules",
+          "source": ".claude/skills/diviops-divi-5/references/module-formats.md#tier-1--common-decoration-all-modules",
           "caveats": []
         },
         "divi/image": {
@@ -200,7 +200,7 @@
           "cell_evidence_level": "SCHEMA_OBSERVED",
           "cell_divi_version": "5.5.2",
           "verified_at": "2026-05-19",
-          "source": ".claude/skills/divi-5-builder/references/module-formats.md#image-vb-verified-2026-03-19-schema-audited-2026-04-12--exception",
+          "source": ".claude/skills/diviops-divi-5/references/module-formats.md#image-vb-verified-2026-03-19-schema-audited-2026-04-12--exception",
           "caveats": ["Image-module exception: border lives on image.decoration.border, NOT module.decoration.border. Border radius from preset alone does not render — reinforce inline per module-formats.md image-specific quirk."]
         }
       }
@@ -208,7 +208,7 @@
     {
       "pattern_family": "module.decoration.sizing",
       "pattern_evidence_level": "SCHEMA_OBSERVED",
-      "pattern_evidence_source": ".claude/skills/divi-5-builder/references/module-formats.md#tier-1--common-decoration-all-modules",
+      "pattern_evidence_source": ".claude/skills/diviops-divi-5/references/module-formats.md#tier-1--common-decoration-all-modules",
       "pattern_divi_version": "5.5.2",
       "pattern_verified_at": "2026-05-19",
       "canonical_shape_note": "sizing.desktop.value.{maxWidth, width, flexType, alignment, alignSelf, minHeight, height}. flexType uses 24-unit grid ('8_24', '12_24'). flexType requires parent row display:'flex' per module-formats.md Column section. No Phase 1 capture for sizing yet; pattern remains SCHEMA_OBSERVED until a VB-roundtrip lands.",
@@ -219,7 +219,7 @@
           "cell_evidence_level": "SCHEMA_OBSERVED",
           "cell_divi_version": "5.5.2",
           "verified_at": "2026-05-19",
-          "source": ".claude/skills/divi-5-builder/references/module-formats.md#column-vb-verified-2026-03-19-flex-pipeline-reverified-2026-05-09-against-divi-541-",
+          "source": ".claude/skills/diviops-divi-5/references/module-formats.md#column-vb-verified-2026-03-19-flex-pipeline-reverified-2026-05-09-against-divi-541-",
           "caveats": ["flexType requires parent row display:'flex'; on block-display rows Divi emits the legacy et_pb_column_N_M class and ignores flexType (intentional Divi behavior, not a bug)"]
         },
         "divi/group": {
@@ -228,7 +228,7 @@
           "cell_evidence_level": "SCHEMA_OBSERVED",
           "cell_divi_version": "5.5.2",
           "verified_at": "2026-05-19",
-          "source": ".claude/skills/divi-5-builder/references/module-formats.md#group-vb-verified-2026-03-21-",
+          "source": ".claude/skills/diviops-divi-5/references/module-formats.md#group-vb-verified-2026-03-21-",
           "caveats": []
         },
         "divi/section": {
@@ -237,7 +237,7 @@
           "cell_evidence_level": "SCHEMA_OBSERVED",
           "cell_divi_version": "5.5.2",
           "verified_at": "2026-05-19",
-          "source": ".claude/skills/divi-5-builder/references/module-formats.md#tier-1--common-decoration-all-modules",
+          "source": ".claude/skills/diviops-divi-5/references/module-formats.md#tier-1--common-decoration-all-modules",
           "caveats": []
         }
       }
@@ -276,7 +276,7 @@
           "cell_evidence_level": "SCHEMA_OBSERVED",
           "cell_divi_version": "5.5.2",
           "verified_at": "2026-05-19",
-          "source": ".claude/skills/divi-5-builder/references/module-formats.md#tier-2--pattern-families",
+          "source": ".claude/skills/diviops-divi-5/references/module-formats.md#tier-2--pattern-families",
           "caveats": ["Wrapper inferred from module-formats.md Font Family B; not VB-roundtripped on divi/blurb specifically"]
         },
         "divi/number-counter": {
@@ -287,7 +287,7 @@
           "cell_evidence_level": "SCHEMA_OBSERVED",
           "cell_divi_version": "5.5.2",
           "verified_at": "2026-05-19",
-          "source": ".claude/skills/divi-5-builder/references/module-formats.md#tier-2--pattern-families",
+          "source": ".claude/skills/diviops-divi-5/references/module-formats.md#tier-2--pattern-families",
           "caveats": []
         },
         "divi/testimonial": {
@@ -298,7 +298,7 @@
           "cell_evidence_level": "SCHEMA_OBSERVED",
           "cell_divi_version": "5.5.2",
           "verified_at": "2026-05-19",
-          "source": ".claude/skills/divi-5-builder/references/module-formats.md#tier-2--pattern-families",
+          "source": ".claude/skills/diviops-divi-5/references/module-formats.md#tier-2--pattern-families",
           "caveats": ["Testimonial also exposes jobTitle and company variants; each is a separate cell"]
         },
         "divi/accordion-item": {
@@ -309,7 +309,7 @@
           "cell_evidence_level": "SCHEMA_OBSERVED",
           "cell_divi_version": "5.5.2",
           "verified_at": "2026-05-19",
-          "source": ".claude/skills/divi-5-builder/references/module-formats.md#tier-2--pattern-families",
+          "source": ".claude/skills/diviops-divi-5/references/module-formats.md#tier-2--pattern-families",
           "caveats": []
         },
         "divi/slide": {
@@ -320,7 +320,7 @@
           "cell_evidence_level": "SCHEMA_OBSERVED",
           "cell_divi_version": "5.5.2",
           "verified_at": "2026-05-19",
-          "source": ".claude/skills/divi-5-builder/references/module-formats.md#tier-2--pattern-families",
+          "source": ".claude/skills/diviops-divi-5/references/module-formats.md#tier-2--pattern-families",
           "caveats": []
         }
       }
@@ -383,7 +383,7 @@
           "cell_evidence_level": "SCHEMA_OBSERVED",
           "cell_divi_version": "5.5.2",
           "verified_at": "2026-05-19",
-          "source": ".claude/skills/divi-5-builder/references/module-formats.md#tier-2--pattern-families",
+          "source": ".claude/skills/diviops-divi-5/references/module-formats.md#tier-2--pattern-families",
           "caveats": []
         },
         "divi/accordion-item": {
@@ -394,7 +394,7 @@
           "cell_evidence_level": "SCHEMA_OBSERVED",
           "cell_divi_version": "5.5.2",
           "verified_at": "2026-05-19",
-          "source": ".claude/skills/divi-5-builder/references/module-formats.md#tier-2--pattern-families",
+          "source": ".claude/skills/diviops-divi-5/references/module-formats.md#tier-2--pattern-families",
           "caveats": []
         },
         "divi/slide": {
@@ -405,7 +405,7 @@
           "cell_evidence_level": "SCHEMA_OBSERVED",
           "cell_divi_version": "5.5.2",
           "verified_at": "2026-05-19",
-          "source": ".claude/skills/divi-5-builder/references/module-formats.md#tier-2--pattern-families",
+          "source": ".claude/skills/diviops-divi-5/references/module-formats.md#tier-2--pattern-families",
           "caveats": []
         },
         "divi/blurb": {
@@ -416,7 +416,7 @@
           "cell_evidence_level": "SCHEMA_OBSERVED",
           "cell_divi_version": "5.5.2",
           "verified_at": "2026-05-19",
-          "source": ".claude/skills/divi-5-builder/references/module-formats.md#tier-2--pattern-families",
+          "source": ".claude/skills/diviops-divi-5/references/module-formats.md#tier-2--pattern-families",
           "caveats": []
         }
       }
@@ -509,7 +509,7 @@
           "cell_evidence_level": "SCHEMA_OBSERVED",
           "cell_divi_version": "5.5.2",
           "verified_at": "2026-05-19",
-          "source": ".claude/skills/divi-5-builder/references/presets.md#known-group-bucket-inventory-vb-verified-2026-05-04",
+          "source": ".claude/skills/diviops-divi-5/references/presets.md#known-group-bucket-inventory-vb-verified-2026-05-04",
           "caveats": [
             "divi/spacing group bucket VB-confirmed (5.4.0); per-module title-spacing cell needs its own roundtrip",
             "group_id is NOT VB-verified for this cell — value 'title.decoration.spacing' is schema-inferred. The canonical section spacing capture (5.6.0) proved the section cell uses groupId='designSpacing' (Composable Settings panel id, not dotted attr path); whether heading uses the same value or a wrapper-prefixed variant is unverified. Do NOT use this group_id for preset writes until a heading-spacing capture on the canonical clean reference substrate lands. Note: write/reset sandbox presets (ids ecs423stpr, yjh59i25br) are bound to title wrapper with the same sparse-emit shape, but these are unverified residue and explicitly NOT used as evidence; proper capture on the canonical reference substrate is required."
@@ -523,7 +523,7 @@
           "cell_evidence_level": "SCHEMA_OBSERVED",
           "cell_divi_version": "5.5.2",
           "verified_at": "2026-05-19",
-          "source": ".claude/skills/divi-5-builder/references/presets.md#known-group-bucket-inventory-vb-verified-2026-05-04",
+          "source": ".claude/skills/diviops-divi-5/references/presets.md#known-group-bucket-inventory-vb-verified-2026-05-04",
           "caveats": [
             "group_id is NOT VB-verified for this cell — value 'content.decoration.spacing' is schema-inferred. The canonical section spacing capture (5.6.0) proved the section cell uses groupId='designSpacing' (Composable Settings panel id, not dotted attr path); whether text uses the same value or a wrapper-prefixed variant is unverified. Do NOT use this group_id for preset writes until a text-spacing capture on the canonical clean reference substrate lands."
           ]
@@ -553,7 +553,7 @@
           "cell_evidence_level": "SCHEMA_OBSERVED",
           "cell_divi_version": "5.5.2",
           "verified_at": "2026-05-19",
-          "source": ".claude/skills/divi-5-builder/references/presets.md#known-group-bucket-inventory-vb-verified-2026-05-04",
+          "source": ".claude/skills/diviops-divi-5/references/presets.md#known-group-bucket-inventory-vb-verified-2026-05-04",
           "caveats": [
             "Button padding is canonically authored on module.decoration.spacing per Button exception (NOT button.decoration.spacing which is VB-hidden)",
             "group_id is NOT VB-verified for this cell — value 'module.decoration.spacing' is schema-inferred. The canonical section spacing capture (5.6.0) proved the section cell uses groupId='designSpacing' (Composable Settings panel id, not dotted attr path); whether button uses the same value or differs is unverified. Do NOT use this group_id for preset writes until a button-spacing capture on the canonical clean reference substrate lands."
@@ -571,7 +571,7 @@
       "evidence_level": "SCHEMA_OBSERVED",
       "divi_version": "5.5.2",
       "verified_at": "2026-05-19",
-      "source": ".claude/skills/divi-5-builder/references/module-formats.md#button-vb-verified-2026-03-31-for-511-schema-audited-2026-04-12-",
+      "source": ".claude/skills/diviops-divi-5/references/module-formats.md#button-vb-verified-2026-03-31-for-511-schema-audited-2026-04-12-",
       "status": "documented",
       "caveats": ["innerContent is per-instance, not normally preset-authored; the Phase 1 captures focus on preset shape so this cell remains SCHEMA_OBSERVED for now"]
     },
@@ -583,7 +583,7 @@
       "evidence_level": "SCHEMA_OBSERVED",
       "divi_version": "5.5.2",
       "verified_at": "2026-05-19",
-      "source": ".claude/skills/divi-5-builder/references/module-formats.md#text-vb-verified-2026-03-19-schema-audited-2026-04-12-",
+      "source": ".claude/skills/diviops-divi-5/references/module-formats.md#text-vb-verified-2026-03-19-schema-audited-2026-04-12-",
       "status": "documented",
       "caveats": []
     },
@@ -595,7 +595,7 @@
       "evidence_level": "SCHEMA_OBSERVED",
       "divi_version": "5.5.2",
       "verified_at": "2026-05-19",
-      "source": ".claude/skills/divi-5-builder/references/module-formats.md#heading-vb-verified-2026-03-19-schema-audited-2026-04-12-",
+      "source": ".claude/skills/diviops-divi-5/references/module-formats.md#heading-vb-verified-2026-03-19-schema-audited-2026-04-12-",
       "status": "documented",
       "caveats": []
     },
@@ -607,7 +607,7 @@
       "evidence_level": "SCHEMA_OBSERVED",
       "divi_version": "5.5.2",
       "verified_at": "2026-05-19",
-      "source": ".claude/skills/divi-5-builder/references/module-formats.md#tier-2--pattern-families",
+      "source": ".claude/skills/diviops-divi-5/references/module-formats.md#tier-2--pattern-families",
       "status": "documented",
       "caveats": ["headingLevel is a structural-only field — preset's styleAttrs strip it per presets.md storage-format notes"]
     },
@@ -619,7 +619,7 @@
       "evidence_level": "SCHEMA_OBSERVED",
       "divi_version": "5.5.2",
       "verified_at": "2026-05-19",
-      "source": ".claude/skills/divi-5-builder/references/module-formats.md#image-vb-verified-2026-03-19-schema-audited-2026-04-12--exception",
+      "source": ".claude/skills/diviops-divi-5/references/module-formats.md#image-vb-verified-2026-03-19-schema-audited-2026-04-12--exception",
       "status": "documented",
       "caveats": ["Combined form appears to work in practice; VB round-trip test pending per module-formats.md drift candidate note"]
     },
@@ -631,7 +631,7 @@
       "evidence_level": "SCHEMA_OBSERVED",
       "divi_version": "5.5.2",
       "verified_at": "2026-05-19",
-      "source": ".claude/skills/divi-5-builder/references/module-formats.md#icon-vb-verified-2026-03-19-schema-audited-2026-04-12-",
+      "source": ".claude/skills/diviops-divi-5/references/module-formats.md#icon-vb-verified-2026-03-19-schema-audited-2026-04-12-",
       "status": "documented",
       "caveats": []
     },
@@ -643,7 +643,7 @@
       "evidence_level": "SCHEMA_OBSERVED",
       "divi_version": "5.5.2",
       "verified_at": "2026-05-19",
-      "source": ".claude/skills/divi-5-builder/references/module-formats.md#dividers-section-only-vb-verified-2026-03-23",
+      "source": ".claude/skills/diviops-divi-5/references/module-formats.md#dividers-section-only-vb-verified-2026-03-23",
       "status": "documented",
       "caveats": ["Section only; Row/Column/Group do not support dividers"]
     },
@@ -655,7 +655,7 @@
       "evidence_level": "SCHEMA_OBSERVED",
       "divi_version": "5.5.2",
       "verified_at": "2026-05-19",
-      "source": ".claude/skills/divi-5-builder/references/module-formats.md#column-vb-verified-2026-03-19-flex-pipeline-reverified-2026-05-09-against-divi-541-",
+      "source": ".claude/skills/diviops-divi-5/references/module-formats.md#column-vb-verified-2026-03-19-flex-pipeline-reverified-2026-05-09-against-divi-541-",
       "status": "documented",
       "caveats": ["Requires parent row display:'flex'; otherwise Divi emits legacy et_pb_column_N_M and ignores flexType (intentional Divi behavior)"]
     }

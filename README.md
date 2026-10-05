@@ -53,7 +53,7 @@ Each example explains the implementation and review steps. External research ser
 |---|---|---|
 | **DiviOps Agent** WordPress plugin | WordPress-side tools for supported Divi page operations, validation, presets and other site operations | `diviops-agent.zip` at the repo root |
 | **`@diviops/mcp-server`** | Connects MCP clients to the WordPress plugin | `npx -y --package @diviops/mcp-server diviops-mcp` |
-| **`divi-5-builder`** Free skill | Native block formats, Tier 1 attribute guidance, design patterns and tool references | `skills/divi-5-builder/`; see [skill installation](#4-load-the-divi-5-builder-skill) |
+| **`diviops-divi-5`** Free skill | Native block formats, Tier 1 attribute guidance, design patterns and tool references | `skills/diviops-divi-5/`; see [skill installation](#4-load-the-diviops-divi-5-skill) |
 | **`diviops`** harness primer | Shared conventions for the connected agent workflow | `skills/diviops/` |
 | **`diviops-design-library`** plugin | Optional visual effects, including CSS animations, gradients, glass effects and Three.js shaders | `diviops-design-library.zip` at the repo root |
 
@@ -62,7 +62,7 @@ Core SCF MCP tools are Free. Pro adds extended Divi guidance, the deeper SCF ski
 The WordPress plugin, npm MCP server, and client-side skill are three independent
 components. WordPress and npm updates do not install or refresh a manually copied
 skill. A working MCP tool call proves connectivity only; native Divi authoring also
-requires a current `divi-5-builder` skill in the active client session.
+requires a current `diviops-divi-5` skill in the active client session.
 
 ## Quick start
 
@@ -132,7 +132,7 @@ Restart your client, then ask: **"List the pages on my site."** The assistant ca
 `diviops_page_list` and renders the result. This proves connectivity; complete the
 skill install and native-module smoke below before authoring content.
 
-### 4. Load the `divi-5-builder` skill
+### 4. Load the `diviops-divi-5` skill
 
 The skill teaches the assistant the correct Divi 5 block format. Without it, the agent guesses attr formats and produces broken pages.
 
@@ -141,7 +141,7 @@ claude plugin marketplace add oaris-dev/diviops
 claude plugin install divi-5-builder@diviops
 ```
 
-Verify with `What skills do you have?` — you should see `divi-5-builder` listed.
+The plugin identifier stays `divi-5-builder@diviops`; the skill inside a migrated distribution is `diviops-divi-5`. Verify with `What skills do you have?` in a fresh session. Older distributions still contain the old skill name.
 
 This distribution includes a [`.claude-plugin/marketplace.json`](.claude-plugin/marketplace.json) manifest. For a local clone, add its absolute path as the marketplace source, then install the same qualified plugin ID:
 
@@ -150,7 +150,7 @@ claude plugin marketplace add /absolute/path/to/diviops
 claude plugin install divi-5-builder@diviops
 ```
 
-For alternative skill installation paths (cloned repo, project-local copy), see [SETUP.md](SETUP.md#step-7-load-the-divi-5-builder-skill).
+For alternative skill installation paths (cloned repo, project-local copy), see [SETUP.md](SETUP.md#step-7-load-the-divi-5-builder-skill). For existing installations, follow the [replacement procedure](SETUP.md#replacing-an-existing-builder-skill) before copying: preserve local edits outside discovery roots and retire only the confirmed old copy. Do not leave both builder names discoverable.
 
 For Codex, run this from the extracted DiviOps distribution or a local repo clone, then restart Codex:
 
@@ -229,11 +229,11 @@ The Free distribution (`oaris-dev/diviops`) carries the core DiviOps execution s
 - `diviops-agent` WordPress plugin (REST bridge, Divi 5 + SCF + CPT + WP-CLI handlers)
 - `diviops-design-library` plugin (CSS effects, gradients, glass, Three.js shaders)
 - `@diviops/mcp-server` on npm — the shared MCP server package
-- `divi-5-builder` skill, free slice: `SKILL.md`, design patterns, tools reference, preset system, design-effects, mega-menu, minimal snippets, SaaS landing, and the **Tier 1** attribute reference (universal decoration, `innerContent[]` variants, attribute tree layout, design tokens, exceptions quick reference)
+- `diviops-divi-5` skill, free slice: `SKILL.md`, design patterns, tools reference, preset system, design-effects, mega-menu, minimal snippets, SaaS landing, and the **Tier 1** attribute reference (universal decoration, `innerContent[]` variants, attribute tree layout, design tokens, exceptions quick reference)
 
 ### What ships in Pro (v1.x today)
 
-The Pro distribution adds the Pro plugin, license/update gating, target coverage slices, and the deeper skill knowledge layer — `divi-5-builder` **Tier 2** + **Tier 3**:
+The Pro distribution adds the Pro plugin, license/update gating, target coverage slices, and the deeper skill knowledge layer — `diviops-divi-5` **Tier 2** + **Tier 3**:
 
 | | Free | Pro |
 |---|:---:|:---:|
@@ -303,7 +303,7 @@ Full troubleshooting matrix and environment-specific setup (DDEV, wp-env, WordPr
 
 - **[SETUP.md](SETUP.md)** — full onboarding walkthrough (containerized envs, HTTPS, environment variables, WP-CLI security, design-system bootstrap)
 - **[diviops-server/README.md](diviops-server/README.md)** — MCP server reference (response contract, error codes, `dry_run` plan shape, per-tool registration)
-- **[skills/divi-5-builder/SKILL.md](skills/divi-5-builder/SKILL.md)** — block format rules, design patterns, workflow guidance
+- **[skills/diviops-divi-5/SKILL.md](skills/diviops-divi-5/SKILL.md)** — block format rules, design patterns, workflow guidance
 - **[Releases](https://github.com/oaris-dev/diviops/releases)** — release history
 
 ## License

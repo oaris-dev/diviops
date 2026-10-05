@@ -19,7 +19,7 @@ updated independently:
 
 1. **DiviOps Agent** runs inside WordPress and owns the REST capability surface.
 2. **`@diviops/mcp-server`** connects the AI client to that WordPress site.
-3. **`divi-5-builder` skill** gives the client the verified Divi block formats and
+3. **`diviops-divi-5` skill** gives the client the verified Divi block formats and
    native-module authoring rules.
 
 A successful MCP connection proves transport, not native Divi authoring knowledge.
@@ -302,7 +302,7 @@ claude plugin marketplace add oaris-dev/diviops
 claude plugin install divi-5-builder@diviops
 ```
 
-This installs the `divi-5-builder` skill from this repo. Works from any directory — no need to clone or copy files. To update later:
+The plugin identifier remains `divi-5-builder@diviops` for installed-plugin continuity; the skill inside it is named `diviops-divi-5`. Use a distribution containing the naming migration, not an older package with the old skill name. No need to clone or copy files. To update later:
 ```bash
 claude plugin update divi-5-builder@diviops
 ```
@@ -315,30 +315,32 @@ claude --plugin-dir .
 ```
 
 **Option C — Copy skill to your project** (auto-loads without flags):
+
+For an existing installation, follow the replacement procedure below before copying. These copy commands assume the destination skill does not already exist.
 ```bash
 mkdir -p /path/to/your-project/.claude/skills
-cp -r /path/to/diviops/skills/divi-5-builder /path/to/your-project/.claude/skills/
+cp -r /path/to/diviops/skills/diviops-divi-5 /path/to/your-project/.claude/skills/
 cd /path/to/your-project
 claude
 ```
 
 This project-local path is
-`<workspace>/.claude/skills/divi-5-builder/SKILL.md`. Start Claude Code from that
+`<workspace>/.claude/skills/diviops-divi-5/SKILL.md`. Start Claude Code from that
 workspace so the project skill is discoverable.
 
 **Option D — Copy skill for Claude Code user-wide use**:
 ```bash
 mkdir -p "$HOME/.claude/skills"
-cp -R /path/to/diviops/skills/divi-5-builder "$HOME/.claude/skills/"
+cp -R /path/to/diviops/skills/diviops-divi-5 "$HOME/.claude/skills/"
 ```
 
-The resulting path is `~/.claude/skills/divi-5-builder/SKILL.md`.
+The resulting path is `~/.claude/skills/diviops-divi-5/SKILL.md`.
 
 Verify the skill loaded:
 ```
 What skills do you have?
 ```
-You should see `divi-5-builder` in the list.
+You should see `diviops-divi-5` in the list.
 
 Use one ownership path for a skill. Do not keep a Claude plugin-managed copy and a
 stale manual copy active at the same time. Plugin-managed skills update with
@@ -357,7 +359,7 @@ Restart Codex after copying skills. Verify with:
 ```
 What skills do you have?
 ```
-You should see `divi-5-builder` and any bundled DiviOps slice skills you installed.
+You should see `diviops-divi-5` and any bundled DiviOps slice skills you installed.
 
 Codex manual skills are not updated by npm, WordPress, or Claude plugin updates;
 replace the copied directory from the new distribution and restart Codex. Claude
@@ -365,12 +367,23 @@ Desktop and other MCP clients may connect to the server without loading Claude
 Code's `.claude/skills` directories. Use that client's supported knowledge or
 skill mechanism; otherwise treat the client as read-only for Divi authoring.
 
+### Replacing an existing builder skill
+
+The renamed skill preserves the existing Free/Pro guidance split; it does not require a new entitlement. Do not install a second discoverable alias for `divi-5-builder`.
+
+1. Select the one installation you own: plugin-managed, project-local or user-local. Inspect the explicitly selected roots for both `divi-5-builder` and `diviops-divi-5`; different names can still be duplicate builder skills. Do not scan or change unrelated workspaces.
+2. Record the selected distribution/version and compare the installed contents. Preserve the previous directory and any local modifications in a rollback location **outside all skill discovery roots**. If ownership or local changes are uncertain, stop and reconcile them before replacement. Renaming a directory changes path-sensitive receipts; keep the original evidence intact.
+3. For plugin-managed installations, use the existing plugin update command above; do not manually edit plugin caches. Verify the resulting package contains only the new builder skill. For manual installations, retire only the confirmed old builder directory and replace the confirmed destination with the selected distribution's complete builder directory. Do not merge-copy over an existing directory or discard local edits. Keep other skills untouched.
+4. Restart/re-discover using the client's supported mechanism and open a fresh session. Verify `diviops-divi-5` is available once and the old skill is no longer selected. Files on disk do not prove that an existing session refreshed its context. Keep rollback until the new session is accepted.
+
+The skill's frontmatter version and the enclosing plugin package version are separate identities. Updating npm or the WordPress plugin does not update manual skill copies. Source migration alone is not evidence that a published package or installed client has migrated.
+
 ## First-run native Divi verification
 
 Run this on a disposable local site or disposable draft before real authoring:
 
 ```text
-Confirm that divi-5-builder is available, then call diviops_meta_info. Construct
+Confirm that diviops-divi-5 is available, then call diviops_meta_info. Construct
 inline markup containing native Divi section, row, column, heading, text, and
 button modules and validate that inline content with diviops_validate_blocks
 before any write. Do not use a Code module, page-sized HTML, an iframe layout, or
@@ -492,7 +505,7 @@ Also create .claude/instructions/design-system.md with my project's brand
 personality and design preferences.
 ```
 
-See [SKILL.md — Design System Lifecycle](https://github.com/oaris-dev/diviops/blob/main/skills/divi-5-builder/SKILL.md#design-system-lifecycle) for the full technical reference.
+See [SKILL.md — Design System Lifecycle](https://github.com/oaris-dev/diviops/blob/main/skills/diviops-divi-5/SKILL.md#design-system-lifecycle) for the full technical reference.
 
 ## Quick Test: Generate Your First Page
 
@@ -503,7 +516,7 @@ Create a landing page called "Test Page" with a hero section (dark background,
 white heading "Hello World", subtitle, and a CTA button).
 ```
 
-Claude will use the `divi-5-builder` skill to generate the page. Check the result at your site URL.
+Claude will use the `diviops-divi-5` skill to generate the page. Check the result at your site URL.
 
 > Architecture overview, the per-tool category table, and Free vs Pro differences live in the dist-root README — this guide focuses on the operational walkthrough.
 

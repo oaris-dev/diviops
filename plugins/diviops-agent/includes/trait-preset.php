@@ -458,7 +458,7 @@ trait DiviOps_Agent_Preset {
 			$post_ids = $wpdb->get_col( $query );
 			$scan = is_array( $post_ids ) && empty( $wpdb->last_error ) ? 'complete_within_scope' : 'unavailable';
 		}
-		if ( empty( $post_ids ) ) {
+		if ( 'unavailable' === $scan || empty( $post_ids ) ) {
 			return [ 'count' => 0, 'samples' => [], 'scan' => $scan ];
 		}
 		$count = 0;
@@ -474,6 +474,10 @@ trait DiviOps_Agent_Preset {
 				'update_post_meta_cache' => false,
 				'update_post_term_cache' => false,
 			] );
+			$returned_ids = array_map( static fn( $post ) => (int) $post->ID, $posts );
+			if ( ! empty( $wpdb->last_error ) || array_diff( $batch, $returned_ids ) ) {
+				$scan = 'unavailable';
+			}
 			foreach ( $posts as $post ) {
 				if ( false !== strpos( $post->post_content, $preset_id ) ) {
 					self::walk_blocks_for_preset_consumer( parse_blocks( $post->post_content ), $preset_id, $post, $count, $samples );

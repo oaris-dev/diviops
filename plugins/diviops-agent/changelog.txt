@@ -9,6 +9,11 @@ Policy:
 - Keep entries customer-facing. Avoid internal issue numbers unless they are needed to explain a user-visible change.
 - Do not include secrets, credentials, customer data, or environment-specific URLs.
 
+## 1.5.28
+
+- Corrects explicit-index updates of canonical empty native Text modules while preserving existing serialization, preview and write safeguards. Empty attribute updates remain no-ops.
+- Reports incomplete Inspector consumer reads as unavailable coverage while retaining known samples. Coverage remains partial; zero references do not prove safe deletion.
+
 ## 1.5.27
 
 - Adds real preset-deletion previews and guarded exact-ID set deletion with a required registry checksum and fresh bounded reference checks. Legacy single-ID deletion retains its default-only guard; exact-set checks cannot be bypassed with force.

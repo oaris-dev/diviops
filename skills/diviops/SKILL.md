@@ -8,7 +8,7 @@ metadata:
 
 # DiviOps harness primer
 
-Cross-cutting conventions every DiviOps target-coverage skill (`divi-5-builder`, `diviops-scf`, `diviops-fluentcart`, future slices) relies on. Read this when you're about to issue a `diviops_*` MCP call and want to know what the success / failure envelope looks like, how to preview a write, or which capability gate decides whether a tool is even registered for this session.
+Cross-cutting conventions every DiviOps target-coverage skill (`diviops-divi-5`, `diviops-scf`, `diviops-fluentcart`, future slices) relies on. Read this when you're about to issue a `diviops_*` MCP call and want to know what the success / failure envelope looks like, how to preview a write, or which capability gate decides whether a tool is even registered for this session.
 
 This skill carries no tool-surface documentation — tools live with the coverage slice that owns them.
 
@@ -122,4 +122,4 @@ These conventions are documentation discipline, not runtime enforcement. The plu
 - Two layers above MCP, an agent retries a `page_trash` call after the network blip and you want to know whether the retry will throw → idempotent on already-trashed targets, returns `already_trashed: true`.
 - A coverage-slice skill mentions "the standardized envelope" and you want the canonical shape → this file is the source.
 
-When you need the actual tool list for a specific target, route to the coverage-slice skill (`divi-5-builder` for Divi page authoring, `diviops-scf` for SCF data ops, future slices for future targets). The primer is the contract; the slice is the surface.
+When you need the actual tool list for a specific target, route to the coverage-slice skill (`diviops-divi-5` for Divi page authoring, `diviops-scf` for SCF data ops, future slices for future targets). The primer is the contract; the slice is the surface.
