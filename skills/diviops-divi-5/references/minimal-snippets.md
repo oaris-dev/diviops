@@ -10,7 +10,7 @@ Wrap any of these in a `divi/column` → `divi/row` → `divi/section` → `divi
 
 ## `divi/heading`
 
-Explicit `headingLevel` is required — without it the heading renders as `<h2>` regardless of semantic intent.
+Choose `headingLevel` explicitly according to the document hierarchy, independently of typography. This example uses `h1` for a page's primary heading; choose the appropriate `h2`–`h6` for other positions in the hierarchy. An omitted inline level may be supplied by presets or native defaults, so omission does not establish a particular rendered tag.
 
 ```
 <!-- wp:divi/heading {

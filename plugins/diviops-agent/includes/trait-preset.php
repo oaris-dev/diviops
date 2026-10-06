@@ -355,6 +355,7 @@ trait DiviOps_Agent_Preset {
 			'attrs'       => isset( $preset['attrs'] ) ? (object) $preset['attrs'] : null,
 			'styleAttrs'  => isset( $preset['styleAttrs'] ) ? (object) $preset['styleAttrs'] : null,
 			'renderAttrs' => isset( $preset['renderAttrs'] ) ? (object) $preset['renderAttrs'] : null,
+			'groupPresets' => (object) self::_extract_chain_slot_map( $preset, 'module' ),
 			'storage' => [ 'path' => $source['path'], 'provenance' => $source['provenance'], 'occurrences' => $occurrences ],
 			'variable_references' => [
 				'ids' => array_keys( $variable_ids ),
@@ -828,6 +829,59 @@ trait DiviOps_Agent_Preset {
 			$preset['groupPresets'] = $slot_map;
 		}
 		return $preset;
+	}
+
+	/** Validate explicit module composition using Divi's slot map, not a second resolver. */
+	private static function validate_preset_composition( $value, string $type, string $module_name, array $d5 ) {
+		$hint = 'Use group_presets on a module preset: {"<native slot>":{"presetId":["<existing group preset ID>"],"groupName":"divi/font"}}. Use {} to clear; omit to preserve. Discover IDs with diviops_preset_audit and inspect their buckets.';
+		if ( 'module' !== $type || ( ! is_array( $value ) && ! ( $value instanceof \stdClass ) ) ) {
+			return self::envelope_error( 'invalid_input', 'group_presets must be a slot map on a module preset only.', $hint, 400, [ 'field' => 'group_presets' ] );
+		}
+		$slots = (array) $value;
+		if ( empty( $slots ) ) return null;
+		$preset_class = '\ET\Builder\Packages\GlobalData\GlobalPreset';
+		$registration = '\ET\Builder\Packages\ModuleLibrary\ModuleRegistration';
+		try {
+			$config = is_callable( [ $registration, 'get_module_settings' ] ) ? $registration::get_module_settings( $module_name ) : null;
+			if ( ! $config || ! is_callable( [ $preset_class, 'get_group_preset_default_attr' ] ) ) {
+				throw new \RuntimeException( 'Native group slot metadata is unavailable.' );
+			}
+			$native_slots = $preset_class::get_group_preset_default_attr( $config );
+		} catch ( \Throwable $e ) {
+			return self::envelope_error( 'validation_failed', 'Cannot validate native group preset slots for this module.', 'Ensure Divi exposes the module settings and native group slot mapping before retrying.', 400, [ 'module_name' => $module_name ] );
+		}
+		$groups = self::normalize_storage_array( $d5['group'] ?? null ) ?? [];
+		foreach ( $slots as $slot_id => $slot ) {
+			$path = 'group_presets.' . $slot_id;
+			if ( ! is_string( $slot_id ) || '' === $slot_id || ( ! is_array( $slot ) && ! ( $slot instanceof \stdClass ) ) ) {
+				return self::envelope_error( 'invalid_input', 'Each group_presets key must be a native slot with an object binding.', $hint, 400, [ 'path' => $path ] );
+			}
+			$slot = (array) $slot;
+			$ids = $slot['presetId'] ?? null;
+			$group_name = $slot['groupName'] ?? null;
+			if ( array_diff( array_keys( $slot ), [ 'presetId', 'groupName', 'segmentBoundary' ] ) || ! is_array( $ids ) || empty( $ids ) || array_keys( $ids ) !== range( 0, count( $ids ) - 1 ) || ! is_string( $group_name ) || '' === $group_name || ( array_key_exists( 'segmentBoundary', $slot ) && ( ! is_int( $slot['segmentBoundary'] ) || $slot['segmentBoundary'] < 0 ) ) ) {
+				return self::envelope_error( 'invalid_input', 'A binding requires a nonempty presetId string array and groupName; only optional nonnegative integer segmentBoundary is supported.', $hint, 400, [ 'path' => $path ] );
+			}
+			if ( ( $native_slots[ $slot_id ]['groupName'] ?? null ) !== $group_name ) {
+				return self::envelope_error( 'invalid_input', 'Unknown native slot or incompatible groupName for this module.', $hint, 400, [ 'path' => $path, 'module_name' => $module_name, 'expected_group_name' => $native_slots[ $slot_id ]['groupName'] ?? null ] );
+			}
+			$bucket = self::normalize_storage_array( $groups[ $group_name ] ?? null ) ?? [];
+			$items = self::normalize_storage_array( $bucket['items'] ?? null ) ?? [];
+			foreach ( $ids as $id ) {
+				$target = is_string( $id ) ? self::normalize_storage_array( $items[ $id ] ?? null ) : null;
+				if ( ! is_string( $id ) || '' === $id || in_array( $id, [ 'default', '_initial' ], true ) || null === $target || ( isset( $target['type'] ) && 'group' !== $target['type'] ) || ( isset( $target['groupName'] ) && $group_name !== $target['groupName'] ) ) {
+					return self::envelope_error( 'invalid_input', 'Every presetId must resolve to an existing group preset in the specified groupName bucket.', $hint, 400, [ 'path' => $path . '.presetId', 'preset_id' => $id, 'group_name' => $group_name ] );
+				}
+			}
+		}
+		return null;
+	}
+
+	private static function reject_misplaced_preset_composition( $attrs ) {
+		if ( ( is_array( $attrs ) || is_object( $attrs ) ) && array_key_exists( 'groupPresets', (array) $attrs ) ) {
+			return self::envelope_error( 'invalid_input', 'attrs.groupPresets is misplaced; native module preset composition lives at the preset root.', 'Remove attrs.groupPresets and supply the top-level group_presets parameter on a module preset instead.', 400, [ 'path' => 'attrs.groupPresets' ] );
+		}
+		return null;
 	}
 
 	/**
@@ -1332,6 +1386,10 @@ trait DiviOps_Agent_Preset {
 		$new_name     = $request->get_param( 'name' );
 		$new_attrs    = $request->get_param( 'attrs' );
 		$new_priority = $request->get_param( 'priority' );
+		$has_composition = $request->has_param( 'group_presets' );
+		$group_presets = $request->get_param( 'group_presets' );
+		$misplaced = self::reject_misplaced_preset_composition( $new_attrs );
+		if ( $misplaced ) return $misplaced;
 
 		$d5    = self::get_d5_presets();
 		$found = false;
@@ -1347,10 +1405,18 @@ trait DiviOps_Agent_Preset {
 				if ( ! isset( $info['items'][ $preset_id ] ) ) {
 					continue;
 				}
+				if ( $has_composition ) {
+					$error = self::validate_preset_composition( $group_presets, $type, $mod, $d5 );
+					if ( $error ) return $error;
+					$group_presets = array_map( static fn( $slot ) => (array) $slot, (array) $group_presets );
+				}
 
 				$preset = &$info['items'][ $preset_id ];
 				if ( ! is_array( $preset ) ) {
 					$preset = (array) $preset;
+				}
+				if ( $has_composition ) {
+					$preset = self::_write_chain_slot_map( $preset, $type, (array) $group_presets );
 				}
 
 				if ( null !== $new_name ) {
@@ -1418,13 +1484,14 @@ trait DiviOps_Agent_Preset {
 			if ( null !== $new_priority && is_numeric( $new_priority ) ) {
 				$fields[] = 'priority';
 			}
+			if ( $has_composition ) $fields[] = 'groupPresets';
 			$fields_desc = empty( $fields ) ? 'no fields (no-op)' : implode( ', ', $fields );
 			return self::dry_run_response(
 				"Would update preset '{$preset_id}' ({$found['type']}/{$found['module']}) — {$fields_desc}.",
 				[ [
 					'kind'   => 'preset.update',
 					'target' => "preset/{$found['type']}/{$found['module']}/{$preset_id}",
-					'after'  => [ 'fields' => $fields ],
+					'after'  => array_merge( [ 'fields' => $fields ], $has_composition ? [ 'groupPresets' => (object) $group_presets ] : [] ),
 				] ]
 			);
 		}
@@ -1946,6 +2013,10 @@ trait DiviOps_Agent_Preset {
 		$make_default = rest_sanitize_boolean( $request->get_param( 'make_default' ) ?? false );
 		$priority     = $request->get_param( 'priority' );
 		$dry_run      = (bool) $request->get_param( 'dry_run' );
+		$has_composition = $request->has_param( 'group_presets' );
+		$group_presets = $request->get_param( 'group_presets' );
+		$misplaced = self::reject_misplaced_preset_composition( $attrs );
+		if ( $misplaced ) return $misplaced;
 
 		$missing_required = [];
 		if ( '' === $module_name ) {
@@ -2003,6 +2074,11 @@ trait DiviOps_Agent_Preset {
 		}
 
 		$d5  = self::get_d5_presets();
+		if ( $has_composition ) {
+			$error = self::validate_preset_composition( $group_presets, $type, $module_name, $d5 );
+			if ( $error ) return $error;
+			$group_presets = array_map( static fn( $slot ) => (array) $slot, (array) $group_presets );
+		}
 
 		// Per-bucket uniqueness check. The bucket coords
 		// — `(bucket, bucket_key)` — are the natural addressing scope: a
@@ -2048,7 +2124,7 @@ trait DiviOps_Agent_Preset {
 				[ [
 					'kind'   => 'preset.create',
 					'target' => "preset/{$bucket}/{$bucket_key}",
-					'after'  => [
+					'after'  => array_merge( [
 						'name'         => $name,
 						'module_name'  => $module_name,
 						'type'         => $type,
@@ -2056,7 +2132,7 @@ trait DiviOps_Agent_Preset {
 						'priority'     => is_numeric( $priority ) ? (int) $priority : null,
 						'group_name'   => 'group' === $type ? $group_name : null,
 						'group_id'     => 'group' === $type ? $group_id : null,
-					],
+					], $has_composition ? [ 'groupPresets' => (object) $group_presets ] : [] ),
 				] ],
 				[],
 				[
@@ -2088,6 +2164,9 @@ trait DiviOps_Agent_Preset {
 			'created'     => $now,
 			'updated'     => $now,
 		];
+		if ( $has_composition ) {
+			$preset = self::_write_chain_slot_map( $preset, $type, (array) $group_presets );
+		}
 		if ( defined( 'ET_BUILDER_VERSION' ) && '' !== ET_BUILDER_VERSION ) {
 			$preset['version'] = ET_BUILDER_VERSION;
 		}

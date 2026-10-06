@@ -3,7 +3,7 @@
  * Plugin Name: DiviOps Agent
  * Plugin URI: https://github.com/oaris-dev/diviops
  * Description: REST API bridge for DiviOps — connects Claude Code to your Divi 5 site for AI-powered page building and design management.
- * Version: 1.5.29
+ * Version: 1.5.30
  * Author: oaris.de
  * Author URI: https://oaris.de
  * Text Domain: diviops-agent
@@ -72,7 +72,7 @@ class DiviOps_Agent {
 	 * Plugin version — surfaced in /handshake for self-diagnosis only;
 	 * server no longer gates on it (capability map is the gate).
 	 */
-	const VERSION = '1.5.29';
+	const VERSION = '1.5.30';
 
 	/**
 	 * Minimum MCP server version this plugin is compatible with.
@@ -120,6 +120,7 @@ class DiviOps_Agent {
 		'preset_audit', 'preset_audit_storage', 'preset_cleanup', 'preset_create', 'preset_delete', 'preset_inspect', 'preset_registry_doctor',
 		'preset_reassign', 'preset_scan_orphans', 'preset_set_default', 'preset_update',
 		'preset_delete_exact_v1', // Real delete dry-run and guarded exact-ID set apply.
+		'preset_composition_v1', // Explicit module-preset root groupPresets write/read contract.
 		// render
 		'render_preview',
 		// rollback snapshots
@@ -1027,6 +1028,7 @@ class DiviOps_Agent {
 				'preset_id' => [ 'required' => true, 'type' => 'string' ],
 				'name'      => [ 'required' => false, 'type' => 'string' ],
 				'attrs'     => [ 'required' => false, 'type' => 'object' ],
+				'group_presets' => [ 'required' => false, 'type' => 'object' ],
 				'priority'  => [ 'required' => false, 'type' => 'integer' ],
 			],
 		] );
@@ -1056,6 +1058,7 @@ class DiviOps_Agent {
 				'group_name'        => [ 'required' => false, 'type' => 'string' ],
 				'group_id'          => [ 'required' => false, 'type' => 'string' ],
 				'primary_attr_name' => [ 'required' => false, 'type' => 'string' ],
+				'group_presets'     => [ 'required' => false, 'type' => 'object' ],
 				'make_default'      => [ 'required' => false, 'type' => 'boolean', 'default' => false ],
 				'priority'          => [ 'required' => false, 'type' => 'integer' ],
 			],

@@ -3,7 +3,7 @@ Contributors: diviops
 Tags: divi, mcp, ai, rest-api, site-builder
 Requires at least: 6.5
 Tested up to: 7.1
-Stable tag: 1.5.29
+Stable tag: 1.5.30
 Requires PHP: 7.4
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -105,6 +105,11 @@ No. Free includes the core site-authoring bridge described above. Selected advan
 2. An agent-authored page open in the Divi 5 Visual Builder, with the native Heading module content controls available for continued editing. Divi is a separate required product.
 
 == Changelog ==
+
+= 1.5.30 =
+
+* Adds native group-preset composition to module preset create/update and exposes stored links in inspection. Omitted links are preserved; an explicit empty map clears them. Use MCP 1.5.58 and reconnect to refresh capabilities.
+* Clarifies heading warnings: choose explicit levels according to document hierarchy. Typography and warning detection are unchanged.
 
 = 1.5.29 =
 
@@ -249,6 +254,10 @@ No. Free includes the core site-authoring bridge described above. Selected advan
 * Keeps `Stable tag` aligned with the plugin header version.
 
 == Upgrade Notice ==
+
+= 1.5.30 =
+
+Adds native module preset composition; update MCP to 1.5.58 and reconnect. Omitted links are preserved; an explicit empty map clears them. Heading guidance follows document hierarchy without changing typography.
 
 = 1.5.29 =
 

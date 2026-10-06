@@ -9,6 +9,11 @@ Policy:
 - Keep entries customer-facing. Avoid internal issue numbers unless they are needed to explain a user-visible change.
 - Do not include secrets, credentials, customer data, or environment-specific URLs.
 
+## 1.5.30
+
+- Adds native group-preset composition to module preset create/update and exposes stored links in inspection. Omitted links are preserved; an explicit empty map clears them. Use MCP 1.5.58 and reconnect to refresh capabilities.
+- Clarifies heading warnings: choose explicit levels according to document hierarchy. Typography and warning detection are unchanged.
+
 ## 1.5.29
 
 - Generates lowercase IDs for new non-color design variables compatible with Divi's detector; refuses supplied IDs outside `gvid-[0-9a-z-]+` without sanitizing or silently renaming them.

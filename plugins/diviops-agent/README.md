@@ -42,13 +42,24 @@ The plugin includes a WordPress.org-format `readme.txt` and a plugin-local `chan
 
 Current metadata policy:
 
-- `Stable tag` matches the plugin header `Version` (`1.5.29`).
+- `Stable tag` matches the plugin header `Version` (`1.5.30`).
 - `Requires at least` and `Requires PHP` mirror the main plugin header.
 - `Tested up to` is evidence-based for this repo/substrate and should not be raised until the Free plugin is actually tested on that WordPress version.
 - External-service/authentication disclosure must mention the separately distributed npm MCP server, WordPress Application Passwords, and the rule that secrets do not belong in issues, examples, screenshots, or repo files.
 - Free/Pro copy must keep the Free plugin useful while making clear that Pro is the paid workflow-leverage layer and that not every MCP tool is Free-backed.
 
-Free 1.5.29 prepares lowercase generated IDs for new non-color design variables
+Free 1.5.30 prepares native root group-preset composition for module preset
+create/update and inspection through `preset_composition_v1`. Update MCP to
+1.5.58 and reconnect to refresh capabilities. `group_presets` replaces the full
+root map; omission preserves links and `{}` clears them. Slot/group buckets and
+existing references are checked before writes, including dry-run. Heading
+warnings now ask for explicit levels according to document hierarchy; typography
+and warning detection are unchanged. Public builder companion 1.4.10 carries
+matching heading guidance. These are source candidate versions, not published
+packages or installed-site updates. Package qualification and publication
+remain separate from source acceptance.
+
+Previous source preparation: Free 1.5.29 prepares lowercase generated IDs for new non-color design variables
 compatible with Divi's detector. Supplied IDs must match `gvid-[0-9a-z-]+`;
 invalid IDs are refused as-is, not sanitized or silently renamed. Existing IDs
 and references are untouched, including mixed-case IDs. No permissions,

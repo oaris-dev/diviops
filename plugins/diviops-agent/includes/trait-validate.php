@@ -365,7 +365,7 @@ trait DiviOps_Agent_Validate {
 						'block'   => $name,
 						'index'   => $index,
 						'code'    => 'heading_missing_level',
-						'message' => 'Heading has no headingLevel set — renders as h2 by default. Explicitly set "h1"–"h6" to match intent.',
+						'message' => 'Heading has no explicit inline headingLevel. Choose "h1"–"h6" according to the document hierarchy, independently of typography; presets or native defaults may otherwise supply the level.',
 						'path'    => 'title.decoration.font.font.desktop.value.headingLevel',
 					];
 				}

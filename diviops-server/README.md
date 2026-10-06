@@ -8,7 +8,27 @@ The Node.js MCP server inside the DiviOps harness. It gives Claude Code, Codex, 
 Claude Code <-> MCP Server (stdio) <-> WordPress REST API <-> DiviOps Agent plugin
 ```
 
-## 1.5.57 candidate release note
+## 1.5.58 candidate release note
+
+With Free 1.5.30, module preset create/update accepts `group_presets` for native
+root composition, and inspection exposes stored links. The supplied map replaces
+the entire root map; omission preserves links and `{}` clears them. Slot/group
+buckets and existing references are validated, including dry-run. Composition
+requires `preset_composition_v1`; older or unverified plugins refuse it before
+dispatch. Keep `groupPresets` out of `attrs`. Update both components and restart
+the MCP client connection to refresh capabilities.
+
+Public builder companion 1.4.10 and Free validation warnings ask for explicit
+heading levels according to document hierarchy, without changing typography or
+warning detection. Updating npm or WordPress does not update independently
+installed skills or instructions already read by an agent.
+
+These source candidate versions are not yet published. The delivered baseline
+is Free 1.5.29 / MCP 1.5.57 / builder 1.4.9. Dependencies and compatibility floors
+are unchanged. Package qualification and publication remain separate from
+source acceptance.
+
+## Previous 1.5.57 candidate release note
 
 Forwards `diviops_module_update` request cancellation to HTTP dispatch and pending
 response-body reads. This does not establish the cause or resolution of the
@@ -396,6 +416,27 @@ Additional **conditionally-registered Pro tools** appear only on sites that have
 When the gates are not satisfied, the tools simply don't appear on the MCP surface — no error envelope, no missing-capability hint. See the `diviops-fluentcart` skill bundle for the operator-side guide.
 
 See [server-reference.md](../docs/server-reference.md) for per-tool descriptions.
+
+## Native preset composition
+
+`diviops_preset_create` and `diviops_preset_update` accept optional `group_presets`
+for **module presets only**, stored as native root `groupPresets`, never in attrs:
+
+```json
+{"group_presets":{"title.decoration.font":{"presetId":["existing-font-id"],"groupName":"divi/font"}}}
+```
+
+Omit it to preserve existing links; `{}` replaces them with an empty map. Each
+native slot binding requires a nonempty string-array `presetId` and `groupName`,
+with optional nonnegative integer `segmentBoundary`. Slot/group compatibility
+and target existence in that group bucket are checked before writing, also in
+dry-run. No defaults or IDs are substituted. `attrs.groupPresets` rejects with
+a corrective hint. New composition calls require `preset_composition_v1`;
+older/unverified plugins refuse before dispatch, while omitted-link calls keep
+their existing behavior. Reconnect after updating a supported plugin.
+`diviops_preset_inspect` exposes the outgoing root map without resolving inherited
+styles or broadening its partial consumer coverage. Preview writes nothing and
+allocates no UUID; native Builder/rendering qualification remains separate.
 
 ## Bundled CLI — `diviops-preset`
 

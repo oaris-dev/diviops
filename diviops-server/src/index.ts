@@ -2511,7 +2511,7 @@ registerPluginTool(
   "diviops_preset_inspect",
   {
     description:
-      "Inspect one Divi 5 preset UUID without writing. Returns bucket/type/module/group coordinates, attrs/styleAttrs/renderAttrs, storage path and provenance, block plus preset-chain reference counts with sample consumers, explicit partial coverage, and direct variable_references.ids to join with diviops_variable_list (absent IDs remain unresolved). Includes geometry-scope warnings for layout/position/sizing/transform attrs and a warning for nested D5 or legacy _ng duplicates. Zero references is not deletion approval; stored definitions are not computed styles. This is intentionally narrower than diviops_preset_audit and has no repair mode. Missing UUID returns not_found.",
+      "Inspect one Divi 5 preset UUID without writing. Returns bucket/type/module/group coordinates, attrs/styleAttrs/renderAttrs, outgoing root groupPresets map (empty object when absent), storage path and provenance, block plus preset-chain reference counts with sample consumers, explicit partial coverage, and direct variable_references.ids to join with diviops_variable_list (absent IDs remain unresolved). Includes geometry-scope warnings for layout/position/sizing/transform attrs and a warning for nested D5 or legacy _ng duplicates. Zero references is not deletion approval; stored definitions are not computed styles. This is intentionally narrower than diviops_preset_audit and has no repair mode. Missing UUID returns not_found.",
     inputSchema: {
       preset_id: z.string().min(1).describe("Preset UUID to inspect."),
     },
@@ -2714,14 +2714,37 @@ registerPluginTool(
   },
 );
 
+// Vendor GlobalPresetController: root groupPresets is a native slot map, not attrs.
+const PRESET_COMPOSITION_FIELD = z.record(z.string().min(1), z.strictObject({
+  presetId: z.array(z.string().min(1)).min(1),
+  groupName: z.string().min(1),
+  segmentBoundary: z.number().int().nonnegative().optional(),
+})).optional().describe("Module presets only. Native root groupPresets slot map: { 'title.decoration.font': { presetId: ['existing-id'], groupName: 'divi/font', segmentBoundary?: 0 } }. Existing IDs must belong to the slot's group bucket. Replaces the entire root map; omitted preserves, {} clears. Never put groupPresets in attrs. Requires preset_composition_v1.");
+const PRESET_COMPOSITION_DESC = " Optional group_presets replaces the native root groupPresets map on module presets only; omission preserves links and {} clears. Slot/group buckets and existing references are validated before writes, including dry-run. attrs.groupPresets is rejected; use group_presets instead. Requires preset_composition_v1; older or unverified plugins refuse composition before dispatch.";
+
+function presetCompositionErrorResult(tool: string, attrs: Record<string, unknown> | undefined, groupPresets: unknown, type?: string) {
+  if (attrs && Object.hasOwn(attrs, "groupPresets")) {
+    return { content: [{ type: "text" as const, text: serializeEnvelope({ ok: false, error: { code: "invalid_input", message: "attrs.groupPresets is misplaced; native module preset composition lives at the preset root.", hint: "Remove attrs.groupPresets and supply top-level group_presets on a module preset instead.", data: { path: "attrs.groupPresets" } } }, tool) }] };
+  }
+  if (groupPresets === undefined) return null;
+  if (type === "group") {
+    return { content: [{ type: "text" as const, text: serializeEnvelope({ ok: false, error: { code: "invalid_input", message: "group_presets is supported on module presets only." } }, tool) }] };
+  }
+  if (handshakeState.kind !== "ok" || handshakeState.capabilities.preset_composition_v1 !== true) {
+    return missingCapabilityEnvelope(new MissingCapabilityError("preset_composition_v1", handshakeState.kind === "ok" ? handshakeState.pluginVersion : undefined), tool, { serverVersion: SERVER_VERSION });
+  }
+  return null;
+}
+
 registerPluginTool(
   "diviops_preset_update",
   {
     description:
       "Update a specific preset by ID. Can rename, replace its style attributes, and/or change its stack priority. Note: Divi serves frontend CSS from a per-post static cache at wp-content/et-cache/{post_id}/ that wp cache flush does NOT invalidate — if you're verifying a preset change on the rendered frontend, delete that dir for affected pages to force regeneration. Server-side preset state updates immediately; only the pre-rendered CSS file is stale. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }; missing preset_id returns code 'not_found' with a hint to diviops_preset_audit." +
-      DRY_RUN_DESC_SUFFIX,
+      DRY_RUN_DESC_SUFFIX + PRESET_COMPOSITION_DESC,
     inputSchema: {
       preset_id: z.string().describe("Preset ID (UUID or short ID)"),
+      group_presets: PRESET_COMPOSITION_FIELD,
       name: z.string().optional().describe("New display name for the preset"),
       attrs: z
         .record(z.string(), z.any())
@@ -2741,7 +2764,9 @@ registerPluginTool(
     annotations: { idempotentHint: false },
     _meta: { idempotent: "conditional" },
   },
-  async ({ preset_id, name, attrs, priority, dry_run }) => {
+  async ({ preset_id, name, attrs, group_presets, priority, dry_run }) => {
+    const compositionGate = presetCompositionErrorResult("diviops_preset_update", attrs, group_presets);
+    if (compositionGate) return compositionGate;
     const isolationGate = writerIsolationErrorResult("diviops_preset_update", {
       attrs,
     });
@@ -2749,6 +2774,7 @@ registerPluginTool(
     const body: Record<string, any> = { preset_id };
     if (name) body.name = name;
     if (attrs) body.attrs = attrs;
+    if (group_presets !== undefined) body.group_presets = group_presets;
     if (typeof priority === "number") body.priority = priority;
     if (dry_run) body.dry_run = true;
     const result = await wp.requestEnveloped("/preset/update", {
@@ -2813,9 +2839,10 @@ registerPluginTool(
   {
     description:
       'Create a new preset in the Divi 5 registry. For module presets, supply module_name (e.g. "divi/column", "divi/button", "divi/section"), name, and attrs. For group (attribute-level) presets, set type="group" and supply group_name ("divi/font", "divi/button", etc.), group_id ("designTitleText", "button", etc.), and optionally primary_attr_name.' +
-      DRY_RUN_DESC_SUFFIX +
+      DRY_RUN_DESC_SUFFIX + PRESET_COMPOSITION_DESC +
       " NOTE: dry_run plan does not pre-allocate the UUID — that's generated at apply time. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }. Per-bucket name uniqueness check: a name collision in the same `(bucket, bucket_key)` returns code 'conflict' (HTTP 409) with `error.data = { existing_preset_id, bucket, bucket_key, name }` so callers can branch on reuse / rename / preset_update. Bucket coordinates are the natural addressing scope: a 'Hero Title' font preset and a 'Hero Title' button preset coexist (different buckets), but two 'Hero Title' presets under `group/divi/font` collide. Input-shape rejections (missing module_name/name/attrs, type outside [module,group], group preset without group_name/group_id) return code 'invalid_input' with structured `error.data` documenting the failed field.",
     inputSchema: {
+      group_presets: PRESET_COMPOSITION_FIELD,
       module_name: z
         .string()
         .describe(
@@ -2868,7 +2895,9 @@ registerPluginTool(
     annotations: { idempotentHint: false },
     _meta: { idempotent: "conditional" },
   },
-  async ({ module_name, name, attrs, type, group_name, group_id, primary_attr_name, make_default, priority, dry_run }) => {
+  async ({ module_name, name, attrs, group_presets, type, group_name, group_id, primary_attr_name, make_default, priority, dry_run }) => {
+    const compositionGate = presetCompositionErrorResult("diviops_preset_create", attrs, group_presets, type);
+    if (compositionGate) return compositionGate;
     if (type === "group" && (!group_name || !group_id)) {
       throw new Error(
         'type="group" requires both group_name and group_id. Example: group_name="divi/font", group_id="designTitleText".',
@@ -2879,6 +2908,7 @@ registerPluginTool(
     });
     if (isolationGate) return isolationGate;
     const body: Record<string, any> = { module_name, name, attrs, type };
+    if (group_presets !== undefined) body.group_presets = group_presets;
     if (group_name) body.group_name = group_name;
     if (group_id) body.group_id = group_id;
     if (primary_attr_name) body.primary_attr_name = primary_attr_name;
