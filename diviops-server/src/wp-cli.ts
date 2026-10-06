@@ -34,6 +34,7 @@ interface WpCliConfig {
 const DEFAULT_COMMANDS: readonly string[] = [
   // Options (read-only)
   'option get',
+  'option pluck',
   'option list',
   // Posts (read + create/update)
   'post list',
@@ -53,6 +54,7 @@ const DEFAULT_COMMANDS: readonly string[] = [
   // Taxonomies (read + non-destructive write)
   'taxonomy list',
   'term list',
+  'term meta get',
   'term create',
   'term update',
   // ACF / SCF (schema ops — idempotent dev-time workflow)

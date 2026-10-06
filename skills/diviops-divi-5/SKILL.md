@@ -41,7 +41,7 @@ Read the right file for the task at hand — don't load everything.
 ## Workflow Best Practices
 
 1. **Build incrementally**: `create_page` → `section_append` × N
-2. **Always label sections**: `meta.adminLabel` on every section
+2. **Always label sections**: `module.meta.adminLabel.desktop.value` on every section
 3. **Label key modules**: Add admin labels to modules you might edit later
 4. **Validate before saving**: Use `diviops_validate_blocks` before `diviops_page_update_content`, `diviops_tb_layout_update`, or `diviops_library_save`
 5. **Use `diviops_meta_find_icon`**: Don't guess icon codes — search by keyword
@@ -201,7 +201,7 @@ Write `.claude/instructions/design-system.md` with brand-specific guidance: aest
 3. **Self-closing blocks**: Use `<!-- wp:divi/text {...} /-->` (with `/-->`) for leaf modules
 4. **HTML in innerContent**: Use unicode escapes: `\u003cp\u003e` not `<p>`
 5. **Layout display on containers**: Section, Row, Column, Group need `"module":{"decoration":{"layout":{"desktop":{"value":{"display":"block"}}}}}` — content modules (Text, Button, Icon) don't require it
-6. **Admin labels on important modules**: `"meta":{"adminLabel":{"desktop":{"value":"My Label"}}}` — required for granular editing
+6. **Admin labels on important modules**: `"module":{"meta":{"adminLabel":{"desktop":{"value":"My Label"}}}}` — required for granular editing
 7. **`$variable()$` trailing `$` is load-bearing**: tokens must end with `)$`, not just `)`. Writing `$variable({...})` (no trailing `$`) silently fails to resolve at render time. Full payload format + examples: [presets.md → Variable Tokens](references/presets.md#variable-tokens).
 8. **Module attrs must not contain `var(--<custom-alias>)`**: attr values hold literal CSS or canonical `$variable({...})$` tokens. Hand-authored `var()` refs to non-Divi aliases depend on external CSS that may not exist — if the alias is undeclared, CSS spec falls through to the property's initial value (0 for padding, browser default for color) and the page silently breaks. Full rule + tolerated patterns: [module-formats.md → Design Token References in Attrs](references/module-formats.md#design-token-references-in-attrs-canonical-variable-only).
 

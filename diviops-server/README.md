@@ -8,7 +8,19 @@ The Node.js MCP server inside the DiviOps harness. It gives Claude Code, Codex, 
 Claude Code <-> MCP Server (stdio) <-> WordPress REST API <-> DiviOps Agent plugin
 ```
 
-## 1.5.58 candidate release note
+## 1.5.59 release note
+
+Adds two default WP-CLI reads: `option pluck <option> <key-path>...` for a nested
+option value, and `term meta get <term-id> <key>` for a term-meta field. Existing
+write permissions are unchanged. Restart the MCP client connection after updating
+to refresh the effective command list.
+
+Public builder companion 1.4.11 corrects admin-label examples to use
+`module.meta.adminLabel.desktop.value`. Updating npm does not update independently
+installed skills or instructions already read by an agent. Free remains 1.5.30;
+dependencies and compatibility floors are unchanged.
+
+## Previous 1.5.58 release note
 
 With Free 1.5.30, module preset create/update accepts `group_presets` for native
 root composition, and inspection exposes stored links. The supplied map replaces
@@ -23,10 +35,8 @@ heading levels according to document hierarchy, without changing typography or
 warning detection. Updating npm or WordPress does not update independently
 installed skills or instructions already read by an agent.
 
-These source candidate versions are not yet published. The delivered baseline
-is Free 1.5.29 / MCP 1.5.57 / builder 1.4.9. Dependencies and compatibility floors
-are unchanged. Package qualification and publication remain separate from
-source acceptance.
+Free 1.5.30, MCP 1.5.58 and public builder 1.4.10 were delivered together.
+Dependencies and compatibility floors were unchanged.
 
 ## Previous 1.5.57 candidate release note
 
