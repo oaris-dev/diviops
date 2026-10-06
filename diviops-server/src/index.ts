@@ -513,7 +513,7 @@ function conditionalCapabilityError(
 // only adds a capability-check + an error envelope on top, both shape-
 // independent. Scope: 4 narrow suppressions, all in this 25-line block.
 /* eslint-disable @typescript-eslint/no-explicit-any */
-function registerPluginTool<H extends (args: any) => Promise<any>>(
+function registerPluginTool<H extends (args: any, context?: any) => Promise<any>>(
   name: string,
   config: any,
   handler: H,
@@ -525,7 +525,7 @@ function registerPluginTool<H extends (args: any) => Promise<any>>(
     registered: true,
     capability_key: key,
   });
-  const wrapped = (async (args: any) => {
+  const wrapped = (async (args: any, context?: any) => {
     try {
       requireCapability(key);
     } catch (e) {
@@ -536,7 +536,7 @@ function registerPluginTool<H extends (args: any) => Promise<any>>(
       }
       throw e;
     }
-    return handler(args);
+    return handler(args, context);
   }) as any;
   recordIdempotent(name, config?._meta);
   registry.registerTool(name, config, wrapped);
@@ -2113,7 +2113,8 @@ registerPluginTool(
     annotations: { idempotentHint: false },
     _meta: { idempotent: "conditional" },
   },
-  async ({ page_id, label, match_text, auto_index, occurrence, attrs, dry_run, backup }) => {
+  async (args, context?: Parameters<typeof requestAbortSignal>[1]) => {
+    const { page_id, label, match_text, auto_index, occurrence, attrs, dry_run, backup } = args;
     const backupGate = backupCapabilityError("diviops_module_update", backup);
     if (backupGate) return backupGate;
     const isolationGate = writerIsolationErrorResult("diviops_module_update", {
@@ -2130,6 +2131,7 @@ registerPluginTool(
     const result = await wp.requestEnveloped(`/module/update/${page_id}`, {
       method: "POST",
       body,
+      signal: requestAbortSignal(args, context),
     });
     return {
       content: [

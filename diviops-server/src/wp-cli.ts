@@ -198,7 +198,7 @@ function isCommandAllowed(args: string[]): { allowed: boolean; reason?: string }
   }
 
   const extendable = EXTENDED_COMMANDS.filter((c) => !ALLOWED_COMMANDS.includes(c));
-  const hint = extendable.some((c) => twoWord === c || threeWord === c || oneWord === c.split(' ')[0])
+  const hint = extendable.some((c) => twoWord === c || threeWord === c || oneWord === c)
     ? ` This command can be enabled via DIVIOPS_WP_CLI_ALLOW env var (see README).`
     : extendable.length > 0
       ? ` Opt-in commands available: ${extendable.join(', ')}.`

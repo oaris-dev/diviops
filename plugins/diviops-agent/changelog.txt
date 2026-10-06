@@ -9,6 +9,12 @@ Policy:
 - Keep entries customer-facing. Avoid internal issue numbers unless they are needed to explain a user-visible change.
 - Do not include secrets, credentials, customer data, or environment-specific URLs.
 
+## 1.5.29
+
+- Generates lowercase IDs for new non-color design variables compatible with Divi's detector; refuses supplied IDs outside `gvid-[0-9a-z-]+` without sanitizing or silently renaming them.
+- Leaves existing variable IDs and references untouched; this is not a repair or migration of mixed-case IDs. Existing permissions and compatibility requirements are unchanged.
+- Source candidate only; package qualification, runtime and publication remain separate decisions.
+
 ## 1.5.28
 
 - Corrects explicit-index updates of canonical empty native Text modules while preserving existing serialization, preview and write safeguards. Empty attribute updates remain no-ops.

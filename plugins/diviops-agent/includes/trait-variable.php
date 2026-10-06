@@ -1060,16 +1060,17 @@ trait DiviOps_Agent_Variable {
 
 		// Non-color types.
 		$raw_id = $request->get_param( 'id' );
-		$id     = '' !== (string) $raw_id ? sanitize_text_field( $raw_id ) : ( $dry_run ? 'gvid-<auto>' : 'gvid-' . wp_generate_password( 8, false ) );
-		if ( 0 !== strpos( $id, 'gvid-' ) ) {
+		// Validate caller identities as-is; sanitizing them would silently rename references.
+		if ( null !== $raw_id && '' !== $raw_id && ( ! is_string( $raw_id ) || ! preg_match( '/\Agvid-[0-9a-z-]+\z/', $raw_id ) ) ) {
 			return self::envelope_error(
 				'invalid_input',
-				"Non-color variable ID must start with 'gvid-', got '$id'.",
+				"Non-color variable ID must start with 'gvid-' and contain only lowercase letters, digits or hyphens after the prefix.",
 				null,
 				400,
-				[ 'field' => 'id', 'expected' => "string starting with 'gvid-'", 'received' => $id ]
+				[ 'field' => 'id', 'expected' => 'gvid-[0-9a-z-]+', 'received' => $raw_id ]
 			);
 		}
+		$id = ( null !== $raw_id && '' !== $raw_id ) ? $raw_id : ( $dry_run ? 'gvid-<auto>' : 'gvid-' . strtolower( wp_generate_password( 8, false ) ) );
 
 		$vars = self::read_divi_global_variables_registry();
 		if ( ! is_array( $vars ) ) {

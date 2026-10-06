@@ -42,11 +42,19 @@ The plugin includes a WordPress.org-format `readme.txt` and a plugin-local `chan
 
 Current metadata policy:
 
-- `Stable tag` matches the plugin header `Version` (`1.5.28`).
+- `Stable tag` matches the plugin header `Version` (`1.5.29`).
 - `Requires at least` and `Requires PHP` mirror the main plugin header.
 - `Tested up to` is evidence-based for this repo/substrate and should not be raised until the Free plugin is actually tested on that WordPress version.
 - External-service/authentication disclosure must mention the separately distributed npm MCP server, WordPress Application Passwords, and the rule that secrets do not belong in issues, examples, screenshots, or repo files.
 - Free/Pro copy must keep the Free plugin useful while making clear that Pro is the paid workflow-leverage layer and that not every MCP tool is Free-backed.
+
+Free 1.5.29 prepares lowercase generated IDs for new non-color design variables
+compatible with Divi's detector. Supplied IDs must match `gvid-[0-9a-z-]+`;
+invalid IDs are refused as-is, not sanitized or silently renamed. Existing IDs
+and references are untouched, including mixed-case IDs. No permissions,
+capabilities or compatibility floors change. Source checks are not package
+qualification, runtime acceptance or publication; the delivered baseline is
+Free 1.5.28, MCP 1.5.56 and builder companion 1.4.9. Builder content is unchanged.
 
 Free 1.5.28 prepares corrections for explicit-index targeting of canonical
 empty native Text modules, preserving existing serialization and write guards.

@@ -8,7 +8,33 @@ The Node.js MCP server inside the DiviOps harness. It gives Claude Code, Codex, 
 Claude Code <-> MCP Server (stdio) <-> WordPress REST API <-> DiviOps Agent plugin
 ```
 
-## 1.5.56 candidate release note
+## 1.5.57 candidate release note
+
+Forwards `diviops_module_update` request cancellation to HTTP dispatch and pending
+response-body reads. This does not establish the cause or resolution of the
+reported four-minute hang. After dispatch, the WordPress write outcome remains
+unknown: cancellation does not verify no changes, a stopped write or rollback.
+Do not automatically retry; inspect readback and existing rollback evidence
+before deciding any later action.
+
+Corrects WP-CLI rejection hints to match actual extended opt-in commands.
+Command permissions, allowlists and opt-in requirements are unchanged.
+
+Separately prepared Free 1.5.29 generates lowercase IDs for new non-color design
+variables and refuses invalid supplied IDs without silently renaming them.
+Existing IDs and references are not migrated or repaired. Additional module-write
+regression coverage is tests only, not a new serialization fix.
+
+Delivered baseline: Free 1.5.28, MCP 1.5.56 and public builder companion 1.4.9.
+Builder content is unchanged, so its version remains 1.4.9. This is source review,
+not exact-package qualification, runtime acceptance or publication. A narrow
+dependency correction pins `proxy-addr` to patched `2.0.8` after the original
+qualification audit failed. Tool schemas, compatibility floors, Pro, Design
+Library, paid skills, primer and launcher remain unchanged. Fresh package
+qualification and hosted validation are authorized but pending; merge remains
+gated on corrected-head review and all applicable checks.
+
+## Previous 1.5.56 candidate release note
 
 Aligns shipped setup documentation and attribute-reference citations with the
 renamed `diviops-divi-5` skill. Updates three pinned production dependencies to
@@ -644,6 +670,7 @@ Common quick fixes — full reference in [troubleshooting.md](../docs/troublesho
 - **`npx` fails with "could not determine executable to run"** — use `npx -y --package @diviops/mcp-server diviops-mcp`; this explicitly selects the MCP server bin.
 - **"Connection failed"** — verify the plugin is active by visiting `{WP_URL}/wp-json/diviops/v1/schema/settings`; test the credentials with `curl -u "user:pass" …`.
 - **"This tool requires plugin capability"** — the connected plugin does not advertise the capability this tool needs. Server and plugin versions are independent; install a compatible plugin from the same DiviOps suite release or a newer supported component, then reconnect or restart the MCP session to refresh the handshake.
+- **Cancelled `diviops_module_update`**: MCP request cancellation is forwarded to the HTTP request, including pending response-body reads. Once dispatched, the WordPress write outcome remains unknown: cancellation does not verify that the write stopped, made no changes, or rolled back. Do not automatically retry; use readback and existing rollback evidence to determine any later action.
 - **Preset edits not visible on the frontend** — Divi serves frontend CSS from `wp-content/et-cache/{post_id}/`, which `wp cache flush` doesn't touch. Use `diviops_meta_flush_cache` after preset writes; `post_id` mode also sweeps that exact directory and reports `post_dir_sweep` evidence.
 
 ## Learn more
