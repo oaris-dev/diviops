@@ -2220,7 +2220,7 @@ trait DiviOps_Agent_ThemeBuilder {
 	}
 
 	/**
-	 * Trash (or permanently delete) a Theme Builder template AND its linked
+	 * Trash (or permanently delete) a Theme Builder template AND its unshared linked
 	 * header/body/footer layouts AND scrub the `_et_template` meta refs on
 	 * the Theme Builder master post.
 	 *
@@ -2295,6 +2295,41 @@ trait DiviOps_Agent_ThemeBuilder {
 			];
 		}
 
+		// Layout links are references, not ownership. Scan every template, including
+		// disabled, trashed, library and orphan templates, independently of the master.
+		// Direct SQL avoids status/language filters hiding references. A query failure
+		// must abort before any destruction; an empty result is not evidence on error.
+		global $wpdb;
+		$preserved_layouts = [];
+		$exclusive_layouts = [];
+		foreach ( $linked_layouts as $layout ) {
+			$reference_id = $wpdb->get_var( $wpdb->prepare(
+				"SELECT p.ID FROM {$wpdb->posts} p
+				 INNER JOIN {$wpdb->postmeta} pm ON pm.post_id = p.ID
+				 WHERE p.post_type = 'et_template' AND p.ID <> %d
+				 AND pm.meta_key IN ('_et_header_layout_id', '_et_body_layout_id', '_et_footer_layout_id')
+				 AND CAST(pm.meta_value AS UNSIGNED) = %d LIMIT 1",
+				$template_id,
+				$layout['id']
+			) );
+			if ( $wpdb->last_error ) {
+				return self::envelope_error(
+					'tb_template.command_failed',
+					'Cannot establish whether linked layouts are shared.',
+					'Check database health and retry the preview. No posts were changed.',
+					500,
+					[ 'template_id' => $template_id, 'failed_step' => 'layout_references', 'force' => $force ]
+				);
+			}
+			if ( null !== $reference_id ) {
+				$layout['reason'] = 'referenced_by_another_template';
+				$preserved_layouts[] = $layout;
+			} else {
+				$exclusive_layouts[] = $layout;
+			}
+		}
+		$linked_layouts = $exclusive_layouts;
+
 		// Resolve the active Theme Builder master via the shared helper —
 		// same discovery shape (`_et_library_theme_builder NOT EXISTS`,
 		// `suppress_filters => false`, ordered by date desc) used by
@@ -2353,7 +2388,7 @@ trait DiviOps_Agent_ThemeBuilder {
 		} else {
 			$verb     = $force ? 'permanently delete' : 'move to trash';
 			$summary  = "Would {$verb} Theme Builder template #{$template_id} (title: '{$post->post_title}'), "
-				. count( $linked_layouts ) . ' linked layout(s)'
+				. count( $linked_layouts ) . ' unshared linked layout(s); preserve ' . count( $preserved_layouts ) . ' shared layout(s)'
 				. ( $master_id > 0
 					? ", and scrub {$master_meta_refs} _et_template meta ref(s) on master post #{$master_id}."
 					: ' (no Theme Builder master post found — meta scrub skipped).' );
@@ -2388,6 +2423,7 @@ trait DiviOps_Agent_ThemeBuilder {
 				$changes,
 				[],
 				[
+					'preserved_layouts' => $preserved_layouts,
 					'template_id'      => $template_id,
 					'title'            => (string) $post->post_title,
 					'force'            => $force,
@@ -2415,6 +2451,7 @@ trait DiviOps_Agent_ThemeBuilder {
 				'title'                    => (string) $post->post_title,
 				'status'                   => $current_status,
 				'already_trashed'          => true,
+				'preserved_layouts'        => $preserved_layouts,
 				'linked_layouts'           => [],
 				'master_id'                => $master_id,
 				'master_meta_refs_removed' => 0,
@@ -2535,6 +2572,7 @@ trait DiviOps_Agent_ThemeBuilder {
 			'title'                    => (string) $post->post_title,
 			'status'                   => $end_state,
 			'linked_layouts'           => $layout_results,
+			'preserved_layouts'        => $preserved_layouts,
 			'master_id'                => $master_id,
 			'master_meta_refs_removed' => $master_meta_removed,
 		];

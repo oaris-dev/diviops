@@ -9,6 +9,11 @@ Policy:
 - Keep entries customer-facing. Avoid internal issue numbers unless they are needed to explain a user-visible change.
 - Do not include secrets, credentials, customer data, or environment-specific URLs.
 
+## 1.5.31
+
+- Preserves header, body and footer layouts referenced by other templates when trashing or permanently deleting a Theme Builder template. Preview and apply report retained layouts; failed reference checks stop before changes. Unshared layout cleanup is unchanged.
+- Use MCP 1.5.61 for matching tool guidance. Existing compatibility requirements are unchanged.
+
 ## 1.5.30
 
 - Adds native group-preset composition to module preset create/update and exposes stored links in inspection. Omitted links are preserved; an explicit empty map clears them. Use MCP 1.5.58 and reconnect to refresh capabilities.

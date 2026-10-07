@@ -143,9 +143,9 @@ const EXTENDED_COMMANDS: readonly string[] = [
 ];
 
 /** Build the effective allowlist from defaults + user opt-ins. */
-function buildAllowlist(): readonly string[] {
+function buildAllowlist(): { allowed: readonly string[]; ignored: readonly string[] } {
   const extra = process.env.DIVIOPS_WP_CLI_ALLOW?.trim();
-  if (!extra) return DEFAULT_COMMANDS;
+  if (!extra) return { allowed: DEFAULT_COMMANDS, ignored: [] };
 
   // Wildcard sentinel — convenience for trusted local-dev environments. Grants
   // every entry in EXTENDED_COMMANDS but does NOT unlock anything beyond it
@@ -155,24 +155,27 @@ function buildAllowlist(): readonly string[] {
     console.warn(
       `[diviops] DIVIOPS_WP_CLI_ALLOW="${extra}" — granting ALL ${EXTENDED_COMMANDS.length} extended commands. Intended for trusted local-dev only.`,
     );
-    return [...DEFAULT_COMMANDS, ...EXTENDED_COMMANDS];
+    return { allowed: [...DEFAULT_COMMANDS, ...EXTENDED_COMMANDS], ignored: [] };
   }
 
   const requested = extra.split(',').map((s) => s.trim()).filter(Boolean);
   const granted = new Set<string>(DEFAULT_COMMANDS);
+  const ignored = new Set<string>();
 
   for (const cmd of requested) {
     if (EXTENDED_COMMANDS.includes(cmd)) {
       granted.add(cmd);
     } else if (!granted.has(cmd)) {
+      ignored.add(cmd);
       console.warn(`[diviops] Ignoring unknown WP-CLI allow entry: "${cmd}"`);
     }
   }
 
-  return [...granted];
+  return { allowed: [...granted], ignored: [...ignored] };
 }
 
-const ALLOWED_COMMANDS: readonly string[] = buildAllowlist();
+// Diagnostics and permissions describe the same startup configuration.
+const { allowed: ALLOWED_COMMANDS, ignored: IGNORED_COMMANDS } = buildAllowlist();
 
 /**
  * Validate a parsed command against the allowlist.
@@ -737,10 +740,11 @@ export function createWpCli(config: WpCliConfig) {
       return runArgv(args);
     },
 
-    /** Return the list of allowed commands and available extensions. */
-    getAllowedCommands(): { allowed: string[]; extendable: string[] } {
+    /** Return startup permissions and ignored opt-ins for meta_info diagnostics. */
+    getAllowedCommands(): { allowed: string[]; extendable: string[]; ignored: string[] } {
       return {
         allowed: [...ALLOWED_COMMANDS],
+        ignored: [...IGNORED_COMMANDS],
         extendable: EXTENDED_COMMANDS.filter((c) => !ALLOWED_COMMANDS.includes(c)),
       };
     },

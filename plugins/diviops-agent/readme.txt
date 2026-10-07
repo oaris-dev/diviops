@@ -3,7 +3,7 @@ Contributors: diviops
 Tags: divi, mcp, ai, rest-api, site-builder
 Requires at least: 6.5
 Tested up to: 7.1
-Stable tag: 1.5.30
+Stable tag: 1.5.31
 Requires PHP: 7.4
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -105,6 +105,10 @@ No. Free includes the core site-authoring bridge described above. Selected advan
 2. An agent-authored page open in the Divi 5 Visual Builder, with the native Heading module content controls available for continued editing. Divi is a separate required product.
 
 == Changelog ==
+
+= 1.5.31 =
+
+* Preserves header, body and footer layouts referenced by other templates when trashing or permanently deleting a Theme Builder template. Preview and apply report retained layouts; failed reference checks stop before changes. Unshared layout cleanup is unchanged.
 
 = 1.5.30 =
 
@@ -254,6 +258,10 @@ No. Free includes the core site-authoring bridge described above. Selected advan
 * Keeps `Stable tag` aligned with the plugin header version.
 
 == Upgrade Notice ==
+
+= 1.5.31 =
+
+Protects shared Theme Builder layouts during template trash and permanent deletion. Update MCP to 1.5.61 for matching guidance. Preview and apply report retained layouts; unshared cleanup is unchanged.
 
 = 1.5.30 =
 

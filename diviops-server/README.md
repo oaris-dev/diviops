@@ -8,7 +8,31 @@ The Node.js MCP server inside the DiviOps harness. It gives Claude Code, Codex, 
 Claude Code <-> MCP Server (stdio) <-> WordPress REST API <-> DiviOps Agent plugin
 ```
 
-## 1.5.59 release note
+## 1.5.61 release note
+
+With Free Agent 1.5.31, Theme Builder template trash and permanent deletion
+preserve layouts referenced by another template. Preview excludes them from
+destructive changes, and both preview and apply report `preserved_layouts`.
+Failed reference checks stop before changes. Unshared cleanup is unchanged.
+
+Update the Free plugin to receive the protection; this MCP update supplies
+matching tool guidance. Public builder remains 1.4.11. Dependencies and
+compatibility floors are unchanged.
+
+## Previous 1.5.60 release note
+
+When WP-CLI is configured, `diviops_meta_info` now includes `wp_cli.ignored`:
+the unique, trimmed entries from `DIVIOPS_WP_CLI_ALLOW` that were not recognized
+at startup. Clients can inspect these alongside `allowed` and `extendable`
+even when startup warnings are hidden. Command permissions and matching are
+unchanged. Restart the MCP server after changing the environment configuration.
+
+The MCP SDK dependency now requires v1.31.0 or later within v1, incorporating
+its OAuth client credential-routing fix. This package uses the SDK server/stdio
+path. Free remains 1.5.30, public builder remains 1.4.11, and compatibility floors
+are unchanged.
+
+## Previous 1.5.59 release note
 
 Adds two default WP-CLI reads: `option pluck <option> <key-path>...` for a nested
 option value, and `term meta get <term-id> <key>` for a term-meta field. Existing
