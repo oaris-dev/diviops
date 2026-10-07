@@ -1639,12 +1639,13 @@ trait DiviOps_Agent_Preset {
 		}
 
 		$registry = self::read_canonical_d5_preset_registry( null );
+		$diagnostic = [ 'scope' => 'registry', 'stage' => 'registry', 'scan_complete' => false ];
 		try {
 			if ( ! is_array( $registry ) || ( ! isset( $registry['module'] ) && ! isset( $registry['group'] ) ) ) {
-				throw new UnexpectedValueException( 'Canonical D5 registry is absent or malformed.' );
+				self::preset_delete_evidence_error( $diagnostic, 'invalid_registry', 'Canonical D5 registry is absent or malformed.' );
 			}
 			// Validate the entire stored shape before copying or hashing it; no custom objects.
-			self::preset_delete_evidence_contains( $registry, [] );
+			self::preset_delete_evidence_contains( $registry, [], $diagnostic );
 			$checksum = 'sha256:' . hash( 'sha256', serialize( $registry ) );
 			if ( null !== $expected && ! hash_equals( $checksum, $expected ) ) {
 				return self::envelope_error( 'conflict', 'Preset registry changed since preview.', 'Preview the exact set again.', 409, [ 'reason' => 'stale_registry' ] );
@@ -1653,31 +1654,31 @@ trait DiviOps_Agent_Preset {
 			$references = false;
 			foreach ( [ 'module', 'group' ] as $type ) {
 				if ( ! array_key_exists( $type, $registry ) ) continue;
-				foreach ( self::preset_delete_evidence_map( $registry[ $type ] ) as $module => $raw_bucket ) {
-					$bucket = self::preset_delete_evidence_map( $raw_bucket );
+				foreach ( self::preset_delete_evidence_map( $registry[ $type ], $diagnostic ) as $module => $raw_bucket ) {
+					$bucket = self::preset_delete_evidence_map( $raw_bucket, $diagnostic );
 					if ( ! array_key_exists( 'items', $bucket ) || ( array_key_exists( 'default', $bucket ) && ! is_string( $bucket['default'] ) ) ) {
-						throw new UnexpectedValueException( 'Malformed preset bucket or default pointer.' );
+						self::preset_delete_evidence_error( $diagnostic, 'invalid_bucket', 'Malformed preset bucket or default pointer.' );
 					}
-					$items = self::preset_delete_evidence_map( $bucket['items'] );
+					$items = self::preset_delete_evidence_map( $bucket['items'], $diagnostic );
 					foreach ( $items as $id => $raw_record ) {
-						$record = self::preset_delete_evidence_map( $raw_record );
+						$record = self::preset_delete_evidence_map( $raw_record, $diagnostic );
 						if ( empty( $record ) || ( array_key_exists( 'id', $record ) && $record['id'] !== (string) $id ) ) {
-							throw new UnexpectedValueException( 'Malformed preset record or inconsistent identity.' );
+							self::preset_delete_evidence_error( $diagnostic, 'invalid_record', 'Malformed preset record or inconsistent identity.' );
 						}
 						if ( isset( $matches[ $id ] ) ) {
 							$matches[ $id ][] = [ 'id' => (string) $id, 'type' => $type, 'module' => $module ];
 						}
 						// A record's own identity is not a use; every other occurrence is conservative evidence.
 						if ( isset( $record['id'] ) && $record['id'] === (string) $id ) unset( $record['id'] );
-						$references = self::preset_delete_evidence_contains( $record, $ids ) || $references;
+						$references = self::preset_delete_evidence_contains( $record, $ids, $diagnostic ) || $references;
 					}
 					unset( $bucket['items'] );
-					$references = self::preset_delete_evidence_contains( $bucket, $ids ) || $references;
+					$references = self::preset_delete_evidence_contains( $bucket, $ids, $diagnostic ) || $references;
 				}
 			}
 			$extra = $registry;
 			unset( $extra['module'], $extra['group'] );
-			$references = self::preset_delete_evidence_contains( $extra, $ids ) || $references;
+			$references = self::preset_delete_evidence_contains( $extra, $ids, $diagnostic ) || $references;
 			$selected = [];
 			foreach ( $matches as $id => $locations ) {
 				if ( 1 !== count( $locations ) ) {
@@ -1693,12 +1694,12 @@ trait DiviOps_Agent_Preset {
 			if ( $references ) {
 				return self::envelope_error( 'conflict', 'Selected IDs occur in preset definitions or default pointers.', '', 409, [ 'reason' => 'referenced' ] );
 			}
-			$coverage = self::preset_delete_scan_posts( $ids );
+			$coverage = self::preset_delete_scan_posts( $ids, $diagnostic );
 			if ( $coverage['referenced'] ) {
 				return self::envelope_error( 'conflict', 'Selected IDs occur in post_content or postmeta.', '', 409, [ 'reason' => 'referenced' ] );
 			}
 		} catch ( UnexpectedValueException $error ) {
-			return self::envelope_error( 'conflict', $error->getMessage(), 'Incomplete evidence is not permission to delete. No presets were changed.', 409, [ 'reason' => 'incomplete_evidence' ] );
+			return self::envelope_error( 'conflict', $error->getMessage(), 'Incomplete evidence is not permission to delete. No presets were changed.', 409, [ 'reason' => 'incomplete_evidence', 'diagnostic' => $diagnostic ] );
 		}
 
 		$changes = [];
@@ -1734,84 +1735,108 @@ trait DiviOps_Agent_Preset {
 		);
 	}
 
-	private static function preset_delete_evidence_map( $value ): array {
+	private static function preset_delete_evidence_map( $value, array &$diagnostic ): array {
 		if ( ! is_array( $value ) && ! ( $value instanceof stdClass ) ) {
-			throw new UnexpectedValueException( 'Malformed preset deletion evidence: expected a map.' );
+			self::preset_delete_evidence_error( $diagnostic, 'invalid_map', 'Malformed preset deletion evidence: expected a map.' );
 		}
 		return (array) $value;
 	}
 
 	/** Bounded stored-value inspection, not a semantic usage classifier. */
-	private static function preset_delete_evidence_contains( $value, array $ids, int $depth = 0 ): bool {
-		if ( $depth > 64 ) throw new UnexpectedValueException( 'Preset deletion evidence exceeds nesting limit.' );
+	private static function preset_delete_evidence_contains( $value, array $ids, array &$diagnostic, int $depth = 0 ): bool {
+		if ( $depth > 64 ) self::preset_delete_evidence_error( $diagnostic, 'depth_limit', 'Preset deletion evidence exceeds nesting limit.' );
 		$found = false;
 		if ( is_array( $value ) || $value instanceof stdClass ) {
 			foreach ( $value as $key => $child ) {
 				foreach ( $ids as $id ) if ( false !== strpos( (string) $key, $id ) ) $found = true;
-				$found = self::preset_delete_evidence_contains( $child, $ids, $depth + 1 ) || $found;
+				$found = self::preset_delete_evidence_contains( $child, $ids, $diagnostic, $depth + 1 ) || $found;
 			}
 		} elseif ( is_string( $value ) ) {
 			foreach ( $ids as $id ) if ( false !== strpos( $value, $id ) ) $found = true;
 			if ( false !== strpos( $value, 'wp:' ) ) {
 				$normalized = self::normalize_divi_full_content_for_write( $value );
 				if ( ! $normalized['ok'] || is_wp_error( self::assert_divi_full_content_safe_for_write( $value ) ) ) {
-					throw new UnexpectedValueException( 'Malformed Divi content prevents complete reference evidence.' );
+					self::preset_delete_evidence_error( $diagnostic, 'malformed_divi_content', 'Malformed Divi content prevents complete reference evidence.' );
 				}
 				$openers = self::scan_block_opener_attrs( $value );
 				if ( PREG_NO_ERROR !== preg_last_error() || count( $openers ) !== preg_match_all( '/<!--\s+wp:/', $value ) ) {
-					throw new UnexpectedValueException( 'Incomplete block opener evidence.' );
+					self::preset_delete_evidence_error( $diagnostic, 'incomplete_block_openers', 'Incomplete block opener evidence.' );
 				}
 				foreach ( $openers as $opener ) {
 					if ( null === $opener['attrs'] ) continue;
 					$attrs = json_decode( $opener['attrs'], false, 64 );
-					if ( ! ( $attrs instanceof stdClass ) || JSON_ERROR_NONE !== json_last_error() ) throw new UnexpectedValueException( 'Malformed block attributes.' );
-					$found = self::preset_delete_evidence_contains( $attrs, $ids, $depth + 1 ) || $found;
+					if ( ! ( $attrs instanceof stdClass ) || JSON_ERROR_NONE !== json_last_error() ) self::preset_delete_evidence_error( $diagnostic, 'malformed_block_attributes', 'Malformed block attributes.' );
+					$found = self::preset_delete_evidence_contains( $attrs, $ids, $diagnostic, $depth + 1 ) || $found;
 				}
 			}
 			$trimmed = trim( $value );
 			if ( preg_match( '/^(?:[aOsC]:\d+:|[bidrR]:[+-]?\d|N;)/', $trimmed ) ) {
 				// Never instantiate objects from postmeta. Invalid/unsupported serialization refuses.
 				$decoded = @unserialize( $trimmed, [ 'allowed_classes' => false ] );
-				if ( serialize( $decoded ) !== $trimmed ) throw new UnexpectedValueException( 'Malformed or noncanonical serialized deletion evidence.' );
-				$found = self::preset_delete_evidence_contains( $decoded, $ids, $depth + 1 ) || $found;
+				if ( serialize( $decoded ) !== $trimmed ) self::preset_delete_evidence_error( $diagnostic, 'malformed_serialized_value', 'Malformed or noncanonical serialized deletion evidence.' );
+				$found = self::preset_delete_evidence_contains( $decoded, $ids, $diagnostic, $depth + 1 ) || $found;
 			} elseif ( '' !== $trimmed && in_array( $trimmed[0], [ '{', '[', '"' ], true ) ) {
 				$decoded = json_decode( $trimmed, false, 64 );
 				if ( JSON_ERROR_NONE === json_last_error() ) {
-					$found = self::preset_delete_evidence_contains( $decoded, $ids, $depth + 1 ) || $found;
+					$found = self::preset_delete_evidence_contains( $decoded, $ids, $diagnostic, $depth + 1 ) || $found;
 				} elseif ( preg_match( '/^\{\s*"[^"\r\n]*"\s*:|^\[\s*[\[{"]|\\\\u[0-9a-f]{4}/i', $trimmed ) ) {
-					throw new UnexpectedValueException( 'Malformed JSON-shaped deletion evidence.' );
+					self::preset_delete_evidence_error( $diagnostic, 'malformed_json_value', 'Malformed JSON-shaped deletion evidence.' );
 				}
 				// Shortcodes, CSS selectors and quoted prose are not necessarily JSON.
 			}
 		} elseif ( is_object( $value ) || is_resource( $value ) ) {
-			throw new UnexpectedValueException( 'Unsupported object in deletion evidence.' );
+			self::preset_delete_evidence_error( $diagnostic, 'unsupported_object', 'Unsupported object in deletion evidence.' );
 		}
 		return $found;
 	}
 
 	/** No post type/status filter: revisions, trash, library and Theme Builder are included. */
-	private static function preset_delete_scan_posts( array $ids ): array {
+	private static function preset_delete_scan_posts( array $ids, array &$diagnostic ): array {
 		global $wpdb;
+		$diagnostic = [ 'scope' => 'storage', 'stage' => 'query', 'scan_complete' => false ];
 		if ( ! is_object( $wpdb ) || ! method_exists( $wpdb, 'get_results' ) || empty( $wpdb->posts ) || empty( $wpdb->postmeta ) ) {
-			throw new UnexpectedValueException( 'Post evidence scan is unavailable.' );
+			self::preset_delete_evidence_error( $diagnostic, 'scan_unavailable', 'Post evidence scan is unavailable.' );
 		}
 		$coverage = [ 'referenced' => false, 'posts' => 0, 'postmeta' => 0, 'bytes' => 0 ];
 		foreach ( [ 'posts' => [ $wpdb->posts, 'post_content' ], 'postmeta' => [ $wpdb->postmeta, 'meta_value' ] ] as $scope => $source ) {
 			[ $table, $column ] = $source;
-			$rows = $wpdb->get_results( $wpdb->prepare( 'SELECT %i FROM %i LIMIT 10001', $column, $table ), ARRAY_A );
+			$diagnostic = [ 'scope' => $scope, 'stage' => 'query', 'scan_complete' => false ];
+			$rows = 'posts' === $scope
+				? $wpdb->get_results( $wpdb->prepare( 'SELECT ID, post_content FROM %i ORDER BY ID ASC LIMIT 10001', $table ), ARRAY_A )
+				: $wpdb->get_results( $wpdb->prepare( 'SELECT meta_id, post_id, meta_value FROM %i ORDER BY meta_id ASC LIMIT 10001', $table ), ARRAY_A );
 			if ( ! is_array( $rows ) || ! empty( $wpdb->last_error ) || count( $rows ) > 10000 ) {
-				throw new UnexpectedValueException( 'Post evidence query failed or exceeded 10000 rows per table.' );
+				$failure = is_array( $rows ) && empty( $wpdb->last_error ) ? 'row_limit' : 'query_failed';
+				self::preset_delete_evidence_error( $diagnostic, $failure, 'Post evidence query failed or exceeded 10000 rows per table.' );
 			}
 			foreach ( $rows as $row ) {
-				if ( ! isset( $row[ $column ] ) || ! is_string( $row[ $column ] ) ) throw new UnexpectedValueException( 'Incomplete post evidence row.' );
+				$diagnostic = [ 'scope' => $scope, 'stage' => 'row', 'scan_complete' => false ];
+				// wpdb returns decimal strings; preserve every valid locator before refusing a row.
+				$invalid_identity = false;
+				foreach ( 'posts' === $scope ? [ 'ID' => 'post_id' ] : [ 'post_id' => 'post_id', 'meta_id' => 'meta_id' ] as $field => $label ) {
+					$id = is_array( $row ) ? ( $row[ $field ] ?? null ) : null;
+					if ( ! ( is_int( $id ) || is_string( $id ) ) || ! preg_match( '/^[1-9][0-9]*$/D', (string) $id ) || (string) (int) $id !== (string) $id ) {
+						$invalid_identity = true;
+						continue;
+					}
+					$diagnostic[ $label ] = (int) $id;
+				}
+				if ( $invalid_identity ) self::preset_delete_evidence_error( $diagnostic, 'invalid_identity', 'Incomplete post evidence row.' );
+				if ( ! isset( $row[ $column ] ) || ! is_string( $row[ $column ] ) ) self::preset_delete_evidence_error( $diagnostic, 'invalid_row', 'Incomplete post evidence row.' );
+				$diagnostic['stage'] = 'content';
 				$content = $row[ $column ];
 				$coverage['bytes'] += strlen( $content );
-				if ( $coverage['bytes'] > 67108864 ) throw new UnexpectedValueException( 'Post evidence exceeds 64 MiB.' );
+				if ( $coverage['bytes'] > 67108864 ) self::preset_delete_evidence_error( $diagnostic, 'byte_limit', 'Post evidence exceeds 64 MiB.' );
 				$coverage[ $scope ]++;
-				$coverage['referenced'] = self::preset_delete_evidence_contains( $content, $ids ) || $coverage['referenced'];
+				$coverage['referenced'] = self::preset_delete_evidence_contains( $content, $ids, $diagnostic ) || $coverage['referenced'];
 			}
 		}
 		return $coverage;
+	}
+
+	/** Only fixed failure codes/messages cross the diagnostic boundary; never stored values. */
+	private static function preset_delete_evidence_error( array &$diagnostic, string $failure, string $message ): void {
+		$diagnostic['failure_code'] = $failure;
+		throw new UnexpectedValueException( esc_html( $message ) );
 	}
 
 	/**

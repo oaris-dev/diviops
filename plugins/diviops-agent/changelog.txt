@@ -9,6 +9,11 @@ Policy:
 - Keep entries customer-facing. Avoid internal issue numbers unless they are needed to explain a user-visible change.
 - Do not include secrets, credentials, customer data, or environment-specific URLs.
 
+## 1.5.35
+
+- Identifies the first failing post or metadata row when exact-set preset deletion cannot establish complete reference evidence. Diagnostics include valid record IDs and a bounded failure reason without exposing stored content. Preview and apply keep the same deletion safeguards; no content is repaired automatically.
+- MCP 1.5.62 and public builder 1.4.11 remain unchanged.
+
 ## 1.5.34
 
 - Links empty header/footer inputs to the active enabled default template’s existing layouts when creating a Theme Builder template, preserving region enabled states. Preview and apply report resolved sources. Missing defaults use explicit native-theme fallback; invalid inheritance is refused before changes. Existing templates are not automatically repaired.

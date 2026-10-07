@@ -3,7 +3,7 @@ Contributors: diviops
 Tags: divi, mcp, ai, rest-api, site-builder
 Requires at least: 6.5
 Tested up to: 7.1
-Stable tag: 1.5.34
+Stable tag: 1.5.35
 Requires PHP: 7.4
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -105,6 +105,10 @@ No. Free includes the core site-authoring bridge described above. Selected advan
 2. An agent-authored page open in the Divi 5 Visual Builder, with the native Heading module content controls available for continued editing. Divi is a separate required product.
 
 == Changelog ==
+
+= 1.5.35 =
+
+* Identifies the first failing post or metadata row when exact-set preset deletion cannot establish complete reference evidence. Diagnostics include valid record IDs and a bounded failure reason without exposing stored content. Preview and apply keep the same deletion safeguards; no content is repaired automatically.
 
 = 1.5.34 =
 
@@ -270,6 +274,10 @@ No. Free includes the core site-authoring bridge described above. Selected advan
 * Keeps `Stable tag` aligned with the plugin header version.
 
 == Upgrade Notice ==
+
+= 1.5.35 =
+
+Locates incomplete evidence that blocks exact-set preset deletion. No MCP update or compatibility change is required.
 
 = 1.5.34 =
 

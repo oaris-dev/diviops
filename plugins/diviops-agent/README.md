@@ -8,9 +8,9 @@ Divi is a registered trademark of Elegant Themes, Inc. DiviOps Agent is not affi
 
 > **Don't use this plugin standalone** — it's the WordPress side of a two-piece suite; install + configure the [DiviOps MCP Server](../../../diviops-server/) next.
 
-## 1.5.34 release note
+## 1.5.35 release note
 
-Links empty header/footer inputs to the active enabled default template’s existing layouts when creating a Theme Builder template, preserving region enabled states. Preview and apply report resolved sources. Missing defaults use explicit native-theme fallback; invalid inheritance is refused before changes. Existing templates are not automatically repaired. Use MCP 1.5.62 for matching guidance. Public builder remains 1.4.11.
+Identifies the first failing post or metadata row when exact-set preset deletion cannot establish complete reference evidence. Diagnostics include valid record IDs and a bounded failure reason without exposing stored content. Preview and apply keep the same deletion safeguards; no content is repaired automatically. MCP remains 1.5.62 and public builder remains 1.4.11.
 
 ## Requirements
 
@@ -46,18 +46,18 @@ The plugin includes a WordPress.org-format `readme.txt` and a plugin-local `chan
 
 Current metadata policy:
 
-- `Stable tag` matches the plugin header `Version` (`1.5.34`).
+- `Stable tag` matches the plugin header `Version` (`1.5.35`).
 - `Requires at least` and `Requires PHP` mirror the main plugin header.
 - `Tested up to` is evidence-based for this repo/substrate and should not be raised until the Free plugin is actually tested on that WordPress version.
 - External-service/authentication disclosure must mention the separately distributed npm MCP server, WordPress Application Passwords, and the rule that secrets do not belong in issues, examples, screenshots, or repo files.
 - Free/Pro copy must keep the Free plugin useful while making clear that Pro is the paid workflow-leverage layer and that not every MCP tool is Free-backed.
 
-The current source candidate is Free 1.5.34 with MCP 1.5.62 guidance for
-creation-time default layout linking. Existing templates are not automatically
-repaired. Public builder remains 1.4.11. Source acceptance, package qualification
-and publication are separate steps; this version bump does not establish
-publication or an installed-site update. The delivered baseline at preparation
-is Free 1.5.33, MCP 1.5.61 and public builder 1.4.11.
+The current source candidate is Free 1.5.35 for bounded incomplete-evidence
+diagnostics during exact-set preset deletion. MCP remains 1.5.62 and public
+builder remains 1.4.11. Source acceptance, package qualification and publication
+are separate steps; this version bump does not establish publication or an
+installed-site update. The delivered baseline at preparation is Free 1.5.34,
+MCP 1.5.62 and public builder 1.4.11.
 
 ### Historical source preparation notes
 
