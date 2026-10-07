@@ -9,6 +9,11 @@ Policy:
 - Keep entries customer-facing. Avoid internal issue numbers unless they are needed to explain a user-visible change.
 - Do not include secrets, credentials, customer data, or environment-specific URLs.
 
+## 1.5.36
+
+- Supports registered third-party Divi modules in module read/update/move, Theme Builder block insertion and runtime schema discovery. Namespaced extension identifiers are preserved; unrelated WordPress blocks remain refused and the native schema dump remains native-only.
+- Use MCP 1.5.63 with Free Agent 1.5.36 for the complete correction. Native checks covered FluentCart Store Logo, not every extension or version. Public builder remains 1.4.11.
+
 ## 1.5.35
 
 - Identifies the first failing post or metadata row when exact-set preset deletion cannot establish complete reference evidence. Diagnostics include valid record IDs and a bounded failure reason without exposing stored content. Preview and apply keep the same deletion safeguards; no content is repaired automatically.

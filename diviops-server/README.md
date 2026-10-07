@@ -8,7 +8,19 @@ The Node.js MCP server inside the DiviOps harness. It gives Claude Code, Codex, 
 Claude Code <-> MCP Server (stdio) <-> WordPress REST API <-> DiviOps Agent plugin
 ```
 
-## 1.5.62 release note
+## 1.5.63 release note
+
+With Free Agent 1.5.36, runtime schema discovery accepts registered third-party
+Divi modules and routes their namespaced identifiers without dropping the
+namespace. The Free plugin also supports their module read/update/move and
+Theme Builder block insertion. Native short identifiers remain supported;
+unrelated WordPress blocks are refused and the native schema dump is unchanged.
+
+Update both components for the complete correction. Native checks covered
+FluentCart Store Logo, not every extension or version. Public builder remains
+1.4.11. Dependencies and compatibility floors are unchanged.
+
+## Previous 1.5.62 release note
 
 With Free Agent 1.5.34, empty header/footer inputs on template creation link the
 active enabled default's existing layouts and preserve region enabled states.

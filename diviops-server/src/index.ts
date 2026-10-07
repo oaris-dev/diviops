@@ -1088,7 +1088,7 @@ registerPluginTool(
   "diviops_schema_list_modules",
   {
     description:
-      "List all available Divi modules (block types) with their names, titles, and categories. Use this to discover what modules can be used in layouts. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }.",
+      "List registered native Divi and Divi-registered custom modules (block types) with their names, titles, and categories. Use this to discover what modules can be used in layouts. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }.",
     annotations: { idempotentHint: true },
     _meta: { idempotent: "true" },
   },
@@ -1106,18 +1106,18 @@ registerPluginTool(
   "diviops_schema_get_module",
   {
     description:
-      "Get the attribute schema for a Divi module. Default mode 'single' returns one module's schema (optimized, ~70% smaller; pass raw: true for full). Mode 'dump_all' snapshots every Divi module in one call and includes a `schema_version` hash over the canonical *PresetAttrsMap.php files — build-time entry point for the skill regen pipeline; ignores `module_name` and `raw`. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }.",
+      "Get the registered attribute schema for a native or Divi-registered custom module. Extension registration does not guarantee complete metadata or native rendering compatibility. Default mode 'single' returns one module's schema (optimized, ~70% smaller; pass raw: true for full). Mode 'dump_all' snapshots native Divi modules only in one call and includes a `schema_version` hash over the canonical *PresetAttrsMap.php files — build-time entry point for the skill regen pipeline; ignores `module_name` and `raw`. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }.",
     inputSchema: {
       mode: z
         .enum(["single", "dump_all"])
         .optional()
         .default("single")
-        .describe("'single' (default): return one module's schema. 'dump_all': return every module keyed by name plus schema_version + divi_version."),
+        .describe("'single' (default): return one module's schema. 'dump_all': return native Divi modules keyed by name plus schema_version + divi_version."),
       module_name: z
         .string()
         .optional()
         .describe(
-          'Module name, e.g. "text", "image", "accordion", or full "divi/text". Required when mode="single"; ignored when mode="dump_all".',
+          'Module name, e.g. "text", "image", "accordion", full "divi/text", or a registered extension such as "difl/faq". Required when mode="single"; ignored when mode="dump_all".',
         ),
       raw: z
         .boolean()
@@ -1157,12 +1157,13 @@ registerPluginTool(
       };
     }
 
-    if (!module_name) {
+    const route = module_name ? schemaModuleRoute(module_name) : null;
+    if (!route) {
       const failure: DiviopsResponse<never> = {
         ok: false,
         error: {
           code: ErrorCodes.INVALID_INPUT,
-          message: "module_name is required when mode='single'",
+          message: "mode='single' requires a module slug or namespace/module name; dump-all is reserved for mode='dump_all'",
         },
       };
       return {
@@ -1171,7 +1172,7 @@ registerPluginTool(
     }
 
     const result = await wp.requestEnveloped<Record<string, unknown>>(
-      schemaModuleRoute(module_name),
+      route,
     );
     const projected = envelopeMap(result, (data) =>
       raw ? data : optimizeSchema(data as Record<string, any>),
@@ -3410,7 +3411,7 @@ registerPluginTool(
   "diviops_tb_layout_block_insert",
   {
     description:
-      "Insert one or more serialized Divi blocks into an existing Theme Builder layout without replacing the whole layout. Target a unique parent with `parent_selector` (for example `divi/group[adminLabel=\"Legal Col\"]`, or `divi/group` only when it is unique) or an explicit zero-based `parent_path` from the parsed block tree such as `0.1.2`. `position=append|prepend` inserts as children of the target block; `position=before|after` inserts beside the target within its parent. Ambiguous selectors return ok:false with code 'invalid_input'; missing targets return 'not_found'. The route parses and validates the inserted blocks, rejects malformed serialization (literal pseudo-escapes such as bare `u003c` are allowed in native Code content strings), validates the final serialized layout before saving, and returns a no-op when the exact requested block sequence already exists at the insertion point." +
+      "Insert one or more serialized Divi blocks into an existing Theme Builder layout without replacing the whole layout. Target a unique parent with `parent_selector` (for example `divi/group[adminLabel=\"Legal Col\"]`, or `divi/group` only when it is unique) or an explicit zero-based `parent_path` from the parsed block tree such as `0.1.2`. `position=append|prepend` inserts as children of the target block; `position=before|after` inserts beside the target within its parent. Ambiguous selectors return ok:false with code 'invalid_input'; missing targets return 'not_found'. Inserted named blocks and the target must be native Divi modules or custom modules registered through Divi; unrelated stored siblings are preserved. This registration check does not validate extension-specific attribute schemas or child-container rules. The route parses and validates the inserted blocks, rejects malformed serialization (literal pseudo-escapes such as bare `u003c` are allowed in native Code content strings), validates the final serialized layout before saving, and returns a no-op when the exact requested block sequence already exists at the insertion point." +
       DRY_RUN_DESC_SUFFIX,
     inputSchema: {
       layout_id: z.number().int().describe("Theme Builder layout post ID to mutate"),

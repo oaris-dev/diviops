@@ -3,7 +3,7 @@ Contributors: diviops
 Tags: divi, mcp, ai, rest-api, site-builder
 Requires at least: 6.5
 Tested up to: 7.1
-Stable tag: 1.5.35
+Stable tag: 1.5.36
 Requires PHP: 7.4
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -105,6 +105,11 @@ No. Free includes the core site-authoring bridge described above. Selected advan
 2. An agent-authored page open in the Divi 5 Visual Builder, with the native Heading module content controls available for continued editing. Divi is a separate required product.
 
 == Changelog ==
+
+= 1.5.36 =
+
+* Supports registered third-party Divi modules in module read/update/move, Theme Builder block insertion and runtime schema discovery. Namespaced extension identifiers are preserved; unrelated WordPress blocks remain refused and the native schema dump remains native-only.
+* Use MCP 1.5.63 with Free Agent 1.5.36 for the complete correction. Native checks covered FluentCart Store Logo, not every extension or version. Public builder remains 1.4.11.
 
 = 1.5.35 =
 
@@ -274,6 +279,10 @@ No. Free includes the core site-authoring bridge described above. Selected advan
 * Keeps `Stable tag` aligned with the plugin header version.
 
 == Upgrade Notice ==
+
+= 1.5.36 =
+
+Adds registered Divi extension targeting, insertion and schema discovery. Update the MCP server to 1.5.63 for the complete correction.
 
 = 1.5.35 =
 

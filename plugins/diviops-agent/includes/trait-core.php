@@ -16,6 +16,24 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 trait DiviOps_Agent_Core {
 
+	/** Native names remain supported; extension names require Divi's own registration. */
+	private static function is_supported_divi_module( string $name ): bool {
+		if ( 0 === strpos( $name, 'divi/' ) ) return true;
+		if ( 0 === strpos( $name, 'core/' ) ) return false;
+		$registration = 'ET\\Builder\\Packages\\ModuleLibrary\\ModuleRegistration';
+		return is_callable( [ $registration, 'get_custom_metadata_folder' ] )
+			&& null !== $registration::get_custom_metadata_folder( $name );
+	}
+
+	/** Public native IDs stay short; extension IDs retain their complete namespace. */
+	private static function module_target_type( string $name ): string {
+		return 0 === strpos( $name, 'divi/' ) ? substr( $name, 5 ) : $name;
+	}
+
+	private static function module_block_name( string $type ): string {
+		return false === strpos( $type, '/' ) ? 'divi/' . $type : $type;
+	}
+
 	private static function get_nested_array_value( $source, $path, $default = null ) {
 		$value = $source;
 		foreach ( $path as $key ) {
@@ -65,7 +83,7 @@ trait DiviOps_Agent_Core {
 				$block     = $matches[2];
 				$tail      = $matches[3];
 
-				if ( $is_closer || 0 !== strpos( $block, 'divi/' ) ) {
+				if ( $is_closer || ! self::is_supported_divi_module( $block ) ) {
 					return $matches[0];
 				}
 
@@ -270,14 +288,21 @@ trait DiviOps_Agent_Core {
 	 * @return array{openers:int,self_closers:int,container_openers:int,closers:int}
 	 */
 	private static function divi_content_marker_counts( string $content ): array {
-		$openers      = preg_match_all( '/<!--\s+wp:divi\//', $content );
-		// Scan to the first terminator without per-byte lookahead repetition:
-		// large Code docs otherwise exhaust PCRE's JIT stack.
-		preg_match_all( '/<!--\s+wp:divi\/(.*?)-->/s', $content, $comments );
-		$self_closers = count( array_filter( $comments[1] ?? [], static function ( $tail ) {
-			return '/' === substr( $tail, -1 );
-		} ) );
-		$closers      = preg_match_all( '/<!--\s+\/wp:divi\//', $content );
+		// Count openers even when their terminator is missing, as the native guard did.
+		preg_match_all( '/<!--\s+(\/)?wp:([A-Za-z0-9_-]+\/[A-Za-z0-9_-]+)/', $content, $comments, PREG_SET_ORDER | PREG_OFFSET_CAPTURE );
+		$openers = 0;
+		$closers = 0;
+		$self_closers = 0;
+		foreach ( $comments as $comment ) {
+			if ( ! self::is_supported_divi_module( $comment[2][0] ) ) continue;
+			if ( ! empty( $comment[1][0] ) ) {
+				$closers++;
+			} else {
+				$openers++;
+				$end = strpos( $content, '-->', $comment[0][1] );
+				if ( false !== $end && '/' === substr( rtrim( substr( $content, $comment[0][1], $end - $comment[0][1] ) ), -1 ) ) $self_closers++;
+			}
+		}
 
 		return [
 			'openers'           => (int) $openers,
@@ -295,7 +320,7 @@ trait DiviOps_Agent_Core {
 	 */
 	private static function validate_divi_marker_sequence( string $content ): array {
 		$matched = preg_match_all(
-			'/<!--\s+(\/)?wp:divi\/([A-Za-z0-9_-]+).*?-->/s',
+			'/<!--\s+(\/)?wp:([A-Za-z0-9_-]+\/[A-Za-z0-9_-]+).*?-->/s',
 			$content,
 			$matches,
 			PREG_SET_ORDER | PREG_OFFSET_CAPTURE
@@ -306,11 +331,12 @@ trait DiviOps_Agent_Core {
 
 		$stack = [];
 		foreach ( $matches as $match ) {
+			if ( ! self::is_supported_divi_module( $match[2][0] ) ) continue;
 			$token      = $match[0][0];
 			$offset     = $match[0][1];
 			$is_closer  = ! empty( $match[1][0] );
-			$type       = (string) $match[2][0];
-			$self_close = ! $is_closer && '/-->' === substr( $token, -4 );
+			$type       = self::module_target_type( (string) $match[2][0] );
+			$self_close = ! $is_closer && '/' === substr( rtrim( substr( $token, 0, -3 ) ), -1 );
 
 			if ( $self_close ) {
 				continue;

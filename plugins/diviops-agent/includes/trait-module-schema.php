@@ -27,7 +27,7 @@ trait DiviOps_Agent_ModuleSchema {
 		$modules  = [];
 
 		foreach ( $all as $name => $block_type ) {
-			if ( 0 !== strpos( $name, 'divi/' ) ) {
+			if ( ! self::is_supported_divi_module( $name ) ) {
 				continue;
 			}
 
@@ -206,15 +206,13 @@ trait DiviOps_Agent_ModuleSchema {
 	public static function schema_get_module( $request ) {
 		$name = sanitize_text_field( (string) $request['name'] );
 
-		// Normalize: accept "text" or "divi/text".
-		if ( 0 !== strpos( $name, 'divi/' ) ) {
-			$name = 'divi/' . $name;
-		}
+		// Native short names stay compatible; preserve full extension identities.
+		$name = self::module_block_name( $name );
 
 		$registry   = WP_Block_Type_Registry::get_instance();
 		$block_type = $registry->get_registered( $name );
 
-		if ( ! $block_type ) {
+		if ( ! $block_type || ! self::is_supported_divi_module( $name ) ) {
 			return self::envelope_error(
 				'not_found',
 				"Module '{$name}' not found",

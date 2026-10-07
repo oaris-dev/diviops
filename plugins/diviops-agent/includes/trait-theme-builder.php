@@ -1416,12 +1416,21 @@ trait DiviOps_Agent_ThemeBuilder {
 			return self::envelope_from_wp_error( $target );
 		}
 
+		if ( ! self::is_supported_divi_module( $target['block_name'] ) ) {
+			return self::envelope_error(
+				'invalid_input',
+				'Insertion target must be a native or Divi-registered custom module.',
+				null,
+				400
+			);
+		}
+
 		$inserted_count = count( $inserted );
 		$insert_at      = 'append' === $position
 			? count( $target['children'] )
 			: ( 'prepend' === $position ? 0 : ( 'before' === $position ? $target['index'] : $target['index'] + 1 ) );
 		$scope          = in_array( $position, [ 'append', 'prepend' ], true ) ? 'children' : 'siblings';
-		$idempotency_at = 'append' === $position ? max( 0, $insert_at - $inserted_count ) : $insert_at;
+		$idempotency_at = in_array( $position, [ 'append', 'before' ], true ) ? $insert_at - $inserted_count : $insert_at;
 		$already_there  = self::tb_insert_sequence_matches( 'children' === $scope ? $target['children'] : $target['siblings'], $inserted, $idempotency_at );
 		if ( ! $already_there && in_array( $position, [ 'append', 'prepend' ], true ) ) {
 			$already_there = self::tb_stable_labeled_sequence_exists( $target['children'], $inserted )
@@ -1584,12 +1593,9 @@ trait DiviOps_Agent_ThemeBuilder {
 				}
 				continue;
 			}
-			if ( 0 !== strpos( (string) $block['blockName'], 'divi/' ) ) {
-				return new WP_Error(
-					'invalid_input',
-					sprintf( "content contains non-Divi block '%s'.", (string) $block['blockName'] ),
-					[ 'status' => 400 ]
-				);
+			$error = self::validate_tb_insert_module_tree( [ $block ] );
+			if ( is_wp_error( $error ) ) {
+				return $error;
 			}
 			$out[] = $block;
 		}
@@ -1601,6 +1607,25 @@ trait DiviOps_Agent_ThemeBuilder {
 			);
 		}
 		return $out;
+	}
+
+	/** Check new named blocks only; unrelated stored siblings remain outside our ownership. */
+	private static function validate_tb_insert_module_tree( array $blocks ) {
+		foreach ( $blocks as $block ) {
+			$name = (string) ( $block['blockName'] ?? '' );
+			if ( '' !== $name && ! self::is_supported_divi_module( $name ) ) {
+				return new WP_Error(
+					'invalid_input',
+					sprintf( "content contains unsupported module '%s'; use native or Divi-registered custom modules.", $name ),
+					[ 'status' => 400 ]
+				);
+			}
+			$error = self::validate_tb_insert_module_tree( $block['innerBlocks'] ?? [] );
+			if ( is_wp_error( $error ) ) {
+				return $error;
+			}
+		}
+		return null;
 	}
 
 	/**
@@ -1720,10 +1745,10 @@ trait DiviOps_Agent_ThemeBuilder {
 	}
 
 	private static function parse_tb_parent_selector( string $selector ) {
-		if ( ! preg_match( '/^(divi\/[a-z0-9_-]+)(?:\[adminLabel=(["\'])(.*?)\2\])?$/i', $selector, $m ) ) {
+		if ( ! preg_match( '/^([a-z0-9_-]+\/[a-z0-9_-]+)(?:\[adminLabel=(["\'])(.*?)\2\])?$/i', $selector, $m ) ) {
 			return new WP_Error(
 				'invalid_input',
-				'parent_selector must look like divi/group or divi/group[adminLabel="Legal Col"].',
+				'parent_selector must be a block name such as divi/group or vendor/module, optionally followed by [adminLabel="Label"].',
 				[ 'status' => 400 ]
 			);
 		}

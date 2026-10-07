@@ -1423,7 +1423,7 @@ trait DiviOps_Agent_Page {
 				'occurrence' => $target['occurrence'],
 			],
 			'module'     => [
-				'block_name'    => 'divi/' . $match['type'],
+				'block_name'    => self::module_block_name( $match['type'] ),
 				'block_type'    => $match['type'],
 				'admin_label'   => self::module_admin_label_from_attrs( $attrs ),
 				'auto_index'    => $match['auto_index'] ?? '',
@@ -1543,24 +1543,22 @@ trait DiviOps_Agent_Page {
 		$found_match   = null; // The single match to apply.
 		$type_counters = []; // For auto_index mode.
 
-		$prefix_len = strlen( self::BLOCK_PREFIX );
+		$prefix_len = strlen( '<!-- wp:' );
 		$offset     = 0;
-		while ( false !== ( $pos = strpos( $content, self::BLOCK_PREFIX, $offset ) ) ) {
-			// Find the block type name — ends at space, / (self-closing), or --> (bare close).
-			$search_from   = $pos + $prefix_len;
-			$space_pos     = strpos( $content, ' ', $search_from );
-			$slash_pos     = strpos( $content, '/', $search_from );
+		while ( false !== ( $pos = strpos( $content, '<!-- wp:', $offset ) ) ) {
+			$search_from = $pos + $prefix_len;
 			$comment_close = strpos( $content, '-->', $search_from );
-
-			$type_end = min(
-				false !== $space_pos     ? $space_pos     : PHP_INT_MAX,
-				false !== $slash_pos     ? $slash_pos     : PHP_INT_MAX,
-				false !== $comment_close ? $comment_close : PHP_INT_MAX
-			);
-			if ( PHP_INT_MAX === $type_end ) {
-				break;
+			if ( ! preg_match( '/\G([a-z0-9_-]+\/[a-z0-9_-]+)(?=\s|\/|-->)/i', $content, $name_match, 0, $search_from ) ) {
+				$offset = $search_from;
+				continue;
 			}
-			$type = substr( $content, $search_from, $type_end - $search_from );
+			$name = $name_match[1];
+			$type_end = $search_from + strlen( $name );
+			if ( ! self::is_supported_divi_module( $name ) ) {
+				$offset = false === $comment_close ? $type_end : $comment_close + 3;
+				continue;
+			}
+			$type = self::module_target_type( $name );
 
 			$next_char = isset( $content[ $type_end + 1 ] ) ? $content[ $type_end + 1 ] : '';
 			$has_json  = ( ' ' === $content[ $type_end ] && '{' === $next_char );
@@ -1577,7 +1575,7 @@ trait DiviOps_Agent_Page {
 					$offset = false !== $comment_close ? $comment_close + 3 : $type_end;
 					continue;
 				}
-				$type = substr( $token_name, strlen( 'divi/' ) );
+				$type = self::module_target_type( $token_name );
 			} elseif ( ! $has_json && ( false === $comment_close
 				|| ! preg_match( '/\A\s+\/?-->\z/', substr( $content, $type_end, $comment_close + 3 - $type_end ) ) ) ) {
 				$offset = false !== $comment_close ? $comment_close + 3 : $type_end;
@@ -1603,15 +1601,14 @@ trait DiviOps_Agent_Page {
 				continue;
 			}
 
-			$self_close = strpos( $content, '/-->', $pos );
 			$container  = strpos( $content, '-->', $pos );
 
 			if ( false === $container ) {
 				break;
 			}
 
-			$is_self_closing = ( $self_close !== false && $self_close <= $container + 1 );
-			$comment_end     = $is_self_closing ? $self_close + 4 : $container + 3;
+			$is_self_closing = '/' === substr( rtrim( substr( $content, $pos, $container - $pos ) ), -1 );
+			$comment_end     = $container + 3;
 			$comment         = substr( $content, $pos, $comment_end - $pos );
 
 			$match_info = [
@@ -1695,9 +1692,7 @@ trait DiviOps_Agent_Page {
 		$comment_end     = $found_match['comment_end'];
 
 		$json_start = strpos( $comment, '{' );
-		$json_end   = $is_self_closing
-			? strrpos( $comment, '}', strrpos( $comment, '/-->' ) - strlen( $comment ) )
-			: strrpos( $comment, '}', strrpos( $comment, '-->' ) - strlen( $comment ) );
+		$json_end   = strrpos( $comment, '}', strrpos( $comment, '-->' ) - strlen( $comment ) );
 
 		if ( ! $found_match['bare_text'] && ( false === $json_start || false === $json_end ) ) {
 			return self::envelope_error(
@@ -1841,7 +1836,7 @@ trait DiviOps_Agent_Page {
 				500
 			);
 		}
-		$prefix      = '<!-- wp:divi/' . $type . ' ';
+		$prefix      = '<!-- wp:' . self::module_block_name( $type ) . ' ';
 		$suffix      = $is_self_closing ? ' /-->' : ' -->';
 		$new_comment = $prefix . $new_json . $suffix;
 
@@ -2001,8 +1996,8 @@ trait DiviOps_Agent_Page {
 	private static function collect_readable_divi_blocks( array $blocks, array &$flat_modules, array &$type_counts ) {
 		foreach ( $blocks as $block ) {
 			$name = isset( $block['blockName'] ) ? (string) $block['blockName'] : '';
-			if ( 0 === strpos( $name, 'divi/' ) ) {
-				$type = substr( $name, 5 );
+			if ( self::is_supported_divi_module( $name ) ) {
+				$type = self::module_target_type( $name );
 				if ( ! isset( $type_counts[ $type ] ) ) {
 					$type_counts[ $type ] = 0;
 				}
@@ -2040,8 +2035,8 @@ trait DiviOps_Agent_Page {
 		foreach ( $blocks as $index => $block ) {
 			$path = array_merge( $parent_path, [ $index ] );
 			$name = isset( $block['blockName'] ) ? (string) $block['blockName'] : '';
-			if ( 0 === strpos( $name, 'divi/' ) ) {
-				$type = substr( $name, 5 );
+			if ( self::is_supported_divi_module( $name ) ) {
+				$type = self::module_target_type( $name );
 				$type_counts[ $type ] = ( $type_counts[ $type ] ?? 0 ) + 1;
 				$attrs   = isset( $block['attrs'] ) && is_array( $block['attrs'] ) ? $block['attrs'] : [];
 				$shallow = $block;
@@ -2339,27 +2334,26 @@ trait DiviOps_Agent_Page {
 			$ai_target = (int) $parts[1];
 		}
 
-		$prefix_len    = strlen( self::BLOCK_PREFIX );
+		$prefix_len    = strlen( '<!-- wp:' );
 		$offset        = 0;
 		$type_counters = [];
 		$all_matches   = [];
 		$found_match   = null;
 
-		while ( false !== ( $pos = strpos( $content, self::BLOCK_PREFIX, $offset ) ) ) {
-			$search_from   = $pos + $prefix_len;
-			$space_pos     = strpos( $content, ' ', $search_from );
-			$slash_pos     = strpos( $content, '/', $search_from );
+		while ( false !== ( $pos = strpos( $content, '<!-- wp:', $offset ) ) ) {
+			$search_from = $pos + $prefix_len;
 			$comment_close = strpos( $content, '-->', $search_from );
-
-			$type_end = min(
-				false !== $space_pos     ? $space_pos     : PHP_INT_MAX,
-				false !== $slash_pos     ? $slash_pos     : PHP_INT_MAX,
-				false !== $comment_close ? $comment_close : PHP_INT_MAX
-			);
-			if ( PHP_INT_MAX === $type_end ) {
-				break;
+			if ( ! preg_match( '/\G([a-z0-9_-]+\/[a-z0-9_-]+)(?=\s|\/|-->)/i', $content, $name_match, 0, $search_from ) ) {
+				$offset = $search_from;
+				continue;
 			}
-			$type = substr( $content, $search_from, $type_end - $search_from );
+			$name = $name_match[1];
+			$type_end = $search_from + strlen( $name );
+			if ( ! self::is_supported_divi_module( $name ) ) {
+				$offset = false === $comment_close ? $type_end : $comment_close + 3;
+				continue;
+			}
+			$type = self::module_target_type( $name );
 
 			if ( ! isset( $type_counters[ $type ] ) ) {
 				$type_counters[ $type ] = 0;
@@ -2367,21 +2361,20 @@ trait DiviOps_Agent_Page {
 			$type_counters[ $type ]++;
 
 			// Determine if self-closing or container.
-			$self_close = strpos( $content, '/-->', $pos );
 			$container  = strpos( $content, '-->', $pos );
 			if ( false === $container ) {
 				break;
 			}
-			$is_self_closing = ( false !== $self_close && $self_close <= $container + 1 );
-			$comment_end     = $is_self_closing ? $self_close + 4 : $container + 3;
+			$is_self_closing = '/' === substr( rtrim( substr( $content, $pos, $container - $pos ) ), -1 );
+			$comment_end     = $container + 3;
 			$comment         = substr( $content, $pos, $comment_end - $pos );
 
 			// Calculate full block end (including inner blocks + closing tag for containers).
 			$block_end = $comment_end;
 			if ( ! $is_self_closing ) {
-				$close_tag     = '<!-- /wp:divi/' . $type . ' -->';
+				$close_tag     = '<!-- /wp:' . self::module_block_name( $type ) . ' -->';
 				$close_tag_len = strlen( $close_tag );
-				$open_tag      = '<!-- wp:divi/' . $type;
+				$open_tag      = '<!-- wp:' . self::module_block_name( $type );
 				$open_tag_len  = strlen( $open_tag );
 				$depth         = 1;
 				$scan          = $comment_end;
@@ -2397,7 +2390,8 @@ trait DiviOps_Agent_Page {
 					if ( false !== $next_open && $next_open < $next_close ) {
 						$char_after = $content[ $next_open + $open_tag_len ] ?? '';
 						if ( ' ' === $char_after || '{' === $char_after ) {
-							$depth++;
+							$nested_end = strpos( $content, '-->', $next_open );
+							if ( false === $nested_end || '/' !== substr( rtrim( substr( $content, $next_open, $nested_end - $next_open ) ), -1 ) ) $depth++;
 						}
 						$scan = $next_open + $open_tag_len;
 					} else {
@@ -3172,7 +3166,7 @@ trait DiviOps_Agent_Page {
 			}
 
 			// Generate auto-index for this block type.
-			$short_name = str_replace( 'divi/', '', $block['blockName'] );
+			$short_name = self::module_target_type( $block['blockName'] );
 			if ( ! isset( $counters[ $short_name ] ) ) {
 				$counters[ $short_name ] = 0;
 			}

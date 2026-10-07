@@ -8,9 +8,17 @@ Divi is a registered trademark of Elegant Themes, Inc. DiviOps Agent is not affi
 
 > **Don't use this plugin standalone** — it's the WordPress side of a two-piece suite; install + configure the [DiviOps MCP Server](../../../diviops-server/) next.
 
-## 1.5.35 release note
+## 1.5.36 release note
 
-Identifies the first failing post or metadata row when exact-set preset deletion cannot establish complete reference evidence. Diagnostics include valid record IDs and a bounded failure reason without exposing stored content. Preview and apply keep the same deletion safeguards; no content is repaired automatically. MCP remains 1.5.62 and public builder remains 1.4.11.
+Recognizes registered third-party Divi modules for module read, update and move,
+Theme Builder block insertion, and runtime schema discovery. Extension targets
+retain their full namespace; native Divi short identifiers remain supported.
+Unrelated WordPress blocks are refused, and the native schema dump remains
+limited to native Divi modules.
+
+Use MCP 1.5.63 with Free Agent 1.5.36 for the complete correction. Native checks
+covered FluentCart Store Logo; compatibility with every extension or version
+is not implied. Public builder remains 1.4.11; compatibility floors are unchanged.
 
 ## Requirements
 
