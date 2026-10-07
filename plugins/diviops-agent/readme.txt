@@ -3,7 +3,7 @@ Contributors: diviops
 Tags: divi, mcp, ai, rest-api, site-builder
 Requires at least: 6.5
 Tested up to: 7.1
-Stable tag: 1.5.33
+Stable tag: 1.5.34
 Requires PHP: 7.4
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -105,6 +105,10 @@ No. Free includes the core site-authoring bridge described above. Selected advan
 2. An agent-authored page open in the Divi 5 Visual Builder, with the native Heading module content controls available for continued editing. Divi is a separate required product.
 
 == Changelog ==
+
+= 1.5.34 =
+
+* Links empty header/footer inputs to the active enabled default template’s existing layouts when creating a Theme Builder template, preserving region enabled states. Preview and apply report resolved sources. Missing defaults use explicit native-theme fallback; invalid inheritance is refused before changes. Existing templates are not automatically repaired.
 
 = 1.5.33 =
 
@@ -266,6 +270,10 @@ No. Free includes the core site-authoring bridge described above. Selected advan
 * Keeps `Stable tag` aligned with the plugin header version.
 
 == Upgrade Notice ==
+
+= 1.5.34 =
+
+Corrects default header/footer inheritance for newly created templates. Use MCP 1.5.62 for matching guidance. Existing templates are not automatically repaired.
 
 = 1.5.33 =
 

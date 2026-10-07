@@ -1952,6 +1952,60 @@ trait DiviOps_Agent_ThemeBuilder {
 	}
 
 	/**
+	 * Resolve creation-time header/footer links without mutating the source template.
+	 * A disabled default does not apply; disabled regions of an enabled default do.
+	 */
+	private static function tb_template_region_plan( $template_ids, $is_default, $contents ) {
+		$default_id = 0;
+		$default_enabled = false;
+		$hint = 'Repair the active master default template or provide explicit header and footer content.';
+		if ( ! $is_default && in_array( '', $contents, true ) ) {
+			foreach ( array_unique( $template_ids ) as $id ) {
+				if ( '1' !== get_post_meta( $id, '_et_default', true ) ) {
+					continue;
+				}
+				$post = get_post( $id );
+				if ( ! $post || 'et_template' !== $post->post_type || 'publish' !== $post->post_status || $default_id ) {
+					return new WP_Error( 'tb_template.invalid_inheritance', "Invalid or ambiguous default template reference #{$id} in the active master.", [ 'status' => 409, 'hint' => $hint ] );
+				}
+				$default_id = $id;
+			}
+			if ( $default_id ) {
+				$enabled = get_post_meta( $default_id, '_et_enabled', true );
+				if ( ! in_array( $enabled, [ '0', '1' ], true ) ) {
+					return new WP_Error( 'tb_template.invalid_inheritance', "Default template #{$default_id} has an invalid enabled state.", [ 'status' => 409, 'hint' => $hint ] );
+				}
+				$default_enabled = '1' === $enabled;
+			}
+		}
+		$plan = [];
+		foreach ( $contents as $region => $content ) {
+			$state = [ 'source' => '' !== $content ? 'authored' : 'native_theme', 'default_template_id' => 0, 'layout_id' => 0, 'enabled' => true ];
+			if ( '' === $content && $default_id ) {
+				$state['default_template_id'] = $default_id;
+				$state['default_template_enabled'] = $default_enabled;
+				if ( $default_enabled ) {
+					$raw_id = get_post_meta( $default_id, "_et_{$region}_layout_id", true );
+					$enabled = get_post_meta( $default_id, "_et_{$region}_layout_enabled", true );
+					if ( ( '' !== $raw_id && ( ! is_scalar( $raw_id ) || ! preg_match( '/^[0-9]+$/D', (string) $raw_id ) || (string) (int) $raw_id !== (string) $raw_id ) ) || ! in_array( $enabled, [ '0', '1' ], true ) ) {
+						return new WP_Error( 'tb_template.invalid_inheritance', "Default template #{$default_id} has invalid {$region} metadata.", [ 'status' => 409, 'hint' => $hint ] );
+					}
+					$layout_id = (int) $raw_id;
+					$layout = $layout_id ? get_post( $layout_id ) : null;
+					if ( $layout_id && ( ! $layout || "et_{$region}_layout" !== $layout->post_type || 'publish' !== $layout->post_status ) ) {
+						return new WP_Error( 'tb_template.invalid_inheritance', "Default template #{$default_id} references an invalid {$region} layout #{$layout_id}.", [ 'status' => 409, 'hint' => $hint ] );
+					}
+					$state['layout_id'] = $layout_id;
+					$state['enabled'] = '1' === $enabled;
+					$state['source'] = $layout_id || ! $state['enabled'] ? 'default_template' : 'native_theme';
+				}
+			}
+			$plan[ $region ] = $state;
+		}
+		return $plan;
+	}
+
+	/**
 	 * Create a complete Theme Builder template with header/body/footer layouts.
 	 */
 	public static function tb_template_create( $request ) {
@@ -2047,6 +2101,11 @@ trait DiviOps_Agent_ThemeBuilder {
 			}
 		}
 
+		$region_plan = self::tb_template_region_plan( $master_template_ids, $is_default_condition, [ 'header' => $header_content, 'footer' => $footer_content ] );
+		if ( is_wp_error( $region_plan ) ) {
+			return self::envelope_from_wp_error( $region_plan );
+		}
+
 		if ( (bool) $request->get_param( 'dry_run' ) ) {
 			$changes = [];
 			if ( $will_bootstrap_master ) {
@@ -2069,6 +2128,7 @@ trait DiviOps_Agent_ThemeBuilder {
 					'will_create_header' => '' !== $header_content,
 					'will_create_footer' => '' !== $footer_content,
 					'will_create_body'   => '' !== $body_content,
+					'regions'            => $region_plan,
 				],
 			];
 			if ( '' !== $header_content ) {
@@ -2127,8 +2187,8 @@ trait DiviOps_Agent_ThemeBuilder {
 			}
 		}
 
-		$header_id = 0;
-		$footer_id = 0;
+		$header_id = $region_plan['header']['layout_id'];
+		$footer_id = $region_plan['footer']['layout_id'];
 		$body_id   = 0;
 
 		// Create header layout if content provided.
@@ -2191,11 +2251,11 @@ trait DiviOps_Agent_ThemeBuilder {
 		update_post_meta( $template_id, '_et_default', $is_default_condition ? '1' : '0' );
 		update_post_meta( $template_id, '_et_enabled', '1' );
 		update_post_meta( $template_id, '_et_header_layout_id', $header_id );
-		update_post_meta( $template_id, '_et_header_layout_enabled', $header_id ? '1' : '0' );
+		update_post_meta( $template_id, '_et_header_layout_enabled', $region_plan['header']['enabled'] ? '1' : '0' );
 		update_post_meta( $template_id, '_et_body_layout_id', $body_id ?: '0' );
 		update_post_meta( $template_id, '_et_body_layout_enabled', '1' );
 		update_post_meta( $template_id, '_et_footer_layout_id', $footer_id );
-		update_post_meta( $template_id, '_et_footer_layout_enabled', $footer_id ? '1' : '0' );
+		update_post_meta( $template_id, '_et_footer_layout_enabled', $region_plan['footer']['enabled'] ? '1' : '0' );
 		if ( ! $is_default_condition ) {
 			add_post_meta( $template_id, '_et_use_on', $condition );
 		}
@@ -2203,6 +2263,8 @@ trait DiviOps_Agent_ThemeBuilder {
 		// Link to Theme Builder master.
 		add_post_meta( $master_id, '_et_template', $template_id );
 
+		$region_plan['header']['layout_id'] = $header_id;
+		$region_plan['footer']['layout_id'] = $footer_id;
 		$payload = [
 			'success'                  => true,
 			'template_id'              => $template_id,
@@ -2213,6 +2275,7 @@ trait DiviOps_Agent_ThemeBuilder {
 			'is_default'               => $is_default_condition,
 			'master_post_id'           => $master_id,
 			'master_post_bootstrapped' => $will_bootstrap_master,
+			'regions'                  => $region_plan,
 			'message'                  => "Template '{$title}' created and linked to Theme Builder.",
 		];
 

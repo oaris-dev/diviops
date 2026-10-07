@@ -3483,14 +3483,14 @@ registerPluginTool(
         .optional()
         .default("")
         .describe(
-          "Header block markup (empty = inherit from default template)",
+          "Header block markup. Empty links the active enabled default template’s header layout and enabled state at creation; otherwise uses native-theme fallback. Links are not automatically rebound if the default layout ID changes. Invalid inheritance is refused; dry_run reports resolved regions.",
         ),
       footer_content: z
         .string()
         .optional()
         .default("")
         .describe(
-          "Footer block markup (empty = inherit from default template)",
+          "Footer block markup. Empty links the active enabled default template’s footer layout and enabled state at creation; otherwise uses native-theme fallback. Links are not automatically rebound if the default layout ID changes. Invalid inheritance is refused; dry_run reports resolved regions.",
         ),
       body_content: z.string().optional().default("").describe(
         "Body block markup (omitted/empty = existing no-custom-body behavior). Nonempty content requires plugin capability tb_template_create_body; returns body_layout_id. No global Theme Builder save or legacy cleanup.",

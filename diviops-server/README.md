@@ -8,7 +8,20 @@ The Node.js MCP server inside the DiviOps harness. It gives Claude Code, Codex, 
 Claude Code <-> MCP Server (stdio) <-> WordPress REST API <-> DiviOps Agent plugin
 ```
 
-## 1.5.61 release note
+## 1.5.62 release note
+
+With Free Agent 1.5.34, empty header/footer inputs on template creation link the
+active enabled default's existing layouts and preserve region enabled states.
+Preview and apply report resolved sources and IDs. Without an enabled default,
+the result explicitly reports native-theme fallback; invalid inheritance is
+refused before changes. Existing templates are not automatically repaired.
+
+Links are resolved at creation, not automatically rebound when the default
+layout ID is replaced. Update the Free plugin to receive the fix; this MCP
+update supplies matching tool guidance. Public builder remains 1.4.11.
+Dependencies and compatibility floors are unchanged.
+
+## Previous 1.5.61 release note
 
 With Free Agent 1.5.31, Theme Builder template trash and permanent deletion
 preserve layouts referenced by another template. Preview excludes them from
