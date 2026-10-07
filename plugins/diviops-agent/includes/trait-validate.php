@@ -257,6 +257,18 @@ trait DiviOps_Agent_Validate {
 
 			// ── Button checks (errors + warnings) ───────────────────
 
+			// Button elements share this content shape across Divi modules.
+			$btn_content = self::get_nested_array_value( $attrs, [ 'button', 'innerContent', 'desktop', 'value' ] );
+			if ( $is_divi_block && is_string( $btn_content ) ) {
+				$errors[] = [
+					'block'   => $name,
+					'index'   => $index,
+					'code'    => 'button_innercontent_string',
+					'message' => 'Button innerContent.desktop.value must be an object {"text": "..."}, not a plain string. Plain strings can render empty buttons or cause a render error.',
+					'path'    => 'button.innerContent.desktop.value',
+				];
+			}
+
 			if ( 'divi/button' === $name ) {
 				$button_deco       = self::get_nested_array_value( $attrs, [ 'button', 'decoration' ], [] );
 				$button_deco       = is_array( $button_deco ) ? $button_deco : [];
@@ -328,18 +340,6 @@ trait DiviOps_Agent_Validate {
 						'code'    => 'button_padding_wrong_path',
 						'message' => 'Button padding should be on module.decoration.spacing, not button.decoration.spacing',
 						'path'    => 'button.decoration.spacing',
-					];
-				}
-
-				// innerContent must be {text} object, not plain string.
-				$btn_content = self::get_nested_array_value( $attrs, [ 'button', 'innerContent', 'desktop', 'value' ] );
-				if ( null !== $btn_content && is_string( $btn_content ) ) {
-					$errors[] = [
-						'block'   => $name,
-						'index'   => $index,
-						'code'    => 'button_innercontent_string',
-						'message' => 'Button innerContent.desktop.value must be an object {"text": "..."}, not a plain string. Plain strings render as empty buttons.',
-						'path'    => 'button.innerContent.desktop.value',
 					];
 				}
 
