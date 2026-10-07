@@ -3,7 +3,7 @@ Contributors: diviops
 Tags: divi, mcp, ai, rest-api, site-builder
 Requires at least: 6.5
 Tested up to: 7.1
-Stable tag: 1.5.32
+Stable tag: 1.5.33
 Requires PHP: 7.4
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -105,6 +105,10 @@ No. Free includes the core site-authoring bridge described above. Selected advan
 2. An agent-authored page open in the Divi 5 Visual Builder, with the native Heading module content controls available for continued editing. Divi is a separate required product.
 
 == Changelog ==
+
+= 1.5.33 =
+
+* Initializes Builder enablement and page-compatibility metadata on newly saved Divi Library items. Existing library items are not automatically repaired; content, layout type and scope behavior are unchanged.
 
 = 1.5.32 =
 
@@ -262,6 +266,10 @@ No. Free includes the core site-authoring bridge described above. Selected advan
 * Keeps `Stable tag` aligned with the plugin header version.
 
 == Upgrade Notice ==
+
+= 1.5.33 =
+
+Adds the missing Builder metadata when saving new library items. Existing items are not automatically repaired. No MCP update or compatibility change is required.
 
 = 1.5.32 =
 

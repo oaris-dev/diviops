@@ -8,9 +8,9 @@ Divi is a registered trademark of Elegant Themes, Inc. DiviOps Agent is not affi
 
 > **Don't use this plugin standalone** — it's the WordPress side of a two-piece suite; install + configure the [DiviOps MCP Server](../../../diviops-server/) next.
 
-## 1.5.32 release note
+## 1.5.33 release note
 
-Rejects plain strings at button.innerContent.desktop.value across Divi modules, including Contact Form and Login, with the existing button_innercontent_string error. Valid text objects and standalone Button styling checks are unchanged. No MCP update is required; MCP remains 1.5.61 and public builder remains 1.4.11.
+Initializes Builder enablement and page-compatibility metadata on newly saved Divi Library items. Existing library items are not automatically repaired; content, layout type and scope behavior are unchanged. MCP remains 1.5.61 and public builder remains 1.4.11.
 
 ## Requirements
 
@@ -46,18 +46,18 @@ The plugin includes a WordPress.org-format `readme.txt` and a plugin-local `chan
 
 Current metadata policy:
 
-- `Stable tag` matches the plugin header `Version` (`1.5.32`).
+- `Stable tag` matches the plugin header `Version` (`1.5.33`).
 - `Requires at least` and `Requires PHP` mirror the main plugin header.
 - `Tested up to` is evidence-based for this repo/substrate and should not be raised until the Free plugin is actually tested on that WordPress version.
 - External-service/authentication disclosure must mention the separately distributed npm MCP server, WordPress Application Passwords, and the rule that secrets do not belong in issues, examples, screenshots, or repo files.
 - Free/Pro copy must keep the Free plugin useful while making clear that Pro is the paid workflow-leverage layer and that not every MCP tool is Free-backed.
 
-The current source candidate is Free 1.5.32. It validates the shared Divi
-button-content shape across composite modules without relying on an
-authenticated preview. MCP 1.5.61 and public builder 1.4.11 are unchanged.
+The current source candidate is Free 1.5.33. It initializes Builder enablement
+and page-compatibility metadata for new library saves. Existing library items
+are not automatically repaired. MCP 1.5.61 and public builder 1.4.11 are unchanged.
 Source acceptance, package qualification and publication are separate steps;
 this version bump does not establish publication or an installed-site update.
-The delivered baseline at preparation is Free 1.5.31, MCP 1.5.61 and public
+The delivered baseline at preparation is Free 1.5.32, MCP 1.5.61 and public
 builder 1.4.11.
 
 ### Historical source preparation notes

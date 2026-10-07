@@ -9,6 +9,11 @@ Policy:
 - Keep entries customer-facing. Avoid internal issue numbers unless they are needed to explain a user-visible change.
 - Do not include secrets, credentials, customer data, or environment-specific URLs.
 
+## 1.5.33
+
+- Initializes Builder enablement and page-compatibility metadata on newly saved Divi Library items. Existing library items are not automatically repaired; content, layout type and scope behavior are unchanged.
+- MCP 1.5.61 and public builder 1.4.11 remain unchanged.
+
 ## 1.5.32
 
 - Rejects plain strings at button.innerContent.desktop.value across Divi modules, including Contact Form and Login, with the existing button_innercontent_string error. Valid text objects and standalone Button styling checks are unchanged.

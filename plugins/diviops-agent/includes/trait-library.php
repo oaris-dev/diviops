@@ -261,8 +261,10 @@ trait DiviOps_Agent_Library {
 			return self::envelope_from_wp_error( $post_id );
 		}
 
-		// Mark as Divi 5 format.
+		// Mark as a page-compatible Divi 5 Builder library item.
 		update_post_meta( $post_id, '_et_pb_use_divi_5', 'on' );
+		update_post_meta( $post_id, '_et_pb_built_for_post_type', 'page' );
+		update_post_meta( $post_id, '_et_pb_use_builder', 'on' );
 
 		// Set layout type and scope taxonomies.
 		$type_result  = wp_set_object_terms( $post_id, $layout_type, 'layout_type' );
