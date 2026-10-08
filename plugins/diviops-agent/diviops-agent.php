@@ -3,7 +3,7 @@
  * Plugin Name: DiviOps Agent
  * Plugin URI: https://github.com/oaris-dev/diviops
  * Description: REST API bridge for DiviOps — connects Claude Code to your Divi 5 site for AI-powered page building and design management.
- * Version: 1.5.38
+ * Version: 1.5.39
  * Author: oaris.de
  * Author URI: https://oaris.de
  * Text Domain: diviops-agent
@@ -33,6 +33,7 @@ require_once __DIR__ . '/includes/trait-module-schema.php';
 require_once __DIR__ . '/includes/trait-menu.php';
 require_once __DIR__ . '/includes/trait-page.php';
 require_once __DIR__ . '/includes/trait-page-settings.php';
+require_once __DIR__ . '/includes/trait-custom-css.php';
 require_once __DIR__ . '/includes/trait-preset.php';
 require_once __DIR__ . '/includes/trait-render.php';
 require_once __DIR__ . '/includes/trait-rollback.php';
@@ -61,6 +62,7 @@ class DiviOps_Agent {
 	use DiviOps_Agent_ModuleSchema;
 	use DiviOps_Agent_Page;
 	use DiviOps_Agent_PageSettings;
+	use DiviOps_Agent_Custom_CSS;
 	use DiviOps_Agent_Preset;
 	use DiviOps_Agent_Render;
 	use DiviOps_Agent_Rollback;
@@ -74,7 +76,7 @@ class DiviOps_Agent {
 	 * Plugin version — surfaced in /handshake for self-diagnosis only;
 	 * server no longer gates on it (capability map is the gate).
 	 */
-	const VERSION = '1.5.38';
+	const VERSION = '1.5.39';
 
 	/**
 	 * Minimum MCP server version this plugin is compatible with.
@@ -118,6 +120,7 @@ class DiviOps_Agent {
 		// page
 		'page_create', 'page_get', 'page_get_bounded_utf8_v1', 'page_get_layout', 'page_list',
 		'page_settings_get', 'page_settings_update',
+		'custom_css_get', 'custom_css_upsert', 'custom_css_restore',
 		'page_trash', 'page_update_content', 'page_update_content_backup', 'page_update_content_expected_checksum', 'page_update_meta', 'page_update_status',
 		// preset
 		'preset_audit', 'preset_audit_storage', 'preset_cleanup', 'preset_create', 'preset_delete', 'preset_inspect', 'preset_registry_doctor',
@@ -1348,6 +1351,30 @@ class DiviOps_Agent {
 				],
 				'dry_run' => [ 'required' => false, 'type' => 'boolean', 'default' => false ],
 				'backup'  => [ 'required' => false, 'type' => 'boolean', 'default' => false ],
+			],
+		] );
+
+		register_rest_route( self::REST_NAMESPACE, '/custom-css', [
+			'methods' => 'GET', 'callback' => [ __CLASS__, 'custom_css_get' ],
+			'permission_callback' => [ __CLASS__, 'check_admin_permission' ],
+		] );
+		register_rest_route( self::REST_NAMESPACE, '/custom-css/upsert', [
+			'methods' => 'POST', 'callback' => [ __CLASS__, 'custom_css_upsert' ],
+			'permission_callback' => [ __CLASS__, 'check_admin_permission' ],
+			'args' => [
+				'name' => [ 'type' => 'string', 'required' => true, 'pattern' => '^[a-z][a-z0-9-]{0,63}$' ],
+				'css' => [ 'type' => 'string', 'required' => true, 'maxLength' => 262144 ],
+				'expected_checksum' => [ 'type' => 'string', 'required' => true, 'pattern' => '^sha256:[a-f0-9]{64}$' ],
+				'dry_run' => [ 'type' => 'boolean', 'default' => true ],
+			],
+		] );
+		register_rest_route( self::REST_NAMESPACE, '/custom-css/restore', [
+			'methods' => 'POST', 'callback' => [ __CLASS__, 'custom_css_restore' ],
+			'permission_callback' => [ __CLASS__, 'check_admin_permission' ],
+			'args' => [
+				'snapshot_id' => [ 'type' => 'string', 'required' => true, 'pattern' => '^css_[a-f0-9-]{36}$' ],
+				'expected_checksum' => [ 'type' => 'string', 'required' => true, 'pattern' => '^sha256:[a-f0-9]{64}$' ],
+				'dry_run' => [ 'type' => 'boolean', 'default' => true ],
 			],
 		] );
 

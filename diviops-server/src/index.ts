@@ -760,8 +760,10 @@ registerPluginTool(
     annotations: { idempotentHint: true },
     _meta: { idempotent: "true" },
   },
-  async ({ post_type, per_page, page }) => {
+  async (args, context?: Parameters<typeof requestAbortSignal>[1]) => {
+    const { post_type, per_page, page } = args;
     const result = await wp.requestEnveloped("/page/list", {
+      signal: requestAbortSignal(args, context),
       params: {
         post_type: post_type ?? "page",
         per_page: String(per_page ?? 20),
@@ -1707,6 +1709,49 @@ registerPluginTool(
     } finally {
       if (reservation?.ok) pageContentCandidates.cancel(reservation.data.content_ref);
     }
+  },
+);
+
+registerPluginTool(
+  "diviops_custom_css_get",
+  {
+    description: "Read raw site-wide Additional CSS for the active stylesheet, its legacy Divi mirror and a complete state checksum. Requires admin and edit_css. Existing initialized native CSS post only; initialize or reconcile through Divi Theme Options > General > Custom CSS, then reread and verify the mirror agrees. Customizer alone may leave a divergent mirror. Refuses preprocessed CSS and unsupported data hooks. This is not computed browser CSS or generic Theme Options access.",
+    inputSchema: {}, annotations: { readOnlyHint: true }, _meta: { idempotent: "true" },
+  },
+  async (_args, context) => {
+    const result = await wp.requestEnveloped("/custom-css", { signal: context?.signal });
+    return { content: [{ type: "text" as const, text: serializeEnvelope(result, "diviops_custom_css_get") }] };
+  },
+);
+registerPluginTool(
+  "diviops_custom_css_upsert",
+  {
+    description: "Append or replace one named site-wide CSS block while preserving unrelated bytes. Read custom_css_get and pass checksum as expected_checksum. Defaults to preview; explicitly pass dry_run:false to commit the same proposal. Uses a mandatory seven-day CSS recovery snapshot and exact readback. Requires existing initialized active-theme CSS storage, admin and edit_css; no generic option writes or new CSS posts. Refuses ambiguous markers and raw unquoted URL grouping; use quoted or base64 URLs. A failure or cancellation does not prove no write: read state and inspect snapshot/recovered/record_verified before further action. Optimistic checksum is not a native-editor lock.",
+    inputSchema: {
+      name: z.string().regex(/^[a-z][a-z0-9-]{0,63}$/), css: z.string().max(262144),
+      expected_checksum: z.string().regex(/^sha256:[a-f0-9]{64}$/),
+      dry_run: z.boolean().optional().default(true),
+    },
+    annotations: { idempotentHint: false }, _meta: { idempotent: "false" },
+  },
+  async ({ name, css, expected_checksum, dry_run }, context) => {
+    const result = await wp.requestEnveloped("/custom-css/upsert", { method: "POST", body: { name, css, expected_checksum, dry_run: dry_run ?? true }, signal: context?.signal });
+    return { content: [{ type: "text" as const, text: serializeEnvelope(result, "diviops_custom_css_upsert") }] };
+  },
+);
+registerPluginTool(
+  "diviops_custom_css_restore",
+  {
+    description: "Preview or restore only the CSS post/mirror owned by a custom_css_upsert snapshot. Read current custom_css_get and pass its checksum. Defaults to preview; dry_run:false commits. Requires admin and edit_css, matching active stylesheet/post identity and unexpired verified snapshot. Refuses conflicting third-party changes; no whole-option restore, CSS post deletion or cache/revision rollback. On incomplete recovery inspect recovered and record_verified; do not blindly retry.",
+    inputSchema: {
+      snapshot_id: z.string().regex(/^css_[a-f0-9-]{36}$/), expected_checksum: z.string().regex(/^sha256:[a-f0-9]{64}$/),
+      dry_run: z.boolean().optional().default(true),
+    },
+    annotations: { idempotentHint: false }, _meta: { idempotent: "false" },
+  },
+  async ({ snapshot_id, expected_checksum, dry_run }, context) => {
+    const result = await wp.requestEnveloped("/custom-css/restore", { method: "POST", body: { snapshot_id, expected_checksum, dry_run: dry_run ?? true }, signal: context?.signal });
+    return { content: [{ type: "text" as const, text: serializeEnvelope(result, "diviops_custom_css_restore") }] };
   },
 );
 
@@ -3585,10 +3630,12 @@ registerPluginTool(
     annotations: { idempotentHint: false },
     _meta: { idempotent: "conditional" },
   },
-  async ({ template_id, force, dry_run }) => {
+  async (args, context?: Parameters<typeof requestAbortSignal>[1]) => {
+    const { template_id, force, dry_run } = args;
     const result = await wp.requestEnveloped(
       `/theme-builder/template/trash/${template_id}`,
       {
+        signal: requestAbortSignal(args, context),
         method: "POST",
         body: {
           force: force ?? false,
@@ -3899,7 +3946,7 @@ registerLocalTool(
   "diviops_meta_wp_cli",
   {
     description:
-      "Run a WP-CLI command on the WordPress site. Requires WP_PATH env var (LOCAL_SITE_ID auto-detected from Local by Flywheel), or WP_CLI_CMD for containerized wrappers. Commands validated against a safety allowlist. Default tier covers read ops across options/posts/post-types/taxonomies/users/info/core/db (including targeted `option pluck` and `term meta get` reads), non-destructive writes (post/term create+update, post meta read/write, cache/rewrite/transient flush, `plugin update` from authenticated sources), ACF/SCF schema ops (`acf export/import/field-group list/get` plus SCF 6.8.4+ `scf json {status,sync,import,export}` and the `acf json …` aliases), and WXR export. Extended tier (requires DIVIOPS_WP_CLI_ALLOW env var) adds destructive or bulk-modifying ops: option update, post/post meta/term delete, search-replace, import, plugin activate/deactivate, eval-file. Filesystem-touching commands (`wp export`, `acf export/import`, `scf|acf json export/import`) are additionally constrained: path arguments must resolve under a safe root (defaults to `<WP_PATH>/.diviops-tmp/`, overridable via DIVIOPS_WP_CLI_SAFE_FS_ROOT, disable via DIVIOPS_WP_CLI_UNSAFE_FS=1); `wp export` and `scf json export` require an explicit `--dir=<path>` (or `--stdout`). In WP_CLI_CMD wrapper mode, DIVIOPS_WP_CLI_SAFE_FS_ROOT is required for FS-sensitive commands. Prefer the typed `diviops_scf_*` wrappers for SCF round-trips — they're easier to invoke and accept the same safe-root scoping. Use --format=json for structured output. Full allowlist + tier rationale + filesystem semantics in the MCP server README. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }. Success payload: { stdout: string, stderr: string, exit_code: 0 }. Four failure modes converge on 'meta_wp_cli.command_failed' with error.data = { exit_code: number | null, stdout: string, stderr: string }: (a) numeric exit_code — wp-cli ran and exited non-zero; stdout/stderr are raw streams verbatim. (b) exit_code=null and message starts with 'wp-cli command terminated:' — execFile launched the child but it was killed (timeout or signal); stdout/stderr carry whatever streamed before the kill. (c) exit_code=null and message starts with 'wp-cli could not spawn:' — the OS refused to start the child (ENOENT/EACCES/EPERM); child never ran, stdout/stderr are empty. (d) exit_code=null and message is the rejection reason — pre-execution rejection by the allowlist / FS validator; rejection reason synthesized into error.data.stderr because the child never ran. A missing wp-cli configuration surfaces as 'meta_wp_cli.not_configured'. stdout is always passed through as a string (no server-side JSON parse) — pass --format=json and parse on the caller side when you want structured output.",
+      "Run a WP-CLI command on the WordPress site. Requires WP_PATH env var (LOCAL_SITE_ID auto-detected from Local by Flywheel), or WP_CLI_CMD for containerized wrappers. Commands validated against a safety allowlist. Default tier covers read ops across options/posts/post-types/taxonomies/users/info/core/db (including targeted `option pluck` and `term meta get/list` reads), non-destructive writes (post/term create+update, post meta read/write, cache/rewrite/transient flush, `plugin update` from authenticated sources), ACF/SCF schema ops (`acf export/import/field-group list/get` plus SCF 6.8.4+ `scf json {status,sync,import,export}` and the `acf json …` aliases), and WXR export. Extended tier (requires DIVIOPS_WP_CLI_ALLOW env var) adds destructive or bulk-modifying ops: option update, post/post meta/term delete, term meta set/update, post term add/set/remove, search-replace, import, plugin activate/deactivate, eval-file. This passthrough has no dry_run, checksum protection or automatic backup/rollback; read back state before retrying a timed-out write. Filesystem-touching commands (`wp export`, `acf export/import`, `scf|acf json export/import`) are additionally constrained: path arguments must resolve under a safe root (defaults to `<WP_PATH>/.diviops-tmp/`, overridable via DIVIOPS_WP_CLI_SAFE_FS_ROOT, disable via DIVIOPS_WP_CLI_UNSAFE_FS=1); `wp export` and `scf json export` require an explicit `--dir=<path>` (or `--stdout`). In WP_CLI_CMD wrapper mode, DIVIOPS_WP_CLI_SAFE_FS_ROOT is required for FS-sensitive commands. Prefer the typed `diviops_scf_*` wrappers for SCF round-trips — they're easier to invoke and accept the same safe-root scoping. Use --format=json for structured output. Full allowlist + tier rationale + filesystem semantics in the MCP server README. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }. Success payload: { stdout: string, stderr: string, exit_code: 0 }. Four failure modes converge on 'meta_wp_cli.command_failed' with error.data = { exit_code: number | null, stdout: string, stderr: string }: (a) numeric exit_code — wp-cli ran and exited non-zero; stdout/stderr are raw streams verbatim. (b) exit_code=null and message starts with 'wp-cli command terminated:' — execFile launched the child but it was killed (timeout or signal); stdout/stderr carry whatever streamed before the kill. (c) exit_code=null and message starts with 'wp-cli could not spawn:' — the OS refused to start the child (ENOENT/EACCES/EPERM); child never ran, stdout/stderr are empty. (d) exit_code=null and message is the rejection reason — pre-execution rejection by the allowlist / FS validator; rejection reason synthesized into error.data.stderr because the child never ran. A missing wp-cli configuration surfaces as 'meta_wp_cli.not_configured'. stdout is always passed through as a string (no server-side JSON parse) — pass --format=json and parse on the caller side when you want structured output.",
     inputSchema: {
       command: z
         .string()
@@ -4702,11 +4749,15 @@ registerPluginTool(
     annotations: { idempotentHint: true },
     _meta: { idempotent: "true" },
   },
-  async ({ type, prefix }) => {
+  async (args, context?: Parameters<typeof requestAbortSignal>[1]) => {
+    const { type, prefix } = args;
     const params: Record<string, string> = {};
     if (type) params.type = type;
     if (prefix) params.prefix = prefix;
-    const result = await wp.requestEnveloped("/variable/list", { params });
+    const result = await wp.requestEnveloped("/variable/list", {
+      params,
+      signal: requestAbortSignal(args, context),
+    });
     return {
       content: [
         { type: "text" as const, text: serializeEnvelope(result, "diviops_variable_list") },
@@ -4799,19 +4850,20 @@ registerPluginTool(
     annotations: { idempotentHint: false },
     _meta: { idempotent: "false" },
   },
-  async ({
-    type,
-    id,
-    label,
-    value,
-    gradient,
-    min,
-    max,
-    targets,
-    output_unit,
-    root_font_size_px,
-    dry_run,
-  }) => {
+  async (args, context?: Parameters<typeof requestAbortSignal>[1]) => {
+    const {
+      type,
+      id,
+      label,
+      value,
+      gradient,
+      min,
+      max,
+      targets,
+      output_unit,
+      root_font_size_px,
+      dry_run,
+    } = args;
     // Structured gradient serialization is a plugin-side capability (#921).
     // Gate it so a new server + old plugin fails with a clear "update plugin"
     // error instead of the confusing "value must be scalar" the old callback
@@ -4828,6 +4880,7 @@ registerPluginTool(
     if (root_font_size_px !== undefined) body.root_font_size_px = root_font_size_px;
     if (dry_run) body.dry_run = true;
     const result = await wp.requestEnveloped("/variable/create", {
+      signal: requestAbortSignal(args, context),
       method: "POST",
       body,
     });
@@ -5188,7 +5241,8 @@ registerPluginTool(
     annotations: { idempotentHint: true },
     _meta: { idempotent: "true" },
   },
-  async ({ post_id, all, after, dry_run, cleanup_dynamic_assets, cleanup_canvas_refs }) => {
+  async (args, context?: Parameters<typeof requestAbortSignal>[1]) => {
+    const { post_id, all, after, dry_run, cleanup_dynamic_assets, cleanup_canvas_refs } = args;
     const body: Record<string, unknown> = {};
     if (post_id !== undefined) body.post_id = post_id;
     if (all) body.all = true;
@@ -5197,6 +5251,7 @@ registerPluginTool(
     if (cleanup_dynamic_assets) body.cleanup_dynamic_assets = true;
     if (cleanup_canvas_refs) body.cleanup_canvas_refs = true;
     const result = await wp.requestEnveloped("/meta/flush-cache", {
+      signal: requestAbortSignal(args, context),
       method: "POST",
       body,
     });

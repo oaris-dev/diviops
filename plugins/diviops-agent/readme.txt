@@ -3,7 +3,7 @@ Contributors: diviops
 Tags: divi, mcp, ai, rest-api, site-builder
 Requires at least: 6.5
 Tested up to: 7.1
-Stable tag: 1.5.38
+Stable tag: 1.5.39
 Requires PHP: 7.4
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -105,6 +105,12 @@ No. Free includes the core site-authoring bridge described above. Selected advan
 2. An agent-authored page open in the Divi 5 Visual Builder, with the native Heading module content controls available for continued editing. Divi is a separate required product.
 
 == Changelog ==
+
+= 1.5.39 =
+
+* Adds named site-wide Custom CSS blocks with previews, fresh-checksum writes and seven-day recovery snapshots. Preserves unrelated CSS and theme options; restores use the dedicated CSS tool.
+* Initialize or reconcile through Divi > Theme Options > General > Custom CSS, save visibly, then read again. Missing or divergent storage is refused; no automatic repair. CSS support is bounded and scoped to the active theme.
+* Pair with MCP 1.5.68 and restart the server. Native editing, frontend rendering, recovery and child-theme isolation were verified on WordPress 7.1, PHP 8.3 and Divi 5.13.1.
 
 = 1.5.38 =
 
@@ -290,6 +296,10 @@ No. Free includes the core site-authoring bridge described above. Selected advan
 * Keeps `Stable tag` aligned with the plugin header version.
 
 == Upgrade Notice ==
+
+= 1.5.39 =
+
+Adds named Custom CSS blocks with preview and recovery. Pair with MCP 1.5.68. Initialize through Divi Theme Options, then read fresh state before applying.
 
 = 1.5.38 =
 

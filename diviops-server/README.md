@@ -8,7 +8,53 @@ The Node.js MCP server inside the DiviOps harness. It gives Claude Code, Codex, 
 Claude Code <-> MCP Server (stdio) <-> WordPress REST API <-> DiviOps Agent plugin
 ```
 
-## 1.5.65 release note
+## 1.5.68 release note — named site-wide CSS blocks
+
+With Free Agent 1.5.39, `diviops_custom_css_get`, `diviops_custom_css_upsert`
+and `diviops_custom_css_restore` read, preview, update and restore named blocks
+in the active theme's native Custom CSS. Writes default to preview and require
+an explicit apply with a fresh checksum. Unrelated CSS and theme options are
+preserved; writes retain a seven-day recovery snapshot.
+
+Initialize or reconcile storage through **Divi > Theme Options > General >
+Custom CSS**, save visibly, then read again before applying. Missing or divergent
+native storage is refused. A Customizer save can leave Divi's legacy mirror out
+of sync; the tools do not repair it automatically. CSS support is a bounded
+subset, and changing themes requires a fresh read. Check state after a cancelled
+or failed write before retrying; use the CSS-specific restore tool for recovery.
+
+Native editing, frontend rendering, recovery and child-theme isolation were
+verified on WordPress 7.1, PHP 8.3 and Divi 5.13.1. Update both components and
+restart the MCP server.
+
+## 1.5.67 release note — WP-CLI term metadata and assignments
+
+`term meta list <term-id> --format=json` is available as a default read alongside
+`term meta get`. Term-meta `set`/`update` and post-term `add`/`set`/`remove` require
+individual opt-ins through `DIVIOPS_WP_CLI_ALLOW`; they remain denied by default.
+For example, `DIVIOPS_WP_CLI_ALLOW="term meta update,post term add"` enables only
+those additional commands. Restart the MCP server after changing configuration.
+Existing `*`/`all` configurations acquire the expanded extended set on update.
+
+WP-CLI passthrough has no `dry_run`, checksum protection or automatic rollback.
+Read current values before writing and check state before retrying a timed-out
+write. See [WP-CLI security](../docs/wp-cli-security.md) for command tiers.
+
+## 1.5.66 release note
+
+Cancellation now reaches pending HTTP requests for page listing, variable listing
+and creation, cache flushing, and Theme Builder template trash or preview.
+Cancelling a dispatched write does not prove that WordPress stopped or rolled it
+back; check the resulting state before retrying. This correction does not
+establish the cause of the separately reported four-minute client timeouts.
+
+WP-CLI rejection messages now identify the full opt-in command, such as
+`post meta delete`. Existing permissions and opt-in guidance are preserved.
+
+Update and restart the MCP server. These corrections require no Free Agent update;
+Free Agent remains 1.5.38 and public builder remains 1.4.11.
+
+## Previous 1.5.65 release note
 
 Variable scans now report incompatible legacy non-color IDs, whether they are defined, and their known page/preset references. Scan coverage and truncation are explicit. Existing orphan and unused classifications are unchanged. Native page-usage detection is not proof of successful frontend rendering.
 
@@ -440,13 +486,14 @@ The skill enforces the Divi block format, the design system, and the response co
 
 ## Tools at a glance
 
-The server exposes **97 always-on tools** across the categories below. Each category links to representative tools; the full table lives in [server-reference.md](../docs/server-reference.md).
+The server exposes **100 always-on tools** across the categories below. Each category links to representative tools; the full table lives in [server-reference.md](../docs/server-reference.md).
 
 | Category | Use case | Tool prefixes |
 |----------|----------|---------------|
 | Page authoring | Create, edit, restructure pages | `page_*`, `section_*`, `module_*` |
 | Design system | Manage colors, fonts, variables, presets | `variable_*`, `global_color_*`, `global_font_*`, `preset_*` |
 | Library + templates | Reusable layouts + Theme Builder | `library_*`, `template_*`, `tb_*` |
+| Native Custom CSS | Read, preview, update and restore named site-wide CSS blocks | `custom_css_*` |
 | WordPress menus | Author reusable nav menus and theme-location assignments | `menu_*` |
 | Semantic SEO metadata | Inspect provider support and author two explicit TSF text fields with checksum/readback guards | `seo_*` |
 | Schema introspection | Module attribute discovery | `schema_*` |

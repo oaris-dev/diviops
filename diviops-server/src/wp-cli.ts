@@ -45,8 +45,7 @@ const DEFAULT_COMMANDS: readonly string[] = [
   'post meta list',
   'post meta set',
   'post meta update',
-  // Taxonomy assignments (read-only). Assignment writes (`post term add/set/remove`)
-  // stay unsupported until a concrete workflow justifies a typed or extended path.
+  // Taxonomy assignment reads; assignment writes require explicit opt-in.
   'post term list',
   // Post types (read-only)
   'post-type list',
@@ -55,6 +54,7 @@ const DEFAULT_COMMANDS: readonly string[] = [
   'taxonomy list',
   'term list',
   'term meta get',
+  'term meta list',
   'term create',
   'term update',
   // ACF / SCF (schema ops — idempotent dev-time workflow)
@@ -135,6 +135,11 @@ const EXTENDED_COMMANDS: readonly string[] = [
   'post delete',         // Destructive — permanently removes content
   'post meta delete',    // Destructive — removes metadata
   'term delete',         // Destructive — removes taxonomy terms
+  'term meta set',       // Writes arbitrary term metadata
+  'term meta update',    // Writes arbitrary term metadata
+  'post term add',       // Adds taxonomy assignments
+  'post term set',       // Replaces taxonomy assignments
+  'post term remove',    // Removes taxonomy assignments
   'search-replace',      // Bulk DB modification — highest-risk content op
   'import',              // Bulk content ingestion from WXR files
   'plugin activate',     // Can enable untrusted plugins
@@ -203,7 +208,8 @@ function isCommandAllowed(args: string[]): { allowed: boolean; reason?: string }
   }
 
   const extendable = EXTENDED_COMMANDS.filter((c) => !ALLOWED_COMMANDS.includes(c));
-  const hint = extendable.some((c) => twoWord === c || threeWord === c || oneWord === c)
+  const extendedCommand = extendable.find((c) => twoWord === c || threeWord === c || oneWord === c);
+  const hint = extendedCommand
     ? ` This command can be enabled via DIVIOPS_WP_CLI_ALLOW env var (see README).`
     : extendable.length > 0
       ? ` Opt-in commands available: ${extendable.join(', ')}.`
@@ -211,7 +217,7 @@ function isCommandAllowed(args: string[]): { allowed: boolean; reason?: string }
 
   return {
     allowed: false,
-    reason: `Command "${twoWord}" not in allowlist.${hint}`,
+    reason: `Command "${extendedCommand ?? twoWord}" not in allowlist.${hint}`,
   };
 }
 

@@ -9,6 +9,12 @@ Policy:
 - Keep entries customer-facing. Avoid internal issue numbers unless they are needed to explain a user-visible change.
 - Do not include secrets, credentials, customer data, or environment-specific URLs.
 
+## 1.5.39
+
+- Adds named site-wide Custom CSS blocks with previews, fresh-checksum writes and seven-day recovery snapshots. Preserves unrelated CSS and theme options; restores use the dedicated CSS tool.
+- Initialize or reconcile through Divi > Theme Options > General > Custom CSS, save visibly, then read again. Missing or divergent storage is refused; no automatic repair. CSS support is bounded and scoped to the active theme.
+- Pair with MCP 1.5.68 and restart the server. Native editing, frontend rendering, recovery and child-theme isolation were verified on WordPress 7.1, PHP 8.3 and Divi 5.13.1.
+
 ## 1.5.38
 
 - Variable scans now report incompatible legacy non-color IDs, whether they are defined, and their known page/preset references. Scan coverage and truncation are explicit. Existing orphan and unused classifications are unchanged. Native page-usage detection is not proof of successful frontend rendering.
