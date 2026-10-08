@@ -1711,6 +1711,42 @@ registerPluginTool(
 );
 
 registerPluginTool(
+  "diviops_page_settings_get",
+  {
+    description: "Read ordinary WordPress page background settings: stored values/presence, native defaults and a settings_checksum. These are not computed browser colors. Requires edit permission. No Theme Builder layout or global Theme Options access.",
+    inputSchema: { page_id: z.number().int().positive() },
+    annotations: { readOnlyHint: true },
+    _meta: { idempotent: "true" },
+  },
+  async ({ page_id }) => {
+    const result = await wp.requestEnveloped(`/page/settings/${page_id}`);
+    return { content: [{ type: "text" as const, text: serializeEnvelope(result, "diviops_page_settings_get") }] };
+  },
+);
+
+registerPluginTool(
+  "diviops_page_settings_update",
+  {
+    description: "Set/clear Content Area and Section backgrounds on ordinary WordPress pages. Read settings first and pass settings_checksum as expected_checksum. Omission preserves; null deletes the override; empty strings are rejected. Colors: #RGB/#RRGGBB, bounded rgb()/rgba(), or transparent. Existing dynamic values are preserved when omitted but new dynamic values are unsupported. Explicit defaults may be normalized away by native Divi save. Refuses native background drafts. Applies post-scoped CSS/dynamic-assets cache refresh, without canvas-reference cleanup; no-op does not flush. If cache_refresh_failed reports settings_applied, read state and retry cache flush, not the write. Optimistic checksum is not an editor lock." + DRY_RUN_DESC_SUFFIX,
+    inputSchema: {
+      page_id: z.number().int().positive(),
+      expected_checksum: z.string().regex(/^sha256:[a-f0-9]{64}$/),
+      settings: z.object({ content_area_background: z.string().nullable().optional(), section_background: z.string().nullable().optional() }).strict().refine(value => Object.keys(value).length > 0, "Provide at least one background field"),
+      dry_run: DRY_RUN_FIELD,
+    },
+    annotations: { idempotentHint: false },
+    _meta: { idempotent: "false" },
+  },
+  async ({ page_id, expected_checksum, settings, dry_run }) => {
+    const result = await wp.requestEnveloped(`/page/settings/${page_id}`, {
+      method: "POST",
+      body: { expected_checksum, settings, dry_run: dry_run ?? false },
+    });
+    return { content: [{ type: "text" as const, text: serializeEnvelope(result, "diviops_page_settings_update") }] };
+  },
+);
+
+registerPluginTool(
   "diviops_page_update_meta",
   {
     description:

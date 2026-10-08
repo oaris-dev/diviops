@@ -3,7 +3,7 @@
  * Plugin Name: DiviOps Agent
  * Plugin URI: https://github.com/oaris-dev/diviops
  * Description: REST API bridge for DiviOps — connects Claude Code to your Divi 5 site for AI-powered page building and design management.
- * Version: 1.5.36
+ * Version: 1.5.37
  * Author: oaris.de
  * Author URI: https://oaris.de
  * Text Domain: diviops-agent
@@ -32,6 +32,7 @@ require_once __DIR__ . '/includes/trait-meta.php';
 require_once __DIR__ . '/includes/trait-module-schema.php';
 require_once __DIR__ . '/includes/trait-menu.php';
 require_once __DIR__ . '/includes/trait-page.php';
+require_once __DIR__ . '/includes/trait-page-settings.php';
 require_once __DIR__ . '/includes/trait-preset.php';
 require_once __DIR__ . '/includes/trait-render.php';
 require_once __DIR__ . '/includes/trait-rollback.php';
@@ -59,6 +60,7 @@ class DiviOps_Agent {
 	use DiviOps_Agent_Menu;
 	use DiviOps_Agent_ModuleSchema;
 	use DiviOps_Agent_Page;
+	use DiviOps_Agent_PageSettings;
 	use DiviOps_Agent_Preset;
 	use DiviOps_Agent_Render;
 	use DiviOps_Agent_Rollback;
@@ -72,7 +74,7 @@ class DiviOps_Agent {
 	 * Plugin version — surfaced in /handshake for self-diagnosis only;
 	 * server no longer gates on it (capability map is the gate).
 	 */
-	const VERSION = '1.5.36';
+	const VERSION = '1.5.37';
 
 	/**
 	 * Minimum MCP server version this plugin is compatible with.
@@ -115,6 +117,7 @@ class DiviOps_Agent {
 		'module_clone_backup', 'module_lock_backup', 'module_move_backup', 'module_unlock_backup', 'module_update_backup',
 		// page
 		'page_create', 'page_get', 'page_get_bounded_utf8_v1', 'page_get_layout', 'page_list',
+		'page_settings_get', 'page_settings_update',
 		'page_trash', 'page_update_content', 'page_update_content_backup', 'page_update_content_expected_checksum', 'page_update_meta', 'page_update_status',
 		// preset
 		'preset_audit', 'preset_audit_storage', 'preset_cleanup', 'preset_create', 'preset_delete', 'preset_inspect', 'preset_registry_doctor',
@@ -1345,6 +1348,27 @@ class DiviOps_Agent {
 				],
 				'dry_run' => [ 'required' => false, 'type' => 'boolean', 'default' => false ],
 				'backup'  => [ 'required' => false, 'type' => 'boolean', 'default' => false ],
+			],
+		] );
+
+		register_rest_route( self::REST_NAMESPACE, '/page/settings/(?P<id>\d+)', [
+			'methods' => 'GET',
+			'callback' => [ __CLASS__, 'page_settings_get' ],
+			'permission_callback' => [ __CLASS__, 'check_read_permission' ],
+			'args' => [ 'id' => [ 'required' => true, 'type' => 'integer', 'minimum' => 1 ] ],
+		] );
+		register_rest_route( self::REST_NAMESPACE, '/page/settings/(?P<id>\d+)', [
+			'methods' => 'POST',
+			'callback' => [ __CLASS__, 'page_settings_update' ],
+			'permission_callback' => [ __CLASS__, 'check_write_permission' ],
+			'args' => [
+				'id' => [ 'required' => true, 'type' => 'integer', 'minimum' => 1 ],
+				'expected_checksum' => [ 'required' => true, 'type' => 'string', 'pattern' => '^sha256:[a-f0-9]{64}$' ],
+				'settings' => [ 'required' => true, 'type' => 'object', 'additionalProperties' => false, 'properties' => [
+					'content_area_background' => [ 'type' => [ 'string', 'null' ] ],
+					'section_background' => [ 'type' => [ 'string', 'null' ] ],
+				] ],
+				'dry_run' => [ 'type' => 'boolean', 'default' => false ],
 			],
 		] );
 

@@ -9,6 +9,11 @@ Policy:
 - Keep entries customer-facing. Avoid internal issue numbers unless they are needed to explain a user-visible change.
 - Do not include secrets, credentials, customer data, or environment-specific URLs.
 
+## 1.5.37
+
+- Read and update page-wide Content Area and Section backgrounds on ordinary Divi pages. Supports previews, literal colors, transparency and clearing to native defaults, with checksum checks and preservation of unrelated page data. Explicit per-section backgrounds remain intact.
+- Pair with MCP 1.5.64. Native checks covered WordPress 7.1, PHP 8.3 and Divi 5.13.1; public builder remains 1.4.11.
+
 ## 1.5.36
 
 - Supports registered third-party Divi modules in module read/update/move, Theme Builder block insertion and runtime schema discovery. Namespaced extension identifiers are preserved; unrelated WordPress blocks remain refused and the native schema dump remains native-only.

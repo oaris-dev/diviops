@@ -8,17 +8,13 @@ Divi is a registered trademark of Elegant Themes, Inc. DiviOps Agent is not affi
 
 > **Don't use this plugin standalone** — it's the WordPress side of a two-piece suite; install + configure the [DiviOps MCP Server](../../../diviops-server/) next.
 
-## 1.5.36 release note
+## 1.5.37 release note
 
-Recognizes registered third-party Divi modules for module read, update and move,
-Theme Builder block insertion, and runtime schema discovery. Extension targets
-retain their full namespace; native Divi short identifiers remain supported.
-Unrelated WordPress blocks are refused, and the native schema dump remains
-limited to native Divi modules.
+Read and update page-wide Content Area and Section backgrounds on ordinary Divi pages. Supports previews, literal colors, transparency and clearing to native defaults, with checksum checks and preservation of unrelated page data. Explicit per-section backgrounds remain intact.
 
-Use MCP 1.5.63 with Free Agent 1.5.36 for the complete correction. Native checks
-covered FluentCart Store Logo; compatibility with every extension or version
-is not implied. Public builder remains 1.4.11; compatibility floors are unchanged.
+Use MCP 1.5.64 with Free Agent 1.5.37. Verified on WordPress 7.1, PHP 8.3 and
+Divi 5.13.1, including native save/reopen and frontend rendering. Public builder
+remains 1.4.11; compatibility floors are unchanged.
 
 ## Requirements
 

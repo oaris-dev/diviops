@@ -8,7 +8,15 @@ The Node.js MCP server inside the DiviOps harness. It gives Claude Code, Codex, 
 Claude Code <-> MCP Server (stdio) <-> WordPress REST API <-> DiviOps Agent plugin
 ```
 
-## 1.5.63 release note
+## 1.5.64 release note
+
+Adds `diviops_page_settings_get` and `diviops_page_settings_update` with Free
+Agent 1.5.37. Read and update page-wide Content Area and Section backgrounds on ordinary Divi pages. Supports previews, literal colors, transparency and clearing to native defaults, with checksum checks and preservation of unrelated page data. Explicit per-section backgrounds remain intact.
+
+Verified on WordPress 7.1, PHP 8.3 and Divi 5.13.1, including native settings
+save/reopen and frontend rendering. Public builder and compatibility floors are unchanged.
+
+## Previous 1.5.63 release note
 
 With Free Agent 1.5.36, runtime schema discovery accepts registered third-party
 Divi modules and routes their namespaced identifiers without dropping the
@@ -424,7 +432,7 @@ The skill enforces the Divi block format, the design system, and the response co
 
 ## Tools at a glance
 
-The server exposes **95 always-on tools** across the categories below. Each category links to representative tools; the full table lives in [server-reference.md](../docs/server-reference.md).
+The server exposes **97 always-on tools** across the categories below. Each category links to representative tools; the full table lives in [server-reference.md](../docs/server-reference.md).
 
 | Category | Use case | Tool prefixes |
 |----------|----------|---------------|
