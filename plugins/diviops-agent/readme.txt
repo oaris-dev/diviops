@@ -3,7 +3,7 @@ Contributors: diviops
 Tags: divi, mcp, ai, rest-api, site-builder
 Requires at least: 6.5
 Tested up to: 7.1
-Stable tag: 1.5.37
+Stable tag: 1.5.38
 Requires PHP: 7.4
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -105,6 +105,12 @@ No. Free includes the core site-authoring bridge described above. Selected advan
 2. An agent-authored page open in the Divi 5 Visual Builder, with the native Heading module content controls available for continued editing. Divi is a separate required product.
 
 == Changelog ==
+
+= 1.5.38 =
+
+* Variable scans now report incompatible legacy non-color IDs, whether they are defined, and their known page/preset references. Scan coverage and truncation are explicit. Existing orphan and unused classifications are unchanged. Native page-usage detection is not proof of successful frontend rendering.
+* Existing mixed-case or underscore IDs still need reviewed replacement variables and reference updates. No variable is renamed or deleted automatically; zero known references does not establish that deletion is safe.
+* Pair with MCP 1.5.65.
 
 = 1.5.37 =
 
@@ -284,6 +290,10 @@ No. Free includes the core site-authoring bridge described above. Selected advan
 * Keeps `Stable tag` aligned with the plugin header version.
 
 == Upgrade Notice ==
+
+= 1.5.38 =
+
+Adds legacy variable diagnostics without automatic migration. Pair with MCP 1.5.65.
 
 = 1.5.37 =
 

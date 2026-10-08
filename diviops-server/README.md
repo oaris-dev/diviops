@@ -8,7 +8,15 @@ The Node.js MCP server inside the DiviOps harness. It gives Claude Code, Codex, 
 Claude Code <-> MCP Server (stdio) <-> WordPress REST API <-> DiviOps Agent plugin
 ```
 
-## 1.5.64 release note
+## 1.5.65 release note
+
+Variable scans now report incompatible legacy non-color IDs, whether they are defined, and their known page/preset references. Scan coverage and truncation are explicit. Existing orphan and unused classifications are unchanged. Native page-usage detection is not proof of successful frontend rendering.
+
+Existing mixed-case or underscore IDs still need reviewed replacement variables and reference updates. No variable is renamed or deleted automatically; zero known references does not establish that deletion is safe.
+
+Pair with Free Agent 1.5.38. Public builder remains 1.4.11.
+
+## Previous 1.5.64 release note
 
 Adds `diviops_page_settings_get` and `diviops_page_settings_update` with Free
 Agent 1.5.37. Read and update page-wide Content Area and Section backgrounds on ordinary Divi pages. Supports previews, literal colors, transparency and clearing to native defaults, with checksum checks and preservation of unrelated page data. Explicit per-section backgrounds remain intact.

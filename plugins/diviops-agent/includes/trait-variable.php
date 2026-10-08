@@ -2025,7 +2025,34 @@ trait DiviOps_Agent_Variable {
 			$unused_variables[] = array_merge( [ 'id' => $id ], $info );
 		}
 
+		// Keep legacy identities intact: native detection can truncate them, even
+		// when a matching registry entry makes them neither orphan nor unused.
+		$incompatible_variables = [];
+		$candidate_ids          = array_unique( array_merge( array_keys( $defined ), array_keys( $refs['all_ids'] ) ) );
+		sort( $candidate_ids, SORT_STRING );
+		foreach ( $candidate_ids as $id ) {
+			if ( 0 !== strpos( (string) $id, 'gvid-' ) || preg_match( '/\Agvid-[0-9a-z-]+\z/', $id ) ) {
+				continue;
+			}
+			$incompatible_variables[] = [
+				'id'        => $id,
+				'defined'   => isset( $defined[ $id ] ),
+				'type'      => $defined[ $id ]['type'] ?? null,
+				'ref_count' => $refs['all_ids'][ $id ] ?? 0,
+				'locations' => $refs['locations'][ $id ] ?? [],
+			];
+		}
+
 		$response = [
+			'incompatible_variables'  => $incompatible_variables,
+			'scan_scope'              => [
+				'post_types'        => self::SCANNABLE_POST_TYPES,
+				'post_statuses'     => [ 'publish', 'draft', 'private' ],
+				'post_limit'        => self::VARIABLES_SCAN_MAX_POSTS,
+				'truncated'         => $refs['scan_truncated'],
+				'content'           => 'Parsed block attributes and module/group preset payloads; recognized $variable()$ name references only.',
+				'limitations'       => 'Not an exhaustive site scan: excludes arbitrary metadata/CSS, other post types/statuses and unrecognized token forms. Zero known references does not establish that deletion is safe. ID compatibility does not verify frontend rendering.',
+			],
 			'orphan_count'            => count( $orphans ),
 			'unused_count'            => count( $unused_variables ),
 			'total_unique_referenced' => count( $refs['all_ids'] ),
@@ -2051,7 +2078,7 @@ trait DiviOps_Agent_Variable {
 	}
 
 	/**
-	 * Detect numeric/font variable IDs (gvid-*) the page actually emits.
+	 * Return native-detected numeric/font variable IDs (gvid-*).
 	 *
 	 * Mirrors the same content-stack assembly Divi performs at frontend render
 	 * (FrontEnd.php:628-675) so the result matches the variable IDs Divi 5.4.0+

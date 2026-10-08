@@ -8,13 +8,13 @@ Divi is a registered trademark of Elegant Themes, Inc. DiviOps Agent is not affi
 
 > **Don't use this plugin standalone** — it's the WordPress side of a two-piece suite; install + configure the [DiviOps MCP Server](../../../diviops-server/) next.
 
-## 1.5.37 release note
+## 1.5.38 release note
 
-Read and update page-wide Content Area and Section backgrounds on ordinary Divi pages. Supports previews, literal colors, transparency and clearing to native defaults, with checksum checks and preservation of unrelated page data. Explicit per-section backgrounds remain intact.
+Variable scans now report incompatible legacy non-color IDs, whether they are defined, and their known page/preset references. Scan coverage and truncation are explicit. Existing orphan and unused classifications are unchanged. Native page-usage detection is not proof of successful frontend rendering.
 
-Use MCP 1.5.64 with Free Agent 1.5.37. Verified on WordPress 7.1, PHP 8.3 and
-Divi 5.13.1, including native save/reopen and frontend rendering. Public builder
-remains 1.4.11; compatibility floors are unchanged.
+Existing mixed-case or underscore IDs still need reviewed replacement variables and reference updates. No variable is renamed or deleted automatically; zero known references does not establish that deletion is safe.
+
+Pair with MCP 1.5.65. Public builder remains 1.4.11; compatibility floors are unchanged.
 
 ## Requirements
 
