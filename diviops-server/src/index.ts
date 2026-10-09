@@ -676,6 +676,7 @@ const SEO_CHANGE = z.discriminatedUnion("action", [
     field: SEO_FIELD,
     action: z.literal("clear"),
   }),
+  z.strictObject({ field: z.literal("noindex"), action: z.literal("reset_default") }),
 ]);
 const SEO_CHANGES = z
   .array(SEO_CHANGE)
@@ -701,7 +702,7 @@ registerPluginTool(
   "diviops_seo_provider_list",
   {
     description:
-      "List the Free/core semantic SEO provider adapters and their installed, active, version, compatibility, field, and capability evidence. Reports TSF text fields and Rank Math canonical/noindex capabilities; never loads an inactive provider. Rank Math is source-assessed and requires native qualification. This is discovery only: it returns no post payload and provides no provider installation or activation path. Returns the standardized envelope.",
+      "List the Free/core semantic SEO provider adapters and their installed, active, version, compatibility, field, and capability evidence. Reports TSF text fields plus exact-version TSF and Rank Math canonical/noindex capabilities; never loads an inactive provider. Rank Math is source-assessed and requires native qualification. This is discovery only: it returns no post payload and provides no provider installation or activation path. Returns the standardized envelope.",
     inputSchema: {},
     annotations: { idempotentHint: true },
     _meta: { idempotent: "true" },
@@ -720,7 +721,7 @@ registerPluginTool(
   "diviops_seo_metadata_get",
   {
     description:
-      "Read explicit and effective semantic SEO metadata for one provider-supported post. Free/core and explicit-metadata-only: fields depend on provider: TSF seo_title/meta_description or Rank Math canonical_url/noindex; no raw metadata keys or provider maps are accepted or returned. Requires edit_post before stored payload exposure. Returns exact explicit presence/value, effective provider output, deterministic checksum, provider lifecycle/capability evidence, canonical WordPress identity evidence, and cache status. Error codes include not_found, forbidden, seo.provider_absent, seo.provider_incompatible, seo.provider_unsupported, and seo.post_type_unsupported. Returns the standardized envelope.",
+      "Read explicit and effective semantic SEO metadata for one provider-supported post. Free/core and explicit-metadata-only: fields depend on provider: TSF seo_title/meta_description plus a separate indexing section on 5.1.4 pages, or Rank Math canonical_url/noindex; no raw metadata keys or provider maps are accepted or returned. Requires edit_post before stored payload exposure. Returns exact explicit presence/value, effective provider output, deterministic checksum, provider lifecycle/capability evidence, canonical WordPress identity evidence, and cache status. Error codes include not_found, forbidden, seo.provider_absent, seo.provider_incompatible, seo.provider_unsupported, and seo.post_type_unsupported. Returns the standardized envelope.",
     inputSchema: {
       post_id: z.number().int().positive().describe("WordPress post/page ID to inspect. Requires edit_post on this exact target."),
       provider: SEO_PROVIDER.optional().default("auto").describe("Provider selector. auto refuses ambiguity when both providers are active."),
@@ -1595,7 +1596,7 @@ registerPluginTool(
   "diviops_seo_metadata_update",
   {
     description:
-      "Update one page/post using fixed provider fields and expected_checksum. TSF retains seo_title/meta_description set/clear with request-local rollback. Rank Math 1.0.279 supports canonical_url set/clear and noindex set with value='noindex' on pages; it preserves other robots directives and previews inherited defaults that become pinned. No generic robots arrays, force-index or noindex clear. Rank Math creates a persistent typed recovery record before apply and returns snapshot_id. To restore, omit changes and pass restore_snapshot_id with a fresh expected_checksum; restore refuses third-party changes and preserves untouched fields. Use dry_run to preview. Reads return provider-computed values, not verified frontend tags; Rank Math suppresses canonical output under noindex. TSF persistent restore, other providers, social/schema/bulk edits are unsupported. Runtime qualification remains separate." +
+      "Update one page/post using fixed provider fields and expected_checksum. TSF retains seo_title/meta_description set/clear and its original top-level checksum. TSF 5.1.4 pages additionally support canonical_url set/clear and noindex set with value=noindex or reset_default without a value; use indexing.checksum from get for these operations and TSF restore. Do not mix text and indexing changes. TSF keeps unrelated robots defaults inherited and custom canonical URLs remain under noindex. Rank Math 1.0.279 supports canonical_url set/clear and noindex set with value='noindex' on pages; it preserves other robots directives and previews inherited defaults that become pinned. No generic robots arrays, force-index or noindex clear. reset_default is TSF-only. Both canonical/noindex adapters create a persistent typed recovery record before apply and return snapshot_id. To restore, omit changes and pass restore_snapshot_id with a fresh expected_checksum; restore refuses third-party changes and preserves untouched fields. Use dry_run to preview. Reads return provider-computed values, not verified frontend tags; Rank Math suppresses canonical output under noindex. TSF text-field persistent restore, other providers, social/schema/bulk edits are unsupported. Runtime qualification remains separate." +
       DRY_RUN_DESC_SUFFIX,
     inputSchema: {
       post_id: z.number().int().positive().describe("WordPress post/page ID to update. Requires edit_post on this exact target."),
@@ -1603,9 +1604,9 @@ registerPluginTool(
       expected_checksum: z
         .string()
         .regex(/^sha256:[a-f0-9]{64}$/)
-        .describe("Exact checksum returned by diviops_seo_metadata_get. Required; there is no force path."),
+        .describe("Checksum from get: indexing.checksum for TSF canonical/noindex or TSF restore; top-level checksum otherwise. No force path."),
       changes: SEO_CHANGES.optional().describe("Provide changes OR restore_snapshot_id. Rank Math noindex set value must be noindex."),
-      restore_snapshot_id: z.string().regex(/^rm_[a-f0-9-]{36}$/).optional().describe("Restore one Rank Math operation; omit changes. Not a content snapshot."),
+      restore_snapshot_id: z.string().regex(/^(?:rm|tsf)_[a-f0-9-]{36}$/).optional().describe("Restore one canonical/noindex operation for the selected provider; omit changes. Not a content snapshot."),
       dry_run: DRY_RUN_FIELD,
     },
     annotations: { idempotentHint: false },

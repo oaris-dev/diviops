@@ -495,7 +495,7 @@ The server exposes **100 always-on tools** across the categories below. Each cat
 | Library + templates | Reusable layouts + Theme Builder | `library_*`, `template_*`, `tb_*` |
 | Native Custom CSS | Read, preview, update and restore named site-wide CSS blocks | `custom_css_*` |
 | WordPress menus | Author reusable nav menus and theme-location assignments | `menu_*` |
-| Semantic SEO metadata | Inspect provider support; TSF title/description and Rank Math canonical/noindex with checksum/readback guards | `seo_*` |
+| Semantic SEO metadata | Inspect provider support; TSF title/description plus TSF and Rank Math canonical/noindex with checksum/readback guards | `seo_*` |
 | Schema introspection | Module attribute discovery | `schema_*` |
 | Canvas / off-canvas | Popups, modals, menus | `canvas_*` |
 | SCF integration | Secure Custom Fields sync | `scf_*` |
@@ -818,13 +818,25 @@ tools. A failed or uncertain response can include applied changes: retain its
 snapshot ID and inspect state rather than retrying blindly. Provider sitemap
 invalidation does not establish external cache eviction.
 
-Pair MCP 1.5.69 with Free Agent 1.5.40 and restart the server. Native Classic
+TSF 5.1.4 additionally supports page `canonical_url` set/clear and `noindex`
+set with `noindex` or `reset_default` without a value. Use the additive
+`indexing.checksum` from a fresh read for these operations and their typed
+`restore_snapshot_id`; retain the top-level checksum for title/description.
+Do not mix text and indexing changes. Reset resumes provider inheritance;
+it does not force indexing. Other robots fields keep their inherited state.
+TSF retains a custom canonical under noindex and suppresses generated fallback.
+Homepage canonical settings can override a page value. Typed recovery records
+have no automatic expiry and require operator cleanup.
+
+Pair MCP 1.5.70 with Free Agent 1.5.41 and restart the server. Native Classic
 editor save/reopen, frontend canonical/robots, primed sitemap exclusion and
 restoration, defaults drift and permission refusal passed on WordPress 7.1,
-PHP 8.3, Divi 5.13.1 and Rank Math 1.0.279. Block editor and other provider
-versions are outside this qualification. TSF canonical/noindex and persistent
-recovery, Rank Math title/description, Yoast, social/schema and bulk edits are
-not part of this change. See [the adapter contract](../docs/rank-math-seo-adapter.md).
+PHP 8.3 and Divi 5.13.1 for Rank Math 1.0.279 and TSF 5.1.4. TSF additionally
+passed exact empty/zero/force-index restore and homepage/scheme checks. Block
+editor, other provider versions, external cache eviction and MCP stdio runtime
+are outside this qualification. Rank Math title/description, Yoast, social/schema
+and bulk edits remain outside these adapters. See the [Rank Math contract](../docs/rank-math-seo-adapter.md)
+and [TSF contract](../docs/tsf-indexing-adapter.md).
 
 ### `_meta.idempotent` markers
 

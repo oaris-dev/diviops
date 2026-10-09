@@ -11,6 +11,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 require_once __DIR__ . '/class-seo-rank-math.php';
+require_once __DIR__ . '/class-seo-tsf-indexing.php';
 
 /**
  * Narrow adapter for The SEO Framework's public post-metadata API.
@@ -58,12 +59,13 @@ final class DiviOps_SEO_TSF_Adapter {
 			'adapter'           => $api_ready && $compatible ? 'runtime_verified' : ( $installed ? 'unavailable' : 'not_installed' ),
 			'readable'          => $api_ready && $compatible,
 			'writable'          => $api_ready && $compatible,
-			'fields'            => array_keys( self::FIELD_KEYS ),
+			'fields'            => array_merge( array_keys( self::FIELD_KEYS ), $api_ready && $compatible && DiviOps_SEO_TSF_Indexing::ready() ? [ 'canonical_url', 'noindex' ] : [] ),
 			'capabilities'      => [
 				'explicit_metadata_read'  => $api_ready && $compatible,
 				'explicit_metadata_write' => $api_ready && $compatible,
 				'explicit_metadata_clear' => $api_ready && $compatible,
 				'effective_read'          => $api_ready && $compatible,
+				'indexing' => [ 'available' => $api_ready && $compatible && DiviOps_SEO_TSF_Indexing::ready(), 'exact_version' => '5.1.4', 'post_type' => 'page', 'canonical_url' => [ 'read', 'set', 'clear' ], 'noindex' => [ 'read', 'set_noindex', 'reset_default' ], 'operation_restore' => true, 'runtime_verified' => true, 'checksum_path' => 'indexing.checksum' ],
 			],
 			'version_support'   => [
 				'minimum'              => self::MIN_VERSION,
@@ -308,7 +310,9 @@ trait DiviOps_Agent_SEO {
 			return self::seo_provider_runtime_error( $error, $post_id );
 		}
 
-		return self::envelope_success( self::seo_read_payload( $post, $provider, $state, $effective ) );
+		$payload = self::seo_read_payload( $post, $provider, $state, $effective );
+		if ( DiviOps_SEO_TSF_Indexing::ready() ) { $payload['indexing'] = DiviOps_SEO_TSF_Indexing::read( $post_id ); }
+		return self::envelope_success( $payload );
 	}
 
 	public static function seo_metadata_update( $request ) {
@@ -340,7 +344,11 @@ trait DiviOps_Agent_SEO {
 		if ( 'rank_math' === $provider['provider'] ) {
 			return self::seo_rank_math_response( DiviOps_SEO_Rank_Math::update( $post_id, $request ) );
 		}
-		if ( null !== $request->get_param( 'restore_snapshot_id' ) ) { return self::envelope_error( 'seo.snapshot_unsupported', 'TSF operation restore is not supported by this adapter.', null, 400 ); }
+		$indexing = null !== $request->get_param( 'restore_snapshot_id' );
+		foreach ( (array) $request->get_param( 'changes' ) as $change ) {
+			if ( is_array( $change ) && in_array( $change['field'] ?? null, [ 'canonical_url', 'noindex' ], true ) ) { $indexing = true; }
+		}
+		if ( $indexing ) { return self::seo_rank_math_response( DiviOps_SEO_TSF_Indexing::update( $post_id, $request ) ); }
 		$supported = self::seo_require_supported_post_type( $post );
 		if ( $supported instanceof WP_REST_Response ) {
 			return $supported;
@@ -482,7 +490,7 @@ trait DiviOps_Agent_SEO {
 		$code = $result['error']; unset( $result['ok'], $result['error'] );
 		$status = 'forbidden' === $code ? 403 : ( 'not_found' === $code ? 404 : ( in_array( $code, [ 'metadata_drift', 'recovery_conflict', 'busy' ], true ) ? 409 : 400 ) );
 		if ( in_array( $code, [ 'write_failed', 'snapshot_failed', 'provider_runtime_error' ], true ) ) { $status = 500; }
-		return self::envelope_error( 'seo.' . $code, 'Rank Math operation refused or incomplete: ' . $code . '.', 'Read current metadata before retrying. Retain snapshot_id for explicit restore; never blindly retry a failed write.', $status, $result );
+		return self::envelope_error( 'seo.' . $code, 'SEO operation refused or incomplete: ' . $code . '.', 'Read current metadata before retrying. Retain snapshot_id for explicit restore; never blindly retry a failed write.', $status, $result );
 	}
 
 	private static function seo_resolve_provider( $requested ) {
