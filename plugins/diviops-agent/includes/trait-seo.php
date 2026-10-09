@@ -342,7 +342,7 @@ trait DiviOps_Agent_SEO {
 			return $provider;
 		}
 		if ( 'rank_math' === $provider['provider'] ) {
-			return self::seo_rank_math_response( DiviOps_SEO_Rank_Math::update( $post_id, $request ) );
+			return self::seo_rank_math_response( DiviOps_SEO_Rank_Math::update( $post_id, $request, static function ( $value, $field ) { return self::seo_validate_plain_text( $value, $field ); } ) );
 		}
 		$indexing = null !== $request->get_param( 'restore_snapshot_id' );
 		foreach ( (array) $request->get_param( 'changes' ) as $change ) {

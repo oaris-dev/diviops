@@ -6,7 +6,7 @@ final class DiviOps_SEO_Rank_Math {
 	const VERSION = '1.0.279';
 	const PLUGIN = 'seo-by-rank-math/rank-math.php';
 	const RECOVERY_PREFIX = 'diviops_seo_rm_';
-	private const KEYS = [ 'canonical_url' => 'rank_math_canonical_url', 'noindex' => 'rank_math_robots' ];
+	private const KEYS = [ 'canonical_url' => 'rank_math_canonical_url', 'noindex' => 'rank_math_robots', 'seo_title' => 'rank_math_title', 'meta_description' => 'rank_math_description' ];
 	private const DIRECTIVES = [ 'index', 'noindex', 'nofollow', 'noarchive', 'noimageindex', 'nosnippet' ];
 
 	public static function discovery(): array {
@@ -24,9 +24,9 @@ final class DiviOps_SEO_Rank_Math {
 		return [
 			'provider' => 'rank_math', 'name' => 'Rank Math', 'installed' => $active || is_file( $path ), 'active' => $active,
 			'version' => $version, 'compatible' => self::VERSION === $version, 'readable' => $ready, 'writable' => $ready,
-			'adapter' => 'source_assessed', 'runtime_verified' => false,
+			'adapter' => 'source_assessed', 'runtime_verified' => true,
 			'fields' => array_keys( self::KEYS ),
-			'capabilities' => [ 'canonical_url' => [ 'read', 'set', 'clear' ], 'noindex' => [ 'read', 'set_noindex' ], 'operation_restore' => true ],
+			'capabilities' => [ 'canonical_url' => [ 'read', 'set', 'clear' ], 'noindex' => [ 'read', 'set_noindex' ], 'seo_title' => [ 'read', 'set', 'clear' ], 'meta_description' => [ 'read', 'set', 'clear' ], 'operation_restore' => true ],
 			'version_support' => [ 'exact' => self::VERSION ],
 		];
 	}
@@ -50,8 +50,10 @@ final class DiviOps_SEO_Rank_Math {
 	}
 
 	private static function validate_rows( array $rows ): void {
-		if ( array_keys( $rows ) !== array_keys( self::KEYS ) || count( $rows['canonical_url'] ) > 1 || count( $rows['noindex'] ) > 1 ) { throw new RuntimeException( 'stored_shape_unsupported' ); }
-		if ( $rows['canonical_url'] && ! is_string( $rows['canonical_url'][0] ) ) { throw new RuntimeException( 'stored_shape_unsupported' ); }
+		if ( array_keys( $rows ) !== array_keys( self::KEYS ) ) { throw new RuntimeException( 'stored_shape_unsupported' ); }
+		foreach ( self::KEYS as $field => $key ) {
+			if ( ! is_array( $rows[ $field ] ) || array_values( $rows[ $field ] ) !== $rows[ $field ] || count( $rows[ $field ] ) > 1 || ( 'noindex' !== $field && $rows[ $field ] && ! is_string( $rows[ $field ][0] ) ) ) { throw new RuntimeException( 'stored_shape_unsupported' ); }
+		}
 		if ( $rows['noindex'] ) { self::directives( $rows['noindex'][0] ); }
 	}
 
@@ -74,12 +76,13 @@ final class DiviOps_SEO_Rank_Math {
 			'post_type_robots' => \RankMath\Helper::get_settings( 'titles.pt_page_robots' ),
 			'global_robots' => \RankMath\Helper::get_settings( 'titles.robots_global' ),
 			'noindex_password_protected' => \RankMath\Helper::get_settings( 'titles.noindex_password_protected' ),
+			'text_context' => hash( 'sha256', wp_json_encode( [ $post, get_option( 'rank-math-options-titles' ), get_option( 'blogname' ), get_option( 'blogdescription' ) ] ) ),
 			'noindex_paginated_pages' => \RankMath\Helper::get_settings( 'titles.noindex_paginated_pages' ),
 		];
 	}
 
 	private static function digest( array $rows, array $context ): string {
-		$json = wp_json_encode( [ 'rank_math_v1', $rows, $context ] );
+		$json = wp_json_encode( [ 'rank_math_v2', $rows, $context ] );
 		if ( ! is_string( $json ) ) { throw new RuntimeException( 'stored_shape_unsupported' ); }
 		return 'sha256:' . hash( 'sha256', $json );
 	}
@@ -98,6 +101,8 @@ final class DiviOps_SEO_Rank_Math {
 	private static function fields( array $rows, array $context ): array {
 		$robots = self::configured_robots( $rows, $context );
 		return [
+			'seo_title' => [ 'explicit' => ! empty( $rows['seo_title'] ), 'value' => $rows['seo_title'][0] ?? null ],
+			'meta_description' => [ 'explicit' => ! empty( $rows['meta_description'] ), 'value' => $rows['meta_description'][0] ?? null ],
 			'canonical_url' => [ 'explicit' => ! empty( $rows['canonical_url'] ), 'value' => $rows['canonical_url'][0] ?? null ],
 			'noindex' => [ 'explicit' => ! empty( $rows['noindex'] ), 'mode' => $robots['source'], 'configured' => in_array( 'noindex', $robots['directives'], true ), 'directives' => $robots['directives'] ],
 		];
@@ -109,12 +114,12 @@ final class DiviOps_SEO_Rank_Math {
 			$rows = self::rows( $id ); $context = self::context( $id );
 			$effective = ( new \RankMath\Paper\Singular() )->get_seo_meta( $id );
 			return [ 'ok' => true, 'post_id' => $id, 'provider' => self::discovery(), 'checksum' => self::digest( $rows, $context ), 'fields' => self::fields( $rows, $context ),
-				'computed' => [ 'canonical_url' => $effective['canonical'] ?? null, 'robots' => $effective['robots'] ?? null, 'source' => 'rank_math_singular_api', 'frontend_verified' => false, 'limits' => 'REST context; frontend filters/pagination may differ. Rank Math suppresses canonical output under noindex.' ],
+				'computed' => [ 'seo_title' => $effective['title'] ?? null, 'meta_description' => $effective['description'] ?? null, 'canonical_url' => $effective['canonical'] ?? null, 'robots' => $effective['robots'] ?? null, 'source' => 'rank_math_singular_api', 'frontend_verified' => false, 'limits' => 'REST context; title/description may contain unresolved templates; frontend filters/pagination may differ. Rank Math suppresses canonical output under noindex.' ],
 				'cache' => 'read_only' ];
 		} catch ( Throwable $error ) { return self::failure( $error ); }
 	}
 
-	private static function plan( $changes, array $before, array $context ): array {
+	private static function plan( $changes, array $before, array $context, callable $validate_text ): array {
 		if ( ! is_array( $changes ) || array_values( $changes ) !== $changes || count( $changes ) < 1 || count( $changes ) > 2 ) { throw new RuntimeException( 'invalid_input' ); }
 		$after = $before; $seen = []; $pinned = false;
 		foreach ( $changes as $change ) {
@@ -133,6 +138,14 @@ final class DiviOps_SEO_Rank_Math {
 				// Preserve the original row/order on an already-explicit no-op.
 				$after[ $field ] = ! $pinned && in_array( 'noindex', $robots['directives'], true ) ? $before[ $field ] : [ $directives ];
 			} elseif ( 'clear' === $action ) { $after[ $field ] = []; }
+			elseif ( in_array( $field, [ 'seo_title', 'meta_description' ], true ) ) {
+				$validation = $validate_text( $change['value'] ?? null, $field );
+				if ( isset( $validation['error'] ) ) { throw new RuntimeException( 'invalid_input' ); }
+				// Rank Math's no-HTML sanitizer consumes and returns slashed text.
+				$value = wp_unslash( \RankMath\Rest\Sanitize::get()->sanitize( self::KEYS[ $field ], wp_slash( $validation['value'] ) ) );
+				if ( ! is_string( $value ) || '' === $value ) { throw new RuntimeException( 'invalid_input' ); }
+				$after[ $field ] = [ $value ];
+			}
 			else {
 				$value = $change['value'] ?? null;
 				if ( ! is_string( $value ) || strlen( $value ) > 2048 || ! preg_match( '//u', $value ) || preg_match( '/[\x00-\x20\x7f]/', $value ) || ! preg_match( '~\Ahttps?://~i', $value ) ) { throw new RuntimeException( 'invalid_url' ); }
@@ -145,7 +158,7 @@ final class DiviOps_SEO_Rank_Math {
 	}
 
 	/** Restore is explicit in the same tool, never in the content-snapshot API. */
-	public static function update( int $id, $request ): array {
+	public static function update( int $id, $request, callable $validate_text ): array {
 		$lock = ''; $record = null; $mutation = false;
 		try {
 			self::authorize( $id );
@@ -158,7 +171,14 @@ final class DiviOps_SEO_Rank_Math {
 			if ( null !== $restore_id ) {
 				if ( null !== $request->get_param( 'changes' ) || ! is_string( $restore_id ) || ! preg_match( '/\Arm_[a-f0-9-]{36}\z/', $restore_id ) ) { throw new RuntimeException( 'invalid_input' ); }
 				$source = get_option( self::RECOVERY_PREFIX . $restore_id );
-				if ( ! is_array( $source ) || ( $source['post_id'] ?? 0 ) !== $id || ( $source['provider_version'] ?? '' ) !== self::VERSION || ( $source['site'] ?? '' ) !== home_url( '/' ) || ( $source['schema'] ?? 0 ) !== 1 ) { throw new RuntimeException( 'snapshot_unavailable' ); }
+				if ( ! is_array( $source ) || ( $source['post_id'] ?? 0 ) !== $id || ( $source['provider_version'] ?? '' ) !== self::VERSION || ( $source['site'] ?? '' ) !== home_url( '/' ) || ! in_array( $source['schema'] ?? 0, [ 1, 2 ], true ) ) { throw new RuntimeException( 'snapshot_unavailable' ); }
+				if ( 1 === $source['schema'] ) {
+					// Old recovery records own only canonical/noindex; never invent text before-state.
+					foreach ( [ 'before', 'after' ] as $side ) {
+						if ( ! is_array( $source[ $side ] ?? null ) || array_keys( $source[ $side ] ) !== [ 'canonical_url', 'noindex' ] ) { throw new RuntimeException( 'snapshot_unavailable' ); }
+						$source[ $side ] += [ 'seo_title' => $before['seo_title'], 'meta_description' => $before['meta_description'] ];
+					}
+				}
 				self::validate_rows( $source['before'] ); self::validate_rows( $source['after'] );
 				$after = $before;
 				foreach ( self::KEYS as $field => $key ) {
@@ -167,18 +187,18 @@ final class DiviOps_SEO_Rank_Math {
 					$after[ $field ] = $source['before'][ $field ];
 				}
 				$plan = [ 'after' => $after, 'inherited_directives_pinned' => false ];
-			} else { $plan = self::plan( $request->get_param( 'changes' ), $before, $context ); }
+			} else { $plan = self::plan( $request->get_param( 'changes' ), $before, $context, $validate_text ); }
 			$after = $plan['after']; $noop = $after === $before;
 			$edits = [];
 			foreach ( self::KEYS as $field => $key ) {
 				if ( $before[ $field ] !== $after[ $field ] ) { $edits[] = [ 'kind' => 'seo_metadata.' . $field, 'before' => self::fields( $before, $context )[ $field ], 'after' => self::fields( $after, $context )[ $field ] ]; }
 			}
-			$preview = [ 'changes' => $edits, 'summary' => $source ? 'Restore recorded SEO fields; preserve untouched fields.' : 'Update canonical/noindex on one Rank Math page.', 'before' => self::fields( $before, $context ), 'after' => self::fields( $after, $context ), 'inherited_directives_pinned' => $plan['inherited_directives_pinned'], 'noop' => $noop, 'frontend_verified' => false, 'canonical_under_noindex' => 'suppressed_by_rank_math_frontend' ];
+			$preview = [ 'changes' => $edits, 'summary' => $source ? 'Restore recorded SEO fields; preserve untouched fields.' : 'Update explicit SEO fields on one Rank Math page.', 'before' => self::fields( $before, $context ), 'after' => self::fields( $after, $context ), 'inherited_directives_pinned' => $plan['inherited_directives_pinned'], 'noop' => $noop, 'frontend_verified' => false, 'canonical_under_noindex' => 'suppressed_by_rank_math_frontend' ];
 			if ( rest_sanitize_boolean( $request->get_param( 'dry_run' ) ?? false ) || $noop ) { return [ 'ok' => true, 'dry_run' => rest_sanitize_boolean( $request->get_param( 'dry_run' ) ?? false ), 'noop' => $noop, 'plan' => $preview, 'checksum' => $expected, 'proposed_checksum' => self::digest( $after, $context ), 'write_applied' => false ]; }
 			$lock = 'diviops_seo_lock_' . $id;
 			if ( ! add_option( $lock, wp_generate_uuid4(), '', 'no' ) ) { $lock = ''; throw new RuntimeException( 'busy' ); }
 			if ( self::rows( $id ) !== $before || self::context( $id ) !== $context ) { throw new RuntimeException( 'metadata_drift' ); }
-			$record = [ 'schema' => 1, 'snapshot_id' => 'rm_' . wp_generate_uuid4(), 'site' => home_url( '/' ), 'post_id' => $id, 'provider_version' => self::VERSION, 'before' => $before, 'after' => $after, 'created_at' => gmdate( 'c' ), 'status' => 'prepared' ];
+			$record = [ 'schema' => 2, 'snapshot_id' => 'rm_' . wp_generate_uuid4(), 'site' => home_url( '/' ), 'post_id' => $id, 'provider_version' => self::VERSION, 'before' => $before, 'after' => $after, 'created_at' => gmdate( 'c' ), 'status' => 'prepared' ];
 			self::save_record( $record );
 			if ( self::rows( $id ) !== $before || self::context( $id ) !== $context ) { throw new RuntimeException( 'metadata_drift' ); }
 			$mutation = true;

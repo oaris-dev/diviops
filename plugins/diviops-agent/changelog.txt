@@ -9,6 +9,12 @@ Policy:
 - Keep entries customer-facing. Avoid internal issue numbers unless they are needed to explain a user-visible change.
 - Do not include secrets, credentials, customer data, or environment-specific URLs.
 
+## 1.5.42
+
+- Adds Rank Math 1.0.279 page SEO title and meta description read, set and clear, with plain-text validation, preview, fresh-checksum writes and typed recovery.
+- Preserves exact absent, empty and template originals during restore; existing canonical/noindex recovery records retain later text changes. Refresh checksums after upgrading.
+- Native Classic editor save/reopen, frontend output, clear/default fallback, exact recovery and permission/default-drift guards passed on WordPress 7.1, PHP 8.3 and Divi 5.13.1. Other provider versions and block-editor behavior are outside this qualification.
+
 ## 1.5.41
 
 - Adds The SEO Framework 5.1.4 canonical URL set/clear and noindex set/reset-to-default for pages, with previews, fresh indexing checksums and typed operation recovery. Other robots directives retain their inheritance.

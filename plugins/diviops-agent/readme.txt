@@ -3,7 +3,7 @@ Contributors: diviops
 Tags: divi, mcp, ai, rest-api, site-builder
 Requires at least: 6.5
 Tested up to: 7.1
-Stable tag: 1.5.41
+Stable tag: 1.5.42
 Requires PHP: 7.4
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -105,6 +105,12 @@ No. Free includes the core site-authoring bridge described above. Selected advan
 2. An agent-authored page open in the Divi 5 Visual Builder, with the native Heading module content controls available for continued editing. Divi is a separate required product.
 
 == Changelog ==
+
+= 1.5.42 =
+
+* Adds Rank Math 1.0.279 page SEO title and meta description read, set and clear, with plain-text validation, preview, fresh-checksum writes and typed recovery.
+* Preserves exact absent, empty and template originals during restore; existing canonical/noindex recovery records retain later text changes. Refresh checksums after upgrading.
+* Native Classic editor save/reopen, frontend output, clear/default fallback, exact recovery and permission/default-drift guards passed on WordPress 7.1, PHP 8.3 and Divi 5.13.1. Other provider versions and block-editor behavior are outside this qualification.
 
 = 1.5.41 =
 
@@ -308,6 +314,10 @@ No. Free includes the core site-authoring bridge described above. Selected advan
 * Keeps `Stable tag` aligned with the plugin header version.
 
 == Upgrade Notice ==
+
+= 1.5.42 =
+
+Adds Rank Math title/description tools. Pair with MCP 1.5.71 and restart the server. Refresh checksums; existing recovery records remain supported.
 
 = 1.5.41 =
 

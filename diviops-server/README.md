@@ -495,7 +495,7 @@ The server exposes **100 always-on tools** across the categories below. Each cat
 | Library + templates | Reusable layouts + Theme Builder | `library_*`, `template_*`, `tb_*` |
 | Native Custom CSS | Read, preview, update and restore named site-wide CSS blocks | `custom_css_*` |
 | WordPress menus | Author reusable nav menus and theme-location assignments | `menu_*` |
-| Semantic SEO metadata | Inspect provider support; TSF title/description plus TSF and Rank Math canonical/noindex with checksum/readback guards | `seo_*` |
+| Semantic SEO metadata | Inspect provider support; TSF and Rank Math title/description and canonical/noindex with checksum/readback guards | `seo_*` |
 | Schema introspection | Module attribute discovery | `schema_*` |
 | Canvas / off-canvas | Popups, modals, menus | `canvas_*` |
 | SCF integration | Secure Custom Fields sync | `scf_*` |
@@ -828,14 +828,19 @@ TSF retains a custom canonical under noindex and suppresses generated fallback.
 Homepage canonical settings can override a page value. Typed recovery records
 have no automatic expiry and require operator cleanup.
 
-Pair MCP 1.5.70 with Free Agent 1.5.41 and restart the server. Native Classic
+Pair MCP 1.5.71 with Free Agent 1.5.42 and restart the server. Native Classic
 editor save/reopen, frontend canonical/robots, primed sitemap exclusion and
 restoration, defaults drift and permission refusal passed on WordPress 7.1,
 PHP 8.3 and Divi 5.13.1 for Rank Math 1.0.279 and TSF 5.1.4. TSF additionally
 passed exact empty/zero/force-index restore and homepage/scheme checks. Block
 editor, other provider versions, external cache eviction and MCP stdio runtime
-are outside this qualification. Rank Math title/description, Yoast, social/schema
-and bulk edits remain outside these adapters. See the [Rank Math contract](../docs/rank-math-seo-adapter.md)
+are outside this qualification. Rank Math title/description set/clear uses the same
+plain-text safety checks, top-level checksum and typed recovery. Its separate native
+qualification passed both page save/reopen paths, frontend output, clear/default
+fallback, exact absent/empty/template recovery and legacy-record compatibility. Refresh checksums after updating;
+legacy canonical/noindex recovery records remain supported. Computed text may
+contain unresolved provider templates and is not a verified frontend tag. Yoast,
+social/schema and bulk edits remain outside these adapters. See the [Rank Math contract](../docs/rank-math-seo-adapter.md)
 and [TSF contract](../docs/tsf-indexing-adapter.md).
 
 ### `_meta.idempotent` markers
