@@ -9,6 +9,12 @@ Policy:
 - Keep entries customer-facing. Avoid internal issue numbers unless they are needed to explain a user-visible change.
 - Do not include secrets, credentials, customer data, or environment-specific URLs.
 
+## 1.5.40
+
+- Adds Rank Math 1.0.279 canonical URL and noindex tools for pages, with previews, fresh-checksum writes and typed recovery snapshots. Preserves other robots directives and refreshes the provider sitemap after updates and restores.
+- Requires completed Rank Math setup and page/metadata permissions. Update Free Agent and MCP together, then restart the MCP server. Rank Math suppresses canonical output on noindex pages; external caches may require separate refresh.
+- Native Classic editor save/reopen, frontend output, primed sitemap exclusion/restoration and recovery were verified on WordPress 7.1, PHP 8.3 and Divi 5.13.1. Block editor and other Rank Math versions are outside this qualification. The SEO Framework continues to support title/description only.
+
 ## 1.5.39
 
 - Adds named site-wide Custom CSS blocks with previews, fresh-checksum writes and seven-day recovery snapshots. Preserves unrelated CSS and theme options; restores use the dedicated CSS tool.

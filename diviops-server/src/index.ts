@@ -664,8 +664,8 @@ const BACKUP_FIELD = z
     "When true on supported content writes, capture a rollback snapshot before applying. dry_run + backup only reports the planned snapshot and does not create one.",
   );
 
-const SEO_FIELD = z.enum(["seo_title", "meta_description"]);
-const SEO_PROVIDER = z.enum(["auto", "tsf"]);
+const SEO_FIELD = z.enum(["seo_title", "meta_description", "canonical_url", "noindex"]);
+const SEO_PROVIDER = z.enum(["auto", "tsf", "rank_math"]);
 const SEO_CHANGE = z.discriminatedUnion("action", [
   z.strictObject({
     field: SEO_FIELD,
@@ -701,7 +701,7 @@ registerPluginTool(
   "diviops_seo_provider_list",
   {
     description:
-      "List the Free/core semantic SEO provider adapters and their installed, active, version, compatibility, field, and capability evidence. The first MVP reports only The SEO Framework and never loads an inactive provider. This is discovery only: it returns no post payload and provides no provider installation or activation path. Returns the standardized envelope.",
+      "List the Free/core semantic SEO provider adapters and their installed, active, version, compatibility, field, and capability evidence. Reports TSF text fields and Rank Math canonical/noindex capabilities; never loads an inactive provider. Rank Math is source-assessed and requires native qualification. This is discovery only: it returns no post payload and provides no provider installation or activation path. Returns the standardized envelope.",
     inputSchema: {},
     annotations: { idempotentHint: true },
     _meta: { idempotent: "true" },
@@ -720,10 +720,10 @@ registerPluginTool(
   "diviops_seo_metadata_get",
   {
     description:
-      "Read explicit and effective semantic SEO metadata for one provider-supported post. Free/core and explicit-metadata-only: caller-visible fields are fixed to seo_title and meta_description; no raw metadata keys or provider maps are accepted or returned. Requires edit_post before stored payload exposure. Returns exact explicit presence/value, effective provider output, deterministic checksum, provider lifecycle/capability evidence, canonical WordPress identity evidence, and cache status. Error codes include not_found, forbidden, seo.provider_absent, seo.provider_incompatible, seo.provider_unsupported, and seo.post_type_unsupported. Returns the standardized envelope.",
+      "Read explicit and effective semantic SEO metadata for one provider-supported post. Free/core and explicit-metadata-only: fields depend on provider: TSF seo_title/meta_description or Rank Math canonical_url/noindex; no raw metadata keys or provider maps are accepted or returned. Requires edit_post before stored payload exposure. Returns exact explicit presence/value, effective provider output, deterministic checksum, provider lifecycle/capability evidence, canonical WordPress identity evidence, and cache status. Error codes include not_found, forbidden, seo.provider_absent, seo.provider_incompatible, seo.provider_unsupported, and seo.post_type_unsupported. Returns the standardized envelope.",
     inputSchema: {
       post_id: z.number().int().positive().describe("WordPress post/page ID to inspect. Requires edit_post on this exact target."),
-      provider: SEO_PROVIDER.optional().default("auto").describe("Provider selector. auto resolves only the active supported TSF adapter in V1."),
+      provider: SEO_PROVIDER.optional().default("auto").describe("Provider selector. auto refuses ambiguity when both providers are active."),
     },
     annotations: { idempotentHint: true },
     _meta: { idempotent: "true" },
@@ -1595,27 +1595,29 @@ registerPluginTool(
   "diviops_seo_metadata_update",
   {
     description:
-      "Update explicit TSF SEO metadata on one provider-supported post through the Free/core semantic contract. Explicit metadata only: changes is a strict one-or-two-item discriminated list for seo_title and meta_description; set requires a plain-text value and clear forbids one. Unknown properties, duplicate fields, HTML/markup, control or invalid UTF-8 bytes, serialized/non-scalar values, secret-like values, and unresolved Divi/global/provider/dynamic tokens are refused before mutation. Requires edit_post and expected_checksum; drift refuses before mutation with no force path. Uses TSF's public sanitize/write/clear lifecycle, exact stored readback, request-local rollback on error/mismatch, and reports before/after checksums, readback, lifecycle, cache, rollback, no-op, and write evidence. Effective output must be verified by a follow-up diviops_seo_metadata_get. No persistent snapshot, canonical override, robots, social, schema, redirect, bulk, cross-site, or automatic Divi extraction path exists." +
+      "Update one page/post using fixed provider fields and expected_checksum. TSF retains seo_title/meta_description set/clear with request-local rollback. Rank Math 1.0.279 supports canonical_url set/clear and noindex set with value='noindex' on pages; it preserves other robots directives and previews inherited defaults that become pinned. No generic robots arrays, force-index or noindex clear. Rank Math creates a persistent typed recovery record before apply and returns snapshot_id. To restore, omit changes and pass restore_snapshot_id with a fresh expected_checksum; restore refuses third-party changes and preserves untouched fields. Use dry_run to preview. Reads return provider-computed values, not verified frontend tags; Rank Math suppresses canonical output under noindex. TSF persistent restore, other providers, social/schema/bulk edits are unsupported. Runtime qualification remains separate." +
       DRY_RUN_DESC_SUFFIX,
     inputSchema: {
       post_id: z.number().int().positive().describe("WordPress post/page ID to update. Requires edit_post on this exact target."),
-      provider: SEO_PROVIDER.optional().default("auto").describe("Provider selector. Use auto or tsf."),
+      provider: SEO_PROVIDER.optional().default("auto").describe("Provider selector. Use auto, tsf, or rank_math."),
       expected_checksum: z
         .string()
         .regex(/^sha256:[a-f0-9]{64}$/)
         .describe("Exact checksum returned by diviops_seo_metadata_get. Required; there is no force path."),
-      changes: SEO_CHANGES.describe("Strict semantic set/clear operations. Each field may appear at most once."),
+      changes: SEO_CHANGES.optional().describe("Provide changes OR restore_snapshot_id. Rank Math noindex set value must be noindex."),
+      restore_snapshot_id: z.string().regex(/^rm_[a-f0-9-]{36}$/).optional().describe("Restore one Rank Math operation; omit changes. Not a content snapshot."),
       dry_run: DRY_RUN_FIELD,
     },
     annotations: { idempotentHint: false },
     _meta: { idempotent: "conditional" },
   },
-  async ({ post_id, provider, expected_checksum, changes, dry_run }) => {
+  async ({ post_id, provider, expected_checksum, changes, restore_snapshot_id, dry_run }) => {
     const body: Record<string, unknown> = {
       provider: provider ?? "auto",
       expected_checksum,
-      changes,
     };
+    if (changes !== undefined) body.changes = changes;
+    if (restore_snapshot_id !== undefined) body.restore_snapshot_id = restore_snapshot_id;
     if (dry_run) body.dry_run = true;
     const result = await wp.requestEnveloped(`/seo/metadata/${post_id}`, {
       method: "POST",

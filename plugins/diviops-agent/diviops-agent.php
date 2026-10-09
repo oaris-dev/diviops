@@ -3,7 +3,7 @@
  * Plugin Name: DiviOps Agent
  * Plugin URI: https://github.com/oaris-dev/diviops
  * Description: REST API bridge for DiviOps — connects Claude Code to your Divi 5 site for AI-powered page building and design management.
- * Version: 1.5.39
+ * Version: 1.5.40
  * Author: oaris.de
  * Author URI: https://oaris.de
  * Text Domain: diviops-agent
@@ -76,7 +76,7 @@ class DiviOps_Agent {
 	 * Plugin version — surfaced in /handshake for self-diagnosis only;
 	 * server no longer gates on it (capability map is the gate).
 	 */
-	const VERSION = '1.5.39';
+	const VERSION = '1.5.40';
 
 	/**
 	 * Minimum MCP server version this plugin is compatible with.
@@ -709,7 +709,7 @@ class DiviOps_Agent {
 				'provider' => [
 					'required' => false,
 					'type'     => 'string',
-					'enum'     => [ 'auto', 'tsf' ],
+					'enum'     => [ 'auto', 'tsf', 'rank_math' ],
 					'default'  => 'auto',
 				],
 			],
@@ -725,7 +725,7 @@ class DiviOps_Agent {
 				'provider'          => [
 					'required' => false,
 					'type'     => 'string',
-					'enum'     => [ 'auto', 'tsf' ],
+					'enum'     => [ 'auto', 'tsf', 'rank_math' ],
 					'default'  => 'auto',
 				],
 				'expected_checksum' => [
@@ -733,8 +733,9 @@ class DiviOps_Agent {
 					'type'     => 'string',
 					'pattern'  => '^sha256:[a-f0-9]{64}$',
 				],
+				'restore_snapshot_id' => [ 'required' => false, 'type' => 'string', 'pattern' => '^rm_[a-f0-9-]{36}$' ],
 				'changes'            => [
-					'required' => true,
+					'required' => false,
 					'type'     => 'array',
 					'minItems' => 1,
 					'maxItems' => 2,
@@ -743,7 +744,7 @@ class DiviOps_Agent {
 						'required'             => [ 'field', 'action' ],
 						'additionalProperties' => false,
 						'properties'           => [
-							'field'  => [ 'type' => 'string', 'enum' => [ 'seo_title', 'meta_description' ] ],
+							'field'  => [ 'type' => 'string', 'enum' => [ 'seo_title', 'meta_description', 'canonical_url', 'noindex' ] ],
 							'action' => [ 'type' => 'string', 'enum' => [ 'set', 'clear' ] ],
 							'value'  => [ 'type' => 'string' ],
 						],

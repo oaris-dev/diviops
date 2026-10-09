@@ -3,7 +3,7 @@ Contributors: diviops
 Tags: divi, mcp, ai, rest-api, site-builder
 Requires at least: 6.5
 Tested up to: 7.1
-Stable tag: 1.5.39
+Stable tag: 1.5.40
 Requires PHP: 7.4
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -105,6 +105,12 @@ No. Free includes the core site-authoring bridge described above. Selected advan
 2. An agent-authored page open in the Divi 5 Visual Builder, with the native Heading module content controls available for continued editing. Divi is a separate required product.
 
 == Changelog ==
+
+= 1.5.40 =
+
+* Adds Rank Math 1.0.279 canonical URL and noindex tools for pages, with previews, fresh-checksum writes and typed recovery snapshots. Preserves other robots directives and refreshes the provider sitemap after updates and restores.
+* Requires completed Rank Math setup and page/metadata permissions. Update Free Agent and MCP together, then restart the MCP server. Rank Math suppresses canonical output on noindex pages; external caches may require separate refresh.
+* Native Classic editor save/reopen, frontend output, primed sitemap exclusion/restoration and recovery were verified on WordPress 7.1, PHP 8.3 and Divi 5.13.1. Block editor and other Rank Math versions are outside this qualification. The SEO Framework continues to support title/description only.
 
 = 1.5.39 =
 
@@ -296,6 +302,10 @@ No. Free includes the core site-authoring bridge described above. Selected advan
 * Keeps `Stable tag` aligned with the plugin header version.
 
 == Upgrade Notice ==
+
+= 1.5.40 =
+
+Adds Rank Math canonical/noindex page tools. Pair with MCP 1.5.69 and restart the server. Complete Rank Math setup before use.
 
 = 1.5.39 =
 

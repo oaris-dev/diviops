@@ -10,6 +10,8 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
+require_once __DIR__ . '/class-seo-rank-math.php';
+
 /**
  * Narrow adapter for The SEO Framework's public post-metadata API.
  *
@@ -242,8 +244,8 @@ final class DiviOps_SEO_TSF_Adapter {
 trait DiviOps_Agent_SEO {
 	public static function seo_provider_list( $request ) {
 		return self::envelope_success( [
-			'providers' => [ DiviOps_SEO_TSF_Adapter::discovery() ],
-			'count'     => 1,
+			'providers' => [ DiviOps_SEO_TSF_Adapter::discovery(), DiviOps_SEO_Rank_Math::discovery() ],
+			'count'     => 2,
 			'selection' => [
 				'default' => 'auto',
 				'auto'    => 'Exactly one active, compatible supported adapter is required.',
@@ -291,6 +293,9 @@ trait DiviOps_Agent_SEO {
 			return $provider;
 		}
 
+		if ( 'rank_math' === $provider['provider'] ) {
+			return self::seo_rank_math_response( DiviOps_SEO_Rank_Math::read( $post_id ) );
+		}
 		$supported = self::seo_require_supported_post_type( $post );
 		if ( $supported instanceof WP_REST_Response ) {
 			return $supported;
@@ -332,6 +337,10 @@ trait DiviOps_Agent_SEO {
 		if ( $provider instanceof WP_REST_Response ) {
 			return $provider;
 		}
+		if ( 'rank_math' === $provider['provider'] ) {
+			return self::seo_rank_math_response( DiviOps_SEO_Rank_Math::update( $post_id, $request ) );
+		}
+		if ( null !== $request->get_param( 'restore_snapshot_id' ) ) { return self::envelope_error( 'seo.snapshot_unsupported', 'TSF operation restore is not supported by this adapter.', null, 400 ); }
 		$supported = self::seo_require_supported_post_type( $post );
 		if ( $supported instanceof WP_REST_Response ) {
 			return $supported;
@@ -468,7 +477,21 @@ trait DiviOps_Agent_SEO {
 		) );
 	}
 
+	private static function seo_rank_math_response( array $result ) {
+		if ( $result['ok'] ) { unset( $result['ok'] ); return self::envelope_success( $result ); }
+		$code = $result['error']; unset( $result['ok'], $result['error'] );
+		$status = 'forbidden' === $code ? 403 : ( 'not_found' === $code ? 404 : ( in_array( $code, [ 'metadata_drift', 'recovery_conflict', 'busy' ], true ) ? 409 : 400 ) );
+		if ( in_array( $code, [ 'write_failed', 'snapshot_failed', 'provider_runtime_error' ], true ) ) { $status = 500; }
+		return self::envelope_error( 'seo.' . $code, 'Rank Math operation refused or incomplete: ' . $code . '.', 'Read current metadata before retrying. Retain snapshot_id for explicit restore; never blindly retry a failed write.', $status, $result );
+	}
+
 	private static function seo_resolve_provider( $requested ) {
+		$rank_math = DiviOps_SEO_Rank_Math::discovery();
+		if ( 'auto' === $requested && $rank_math['active'] ) {
+			if ( DiviOps_SEO_TSF_Adapter::discovery()['active'] ) { return self::envelope_error( 'seo.provider_ambiguous', 'Multiple SEO providers are active.', 'Select an explicit provider.', 409 ); }
+			$requested = 'rank_math';
+		}
+		if ( 'rank_math' === $requested ) { return $rank_math; }
 		if ( ! is_string( $requested ) || ! in_array( $requested, [ 'auto', DiviOps_SEO_TSF_Adapter::ID ], true ) ) {
 			return self::envelope_error(
 				'seo.provider_unsupported',

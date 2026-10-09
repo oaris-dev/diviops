@@ -495,7 +495,7 @@ The server exposes **100 always-on tools** across the categories below. Each cat
 | Library + templates | Reusable layouts + Theme Builder | `library_*`, `template_*`, `tb_*` |
 | Native Custom CSS | Read, preview, update and restore named site-wide CSS blocks | `custom_css_*` |
 | WordPress menus | Author reusable nav menus and theme-location assignments | `menu_*` |
-| Semantic SEO metadata | Inspect provider support and author two explicit TSF text fields with checksum/readback guards | `seo_*` |
+| Semantic SEO metadata | Inspect provider support; TSF title/description and Rank Math canonical/noindex with checksum/readback guards | `seo_*` |
 | Schema introspection | Module attribute discovery | `schema_*` |
 | Canvas / off-canvas | Popups, modals, menus | `canvas_*` |
 | SCF integration | Secure Custom Fields sync | `scf_*` |
@@ -794,12 +794,37 @@ permission, refuses content or supported Divi post-meta drift before mutation,
 uses the same full-content integrity/readback guard, and has no force override
 or second pre-restore snapshot in this MVP.
 
-`diviops_seo_metadata_update` is a separate explicit-metadata-only path. It
-accepts no raw provider keys, requires the checksum from
-`diviops_seo_metadata_get`, validates plain text before TSF sanitization,
-verifies exact stored readback, and performs request-local restoration on a
-mismatch. It does not create a persistent rollback snapshot; effective
-provider output is verified through a follow-up get request.
+`diviops_seo_metadata_update` accepts fixed semantic fields and requires the
+checksum from `diviops_seo_metadata_get`. TSF retains its title/description
+set/clear contract and request-local rollback. The Rank Math
+1.0.279 adapter adds `canonical_url` set/clear and `noindex` set with the string
+value `noindex`, on pages only. It requires per-page edit permission and Rank
+Math general/advanced metadata capabilities. Other robots writes are refused.
+
+Preview with `dry_run:true`. Rank Math noindex preserves other directives;
+when those directives were inherited, the preview explains that the local
+robots array will pin them. A computed canonical is not proof of an emitted
+tag: Rank Math suppresses canonical output under noindex. Frontend filters and
+query context require separate verification.
+
+Every non-noop Rank Math apply saves a private typed recovery record and returns
+`snapshot_id`. To preview or apply restoration, call the same update tool with
+`restore_snapshot_id`, a fresh `expected_checksum`, and no `changes`. Restore
+checks the provider/version/page and current permissions, refuses third-party
+changes to affected fields, and preserves later changes to untouched fields.
+Records use non-autoloaded options, have no automatic expiry and remain until
+operator cleanup; they are not listed or restored by the page-content snapshot
+tools. A failed or uncertain response can include applied changes: retain its
+snapshot ID and inspect state rather than retrying blindly. Provider sitemap
+invalidation does not establish external cache eviction.
+
+Pair MCP 1.5.69 with Free Agent 1.5.40 and restart the server. Native Classic
+editor save/reopen, frontend canonical/robots, primed sitemap exclusion and
+restoration, defaults drift and permission refusal passed on WordPress 7.1,
+PHP 8.3, Divi 5.13.1 and Rank Math 1.0.279. Block editor and other provider
+versions are outside this qualification. TSF canonical/noindex and persistent
+recovery, Rank Math title/description, Yoast, social/schema and bulk edits are
+not part of this change. See [the adapter contract](../docs/rank-math-seo-adapter.md).
 
 ### `_meta.idempotent` markers
 
