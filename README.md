@@ -136,6 +136,10 @@ skill install and native-module smoke below before authoring content.
 
 The skill teaches the assistant the correct Divi 5 block format. Without it, the agent guesses attr formats and produces broken pages.
 
+**Claude Desktop chat:** download [diviops-divi-5-desktop.zip](https://github.com/oaris-dev/diviops/raw/refs/heads/main/diviops-divi-5-desktop.zip), upload it through **Customize → Skills → + (Add skill) → Upload skill**, and enable `diviops-divi-5`. The ZIP includes the Free references and shared primer; do not upload only `SKILL.md`. Open a fresh chat and verify the skill and its references are readable. [Desktop setup and updates](SETUP.md#claude-desktop-chat--upload-the-free-skill-zip) explains prerequisites, optional [standalone primer](https://github.com/oaris-dev/diviops/raw/refs/heads/main/diviops-desktop.zip), and replacement. Uploading a skill does not connect the MCP server or update WordPress.
+
+**Claude Code:** keep the existing marketplace installation:
+
 ```bash
 claude plugin marketplace add oaris-dev/diviops
 claude plugin install divi-5-builder@diviops

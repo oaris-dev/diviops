@@ -296,6 +296,24 @@ This is optional — the MCP agent works without it.
 
 The skill teaches the assistant the correct Divi 5 block format — module attribute paths, design patterns, and format rules. **Without it, the agent will guess attribute formats and produce broken pages** (e.g., empty buttons, wrong innerContent format).
 
+### Claude Desktop chat — upload the Free skill ZIP
+
+Download [diviops-divi-5-desktop.zip](https://github.com/oaris-dev/diviops/raw/refs/heads/main/diviops-divi-5-desktop.zip) from the public distribution. Keep the ZIP intact: it contains one `diviops-divi-5/` folder, `SKILL.md`, all Free supporting references, and a generated copy of the shared primer. No repository download, manual repackaging, or separate primer upload is needed for the builder.
+
+1. Enable **Code execution and file creation** in Claude's capabilities settings. Organization policy may also need to permit skills.
+2. Open **Customize → Skills → + (Add skill) → Upload skill** and select the ZIP. Some versions place **Upload a skill** under **Create skill**.
+3. Enable `diviops-divi-5`, then open a fresh chat. Ask `What skills do you have?`, then ask Claude to read its bundled primer and `references/module-formats.md` before any Divi authoring. Verify that it can open these references; an uploaded file alone is not proof that the chat loaded it.
+
+For independent use of the shared harness conventions, [diviops-desktop.zip](https://github.com/oaris-dev/diviops/raw/refs/heads/main/diviops-desktop.zip) is an optional separate upload named `diviops`. It is not the builder skill. The canonical names remain `diviops` and `diviops-divi-5`; do not rename either archive's skill folder.
+
+Skills provide knowledge. They do not install MCP tools, connect WordPress, or grant Pro features. Configure the MCP connection separately using the Desktop instructions above. These ZIPs include Free guidance only; SCF and FluentCart skills remain separate Pro slices.
+
+WordPress and npm updates do not replace an uploaded skill. Retain the previous ZIP for rollback, download the new package, replace the selected custom skill through Claude's supported management UI, and verify it in a fresh chat. Keep one enabled builder copy. Cloud-enabled skills can also sync into recent Claude Code versions using the same Claude account; check ownership before enabling a duplicate local/plugin copy.
+
+See Anthropic's [skill upload and management instructions](https://support.claude.com/en/articles/12512180-use-skills-in-claude) and [ZIP structure requirements](https://support.claude.com/en/articles/12512198-how-to-create-custom-skills). If the download is unavailable in your selected distribution, do not upload `SKILL.md` alone; it needs its reference files.
+
+### Claude Code — existing plugin or directory installation
+
 **Option A — Install as a Claude Code plugin** (recommended):
 ```bash
 claude plugin marketplace add oaris-dev/diviops
@@ -362,10 +380,10 @@ What skills do you have?
 You should see `diviops-divi-5` and any bundled DiviOps slice skills you installed.
 
 Codex manual skills are not updated by npm, WordPress, or Claude plugin updates;
-replace the copied directory from the new distribution and restart Codex. Claude
-Desktop and other MCP clients may connect to the server without loading Claude
-Code's `.claude/skills` directories. Use that client's supported knowledge or
-skill mechanism; otherwise treat the client as read-only for Divi authoring.
+replace the copied directory from the new distribution and restart Codex. For
+Claude Desktop chat, use the ZIP upload instructions above. Other MCP clients
+need their own supported skill mechanism; otherwise treat them as read-only
+for Divi authoring.
 
 ### Replacing an existing builder skill
 
