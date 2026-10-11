@@ -12,6 +12,8 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 require_once __DIR__ . '/class-seo-rank-math.php';
 require_once __DIR__ . '/class-seo-tsf-indexing.php';
+require_once __DIR__ . '/class-seo-tsf-text-recovery.php';
+require_once __DIR__ . '/class-seo-operation.php';
 
 /**
  * Narrow adapter for The SEO Framework's public post-metadata API.
@@ -65,6 +67,8 @@ final class DiviOps_SEO_TSF_Adapter {
 				'explicit_metadata_write' => $api_ready && $compatible,
 				'explicit_metadata_clear' => $api_ready && $compatible,
 				'effective_read'          => $api_ready && $compatible,
+				'text_operation' => [ 'available' => $api_ready && $compatible, 'lookup' => 'seo_metadata_get.operation_key', 'key_scope' => 'site_provider', 'runtime_verified' => false ],
+				'text_recovery' => [ 'available' => $api_ready && $compatible, 'operation_restore' => true, 'snapshot_prefix' => 'tsft_', 'checksum_path' => 'checksum', 'runtime_verified' => false ],
 				'indexing' => [ 'available' => $api_ready && $compatible && DiviOps_SEO_TSF_Indexing::ready(), 'exact_version' => '5.1.4', 'post_type' => 'page', 'canonical_url' => [ 'read', 'set', 'clear' ], 'noindex' => [ 'read', 'set_noindex', 'reset_default' ], 'operation_restore' => true, 'runtime_verified' => true, 'checksum_path' => 'indexing.checksum' ],
 			],
 			'version_support'   => [
@@ -140,7 +144,7 @@ final class DiviOps_SEO_TSF_Adapter {
 		foreach ( $state as $provider_key => $values ) {
 			delete_post_meta( $post_id, $provider_key );
 			foreach ( $values as $value ) {
-				add_post_meta( $post_id, $provider_key, $value );
+				add_post_meta( $post_id, $provider_key, wp_slash( $value ) );
 			}
 		}
 
@@ -296,21 +300,30 @@ trait DiviOps_Agent_SEO {
 		}
 
 		if ( 'rank_math' === $provider['provider'] ) {
-			return self::seo_rank_math_response( DiviOps_SEO_Rank_Math::read( $post_id ) );
+			return self::seo_rank_math_response( null !== $request->get_param( 'operation_key' ) ? DiviOps_SEO_Rank_Math::operation_get( $post_id, $request->get_param( 'operation_key' ) ) : DiviOps_SEO_Rank_Math::read( $post_id ) );
 		}
 		$supported = self::seo_require_supported_post_type( $post );
 		if ( $supported instanceof WP_REST_Response ) {
 			return $supported;
 		}
 
+		if ( null !== $request->get_param( 'operation_key' ) ) {
+			try {
+				$operation = DiviOps_SEO_Operation::identity( $post_id, 'tsf', $provider['version'], $request->get_param( 'operation_key' ) );
+				return self::seo_rank_math_response( DiviOps_SEO_Operation::find( $operation ) ?? DiviOps_SEO_Operation::summary( $operation ) );
+			} catch ( Throwable $error ) { return self::seo_rank_math_response( [ 'ok' => false, 'error' => in_array( $error->getMessage(), [ 'invalid_input', 'operation_conflict', 'operation_unavailable' ], true ) ? $error->getMessage() : 'provider_runtime_error' ] ); }
+		}
+
 		try {
 			$state     = DiviOps_SEO_TSF_Adapter::read_fields( $post_id );
 			$effective = DiviOps_SEO_TSF_Adapter::effective_fields( $post_id );
+			$text_evidence = DiviOps_SEO_Operation::text_evidence( $post_id, 'tsf', DiviOps_SEO_TSF_Adapter::read_registered_state( $post_id ) );
 		} catch ( Throwable $error ) {
 			return self::seo_provider_runtime_error( $error, $post_id );
 		}
 
 		$payload = self::seo_read_payload( $post, $provider, $state, $effective );
+		$payload['text_evidence'] = $text_evidence;
 		if ( DiviOps_SEO_TSF_Indexing::ready() ) { $payload['indexing'] = DiviOps_SEO_TSF_Indexing::read( $post_id ); }
 		return self::envelope_success( $payload );
 	}
@@ -344,19 +357,34 @@ trait DiviOps_Agent_SEO {
 		if ( 'rank_math' === $provider['provider'] ) {
 			return self::seo_rank_math_response( DiviOps_SEO_Rank_Math::update( $post_id, $request, static function ( $value, $field ) { return self::seo_validate_plain_text( $value, $field ); } ) );
 		}
-		$indexing = null !== $request->get_param( 'restore_snapshot_id' );
+		$restore_id = $request->get_param( 'restore_snapshot_id' );
+		$text_restore = is_string( $restore_id ) && 0 === strpos( $restore_id, 'tsft_' );
+		$indexing = null !== $restore_id && ! $text_restore;
 		foreach ( (array) $request->get_param( 'changes' ) as $change ) {
 			if ( is_array( $change ) && in_array( $change['field'] ?? null, [ 'canonical_url', 'noindex' ], true ) ) { $indexing = true; }
 		}
+		if ( $indexing && ( null !== $request->get_param( 'operation_key' ) || null !== $request->get_param( 'expected_text_context' ) ) ) { return self::seo_rank_math_response( [ 'ok' => false, 'error' => 'operation_scope_unsupported' ] ); }
 		if ( $indexing ) { return self::seo_rank_math_response( DiviOps_SEO_TSF_Indexing::update( $post_id, $request ) ); }
 		$supported = self::seo_require_supported_post_type( $post );
 		if ( $supported instanceof WP_REST_Response ) {
 			return $supported;
 		}
 
-		$schema = self::seo_validate_update_request( $request );
+		if ( $text_restore && ( null !== $request->get_param( 'changes' ) || ! is_string( $request->get_param( 'expected_checksum' ) ) || ! preg_match( '/\Asha256:[a-f0-9]{64}\z/', $request->get_param( 'expected_checksum' ) ) ) ) {
+			return self::seo_rank_math_response( [ 'ok' => false, 'error' => 'invalid_input' ] );
+		}
+		$schema = $text_restore ? [] : self::seo_validate_update_request( $request );
 		if ( isset( $schema['error'] ) ) {
 			return self::seo_validation_error_response( $schema['error'] );
+		}
+
+		$operation = null;
+		if ( null !== $request->get_param( 'operation_key' ) ) {
+			try {
+				$operation = DiviOps_SEO_Operation::identity( $post_id, 'tsf', $provider['version'], $request->get_param( 'operation_key' ), $request );
+				$previous = (bool) $request->get_param( 'dry_run' ) ? null : DiviOps_SEO_Operation::find( $operation );
+				if ( $previous ) { return self::seo_rank_math_response( $previous ); }
+			} catch ( Throwable $error ) { return self::seo_rank_math_response( [ 'ok' => false, 'error' => in_array( $error->getMessage(), [ 'invalid_input', 'operation_conflict', 'operation_unavailable', 'operation_scope_unsupported' ], true ) ? $error->getMessage() : 'provider_runtime_error' ] ); }
 		}
 
 		try {
@@ -366,6 +394,8 @@ trait DiviOps_Agent_SEO {
 			return self::seo_provider_runtime_error( $error, $post_id );
 		}
 
+		try { DiviOps_SEO_Operation::check_text_context( $post_id, 'tsf', $before_registered_state, [], $request->get_param( 'expected_text_context' ) ); }
+		catch ( Throwable $error ) { return self::seo_rank_math_response( [ 'ok' => false, 'error' => 'metadata_drift' ] ); }
 		$before_checksum   = self::seo_checksum( $post_id, $provider['version'], $before );
 		$expected_checksum = (string) $request->get_param( 'expected_checksum' );
 		if ( ! hash_equals( $before_checksum, $expected_checksum ) ) {
@@ -384,17 +414,26 @@ trait DiviOps_Agent_SEO {
 			);
 		}
 
-		$prepared = self::seo_prepare_changes( $schema['changes'], $before );
-		if ( isset( $prepared['error'] ) ) {
-			return self::seo_validation_error_response( $prepared['error'] );
+		if ( $text_restore ) {
+			try { $target_registered_state = DiviOps_SEO_TSF_Text_Recovery::target( $post_id, $provider['version'], $restore_id, $before_registered_state ); }
+			catch ( Throwable $error ) {
+				$known = [ 'invalid_input', 'snapshot_unavailable', 'stored_shape_unsupported', 'recovery_conflict' ];
+				return self::seo_rank_math_response( [ 'ok' => false, 'error' => in_array( $error->getMessage(), $known, true ) ? $error->getMessage() : 'provider_runtime_error' ] );
+			}
+			$target = $before; $change_evidence = [];
+			foreach ( DiviOps_SEO_TSF_Text_Recovery::KEYS as $field => $key ) {
+				$target[ $field ] = [ 'explicit' => (bool) $target_registered_state[ $key ], 'value' => $target_registered_state[ $key ][0] ?? '' ];
+				if ( $before_registered_state[ $key ] !== $target_registered_state[ $key ] ) { $change_evidence[] = [ 'field' => $field, 'action' => 'restore', 'before' => $before[ $field ], 'after' => $target[ $field ] ]; }
+			}
+		} else {
+			$prepared = self::seo_prepare_changes( $schema['changes'], $before );
+			if ( isset( $prepared['error'] ) ) { return self::seo_validation_error_response( $prepared['error'] ); }
+			$target = $prepared['target']; $change_evidence = $prepared['changes'];
+			$target_registered_state = DiviOps_SEO_TSF_Adapter::with_v1_state( $before_registered_state, $target );
 		}
-
-		$target                  = $prepared['target'];
-		$change_evidence         = $prepared['changes'];
-		$after_checksum          = self::seo_checksum( $post_id, $provider['version'], $target );
-		$target_registered_state = DiviOps_SEO_TSF_Adapter::with_v1_state( $before_registered_state, $target );
+		$after_checksum = self::seo_checksum( $post_id, $provider['version'], $target );
 		$dry_run                = (bool) $request->get_param( 'dry_run' );
-		$noop                   = self::seo_states_equal( $before, $target );
+		$noop                   = $text_restore ? $before_registered_state === $target_registered_state : self::seo_states_equal( $before, $target );
 
 		if ( $dry_run ) {
 			$plan_changes = [];
@@ -417,6 +456,7 @@ trait DiviOps_Agent_SEO {
 					'provider'          => [ 'id' => DiviOps_SEO_TSF_Adapter::ID, 'version' => $provider['version'] ],
 					'current_checksum'  => $before_checksum,
 					'proposed_checksum' => $after_checksum,
+					'text_evidence' => DiviOps_SEO_Operation::text_evidence( $post_id, 'tsf', $target_registered_state ),
 					'noop'              => $noop,
 					'write_applied'     => false,
 				]
@@ -436,19 +476,32 @@ trait DiviOps_Agent_SEO {
 			) );
 		}
 
+		return DiviOps_SEO_TSF_Text_Recovery::execute( $post_id, $provider['version'], $before_registered_state, $target_registered_state, $text_restore,
+			static function () use ( $post_id, $post, $provider, $before, $before_registered_state, $target_registered_state, $before_checksum, $target, $change_evidence, $text_restore ) {
+				return self::seo_apply_text( $post_id, $post, $provider, $before, $before_registered_state, $target_registered_state, $before_checksum, $target, $change_evidence, $text_restore );
+			}, static function ( $result ) { return self::seo_rank_math_response( $result ); }, $operation, $request->get_param( 'expected_text_context' )
+		);
+	}
+
+	/** Preserve the legacy provider write and full registered-state rollback contract. */
+	private static function seo_apply_text( $post_id, $post, $provider, $before, $before_registered_state, $target_registered_state, $before_checksum, $target, $change_evidence, $text_restore ) {
 		$touched = array_column( $change_evidence, 'field' );
 		try {
-			foreach ( $touched as $field ) {
-				DiviOps_SEO_TSF_Adapter::write_field(
-					$post_id,
-					$field,
-					(bool) $target[ $field ]['explicit'],
-					(string) $target[ $field ]['value']
-				);
+			if ( $text_restore ) { DiviOps_SEO_TSF_Text_Recovery::write_exact( $post_id, $before_registered_state, $target_registered_state ); }
+			else {
+				foreach ( $touched as $field ) {
+					DiviOps_SEO_TSF_Adapter::write_field(
+						$post_id,
+						$field,
+						(bool) $target[ $field ]['explicit'],
+						(string) $target[ $field ]['value']
+					);
+				}
 			}
 			$readback                  = DiviOps_SEO_TSF_Adapter::read_fields( $post_id );
 			$registered_state_readback = DiviOps_SEO_TSF_Adapter::read_registered_state( $post_id );
 		} catch ( Throwable $error ) {
+			if ( $text_restore ) { throw $error; }
 			return self::seo_apply_failure_with_rollback(
 				$post_id,
 				$before,
@@ -462,6 +515,7 @@ trait DiviOps_Agent_SEO {
 
 		if ( ! self::seo_states_equal( $readback, $target )
 			|| ! DiviOps_SEO_TSF_Adapter::registered_states_equal( $registered_state_readback, $target_registered_state ) ) {
+			if ( $text_restore ) { throw new RuntimeException( 'readback_mismatch' ); }
 			return self::seo_apply_failure_with_rollback(
 				$post_id,
 				$before,
@@ -473,7 +527,7 @@ trait DiviOps_Agent_SEO {
 			);
 		}
 
-		return self::envelope_success( self::seo_update_success_payload(
+		$payload = self::seo_update_success_payload(
 			$post,
 			$provider,
 			$before_checksum,
@@ -482,13 +536,18 @@ trait DiviOps_Agent_SEO {
 			$readback,
 			false,
 			true
-		) );
+		);
+		if ( $text_restore ) {
+			$payload['lifecycle']['provider_write'] = 'exact_recorded_text_rows';
+			$payload['lifecycle']['provider_refresh'] = 'tsf_refresh_static_properties';
+		}
+		return self::envelope_success( $payload );
 	}
 
 	private static function seo_rank_math_response( array $result ) {
 		if ( $result['ok'] ) { unset( $result['ok'] ); return self::envelope_success( $result ); }
 		$code = $result['error']; unset( $result['ok'], $result['error'] );
-		$status = 'forbidden' === $code ? 403 : ( 'not_found' === $code ? 404 : ( in_array( $code, [ 'metadata_drift', 'recovery_conflict', 'busy' ], true ) ? 409 : 400 ) );
+		$status = 'forbidden' === $code ? 403 : ( 'not_found' === $code ? 404 : ( in_array( $code, [ 'metadata_drift', 'recovery_conflict', 'busy', 'operation_conflict', 'operation_unavailable' ], true ) ? 409 : 400 ) );
 		if ( in_array( $code, [ 'write_failed', 'snapshot_failed', 'provider_runtime_error' ], true ) ) { $status = 500; }
 		return self::envelope_error( 'seo.' . $code, 'SEO operation refused or incomplete: ' . $code . '.', 'Read current metadata before retrying. Retain snapshot_id for explicit restore; never blindly retry a failed write.', $status, $result );
 	}

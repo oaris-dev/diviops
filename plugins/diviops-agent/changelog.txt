@@ -9,6 +9,12 @@ Policy:
 - Keep entries customer-facing. Avoid internal issue numbers unless they are needed to explain a user-visible change.
 - Do not include secrets, credentials, customer data, or environment-specific URLs.
 
+## 1.5.43
+
+- Adds persistent conditional recovery for supported The SEO Framework title and description edits, preserving existing indexing behavior.
+- Adds exact operation-outcome lookup for TSF and Rank Math text changes. Single-page authoring, validation and recovery remain Free; uncertain outcomes and conflicting later edits stop instead of being overwritten.
+- Native saves, frontend text, conditional recovery and interruption checks passed for TSF 5.1.4 and Rank Math 1.0.279 in the Classic editor on WordPress 7.1, PHP 8.3 and Divi 5.13.1. Other provider versions/editors and process-death recovery are outside this qualification.
+
 ## 1.5.42
 
 - Adds Rank Math 1.0.279 page SEO title and meta description read, set and clear, with plain-text validation, preview, fresh-checksum writes and typed recovery.

@@ -3,7 +3,7 @@ Contributors: diviops
 Tags: divi, mcp, ai, rest-api, site-builder
 Requires at least: 6.5
 Tested up to: 7.1
-Stable tag: 1.5.42
+Stable tag: 1.5.43
 Requires PHP: 7.4
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -105,6 +105,12 @@ No. Free includes the core site-authoring bridge described above. Selected advan
 2. An agent-authored page open in the Divi 5 Visual Builder, with the native Heading module content controls available for continued editing. Divi is a separate required product.
 
 == Changelog ==
+
+= 1.5.43 =
+
+* Adds persistent conditional recovery for supported The SEO Framework title and description edits, preserving existing indexing behavior.
+* Adds exact operation-outcome lookup for TSF and Rank Math text changes. Single-page authoring, validation and recovery remain Free; uncertain outcomes and conflicting later edits stop instead of being overwritten.
+* Native saves, frontend text, conditional recovery and interruption checks passed for TSF 5.1.4 and Rank Math 1.0.279 in the Classic editor on WordPress 7.1, PHP 8.3 and Divi 5.13.1. Other provider versions/editors and process-death recovery are outside this qualification.
 
 = 1.5.42 =
 
@@ -314,6 +320,9 @@ No. Free includes the core site-authoring bridge described above. Selected advan
 * Keeps `Stable tag` aligned with the plugin header version.
 
 == Upgrade Notice ==
+
+= 1.5.43 =
+Adds Free text recovery and operation-outcome evidence for supported SEO providers. Pair with MCP 1.5.72 for the new transport parameters; Pro rollout additionally requires compatible Pro capabilities. Existing indexing behavior and global compatibility floors are unchanged.
 
 = 1.5.42 =
 

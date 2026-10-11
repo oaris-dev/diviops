@@ -721,16 +721,18 @@ registerPluginTool(
   "diviops_seo_metadata_get",
   {
     description:
-      "Read explicit and effective semantic SEO metadata for one provider-supported post. Free/core and explicit-metadata-only: fields depend on provider: TSF seo_title/meta_description plus a separate indexing section on 5.1.4 pages, or Rank Math seo_title/meta_description/canonical_url/noindex; no raw metadata keys or provider maps are accepted or returned. Requires edit_post before stored payload exposure. Returns exact explicit presence/value, effective provider output, deterministic checksum, provider lifecycle/capability evidence, canonical WordPress identity evidence, and cache status. Error codes include not_found, forbidden, seo.provider_absent, seo.provider_incompatible, seo.provider_unsupported, and seo.post_type_unsupported. Returns the standardized envelope.",
+      "Read explicit and effective semantic SEO metadata for one provider-supported post. Free/core and explicit-metadata-only: fields depend on provider: TSF seo_title/meta_description plus a separate indexing section on 5.1.4 pages, or Rank Math seo_title/meta_description/canonical_url/noindex; no raw metadata keys or provider maps are accepted or returned. Requires edit_post before stored payload exposure. Returns exact explicit presence/value, effective provider output, deterministic checksum, provider lifecycle/capability evidence, canonical WordPress identity evidence, and cache status. Error codes include not_found, forbidden, seo.provider_absent, seo.provider_incompatible, seo.provider_unsupported, and seo.post_type_unsupported. With operation_key, returns only the historical recorded outcome for a keyed TSF/Rank Math text operation. uncertain or lock_held means stop and inspect; lookup never retries or unlocks. not_recorded is not proof of a completed noop. Returns the standardized envelope.",
     inputSchema: {
+      operation_key: z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9_-]{15,63}$/).optional().describe("Look up a text-operation key instead of current metadata; requires the same provider and target."),
       post_id: z.number().int().positive().describe("WordPress post/page ID to inspect. Requires edit_post on this exact target."),
       provider: SEO_PROVIDER.optional().default("auto").describe("Provider selector. auto refuses ambiguity when both providers are active."),
     },
     annotations: { idempotentHint: true },
     _meta: { idempotent: "true" },
   },
-  async ({ post_id, provider }) => {
-    const params = new URLSearchParams({ provider: provider ?? "auto" }).toString();
+  async ({ post_id, provider, operation_key }) => {
+    const params = new URLSearchParams({ provider: provider ?? "auto" });
+    if (operation_key !== undefined) params.set("operation_key", operation_key);
     const result = await wp.requestEnveloped(`/seo/metadata/${post_id}?${params}`);
     return {
       content: [
@@ -1596,27 +1598,31 @@ registerPluginTool(
   "diviops_seo_metadata_update",
   {
     description:
-      "Update one page/post using fixed provider fields and expected_checksum. TSF retains seo_title/meta_description set/clear and its original top-level checksum. TSF 5.1.4 pages additionally support canonical_url set/clear and noindex set with value=noindex or reset_default without a value; use indexing.checksum from get for these operations and TSF restore. Do not mix text and indexing changes. TSF keeps unrelated robots defaults inherited and custom canonical URLs remain under noindex. Rank Math 1.0.279 additionally supports plain-text seo_title/meta_description set/clear with its top-level checksum and typed restore; unresolved template variables and markup are refused. It supports canonical_url set/clear and noindex set with value='noindex' on pages; it preserves other robots directives and previews inherited defaults that become pinned. No generic robots arrays, force-index or noindex clear. reset_default is TSF-only. Both canonical/noindex adapters create a persistent typed recovery record before apply and return snapshot_id. To restore, omit changes and pass restore_snapshot_id with a fresh expected_checksum; restore refuses third-party changes and preserves untouched fields. Use dry_run to preview. Reads return provider-computed values, not verified frontend tags; Rank Math suppresses canonical output under noindex. TSF text-field persistent restore, other providers, social/schema/bulk edits are unsupported. Runtime qualification remains separate." +
+      "Update one page/post using fixed provider fields and expected_checksum. TSF retains seo_title/meta_description set/clear and its original top-level checksum. TSF 5.1.4 pages additionally support canonical_url set/clear and noindex set with value=noindex or reset_default without a value; use indexing.checksum from get for these operations and tsf_ indexing restore. TSF text restore uses tsft_ snapshots and the original top-level checksum. Do not mix text and indexing changes. TSF keeps unrelated robots defaults inherited and custom canonical URLs remain under noindex. Rank Math 1.0.279 additionally supports plain-text seo_title/meta_description set/clear with its top-level checksum and typed restore; unresolved template variables and markup are refused. It supports canonical_url set/clear and noindex set with value='noindex' on pages; it preserves other robots directives and previews inherited defaults that become pinned. No generic robots arrays, force-index or noindex clear. reset_default is TSF-only. TSF text and both canonical/noindex adapters create a persistent typed recovery record before apply and return snapshot_id. To restore, omit changes and pass restore_snapshot_id with a fresh expected_checksum; restore refuses third-party changes and preserves untouched fields. Use dry_run to preview. Reads return provider-computed values, not verified frontend tags; Rank Math suppresses canonical output under noindex. Other providers, social/schema/bulk edits are unsupported. Optional operation_key correlates text-only updates/restores within one site/provider. Reuse it only with identical target, provider version, expected_checksum and input: an existing record returns a historical outcome without replaying, even if current metadata has changed. Preview/noop does not reserve a key. Indexing operations cannot use it. After a lost response, look up the key through get; uncertain/locked records stop. Runtime qualification remains separate." +
       DRY_RUN_DESC_SUFFIX,
     inputSchema: {
+      operation_key: z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9_-]{15,63}$/).optional().describe("Stable caller key for one text operation (16–64 ASCII letters, digits, underscore or hyphen). Save it before calling; never change the input when reusing it."),
       post_id: z.number().int().positive().describe("WordPress post/page ID to update. Requires edit_post on this exact target."),
       provider: SEO_PROVIDER.optional().default("auto").describe("Provider selector. Use auto, tsf, or rank_math."),
+      expected_text_context: z.string().regex(/^sha256:[a-f0-9]{64}$/).optional().describe("Optional stronger context guard from text_evidence.context_checksum for reviewed text operations."),
       expected_checksum: z
         .string()
         .regex(/^sha256:[a-f0-9]{64}$/)
-        .describe("Checksum from get: indexing.checksum for TSF canonical/noindex or TSF restore; top-level checksum otherwise. No force path."),
+        .describe("Checksum from get: indexing.checksum for TSF canonical/noindex or tsf_ indexing restore; top-level checksum otherwise. No force path."),
       changes: SEO_CHANGES.optional().describe("Provide changes OR restore_snapshot_id. Rank Math noindex set value must be noindex."),
-      restore_snapshot_id: z.string().regex(/^(?:rm|tsf)_[a-f0-9-]{36}$/).optional().describe("Restore one canonical/noindex operation for the selected provider; omit changes. Not a content snapshot."),
+      restore_snapshot_id: z.string().regex(/^(?:rm|tsf|tsft)_[a-f0-9-]{36}$/).optional().describe("Restore one recorded text or indexing operation for the selected provider; omit changes. Not a content snapshot."),
       dry_run: DRY_RUN_FIELD,
     },
     annotations: { idempotentHint: false },
     _meta: { idempotent: "conditional" },
   },
-  async ({ post_id, provider, expected_checksum, changes, restore_snapshot_id, dry_run }) => {
+  async ({ post_id, provider, expected_checksum, changes, restore_snapshot_id, dry_run, operation_key, expected_text_context }) => {
     const body: Record<string, unknown> = {
       provider: provider ?? "auto",
       expected_checksum,
     };
+    if (expected_text_context !== undefined) body.expected_text_context = expected_text_context;
+    if (operation_key !== undefined) body.operation_key = operation_key;
     if (changes !== undefined) body.changes = changes;
     if (restore_snapshot_id !== undefined) body.restore_snapshot_id = restore_snapshot_id;
     if (dry_run) body.dry_run = true;
@@ -1648,7 +1654,7 @@ registerPluginTool(
         ),
       content_ref: z.string().optional().describe("Single-use reference from a successful retained dry-run; apply only, mutually exclusive with content."),
       retain_content: z.boolean().optional().describe("Retain content only on an explicitly confirmed successful dry-run. Requires expected_checksum. content_checksum hashes exact submitted UTF-8 bytes, not normalized persisted bytes. Capacity and the 5-minute TTL begin before the upstream request. MCP-process-local, not isolated per client session."),
-      expected_checksum: z
+        expected_checksum: z
         .string()
         .regex(/^sha256:[a-f0-9]{64}$/)
         .optional()
@@ -5371,6 +5377,74 @@ const ManagedRecoveryConfirmationSchema = {
 };
 
 function registerProTools(): void {
+  const seoPlanIdentity = { plan_id: z.string().uuid(), plan_hash: z.string().regex(/^sha256:[a-f0-9]{64}$/) };
+  const seoAdvance = { ...seoPlanIdentity, acknowledgement: z.literal("apply_reviewed_non_atomic_text_plan") };
+  const seoChange = z.discriminatedUnion("action", [
+    z.object({ field: z.enum(["seo_title", "meta_description"]), action: z.literal("set"), value: z.string().min(1).max(8192) }).strict(),
+    z.object({ field: z.enum(["seo_title", "meta_description"]), action: z.literal("clear") }).strict(),
+  ]);
+  const seoRolloutTransport = (action: string) => async (args: Record<string, unknown>) => {
+    const route = `/pro/seo-rollout/${action.replaceAll("_", "-")}`;
+    const result = action === "get"
+      ? await wp.requestEnveloped(`${route}?plan_id=${encodeURIComponent(String(args.plan_id))}`)
+      : await wp.requestEnveloped(route, { method: "POST", body: args });
+    return { content: [{ type: "text" as const, text: serializeEnvelope(result, `diviops_seo_rollout_${action}`) }] };
+  };
+  registerProTool(
+    "diviops_seo_rollout_plan",
+    {
+      description: "Create a private immutable reviewed title/description plan for 1–20 explicit published public pages on one site/provider (TSF 5.1.4 or Rank Math 1.0.279). Validates all pages without SEO writes. Show the complete before/target brief and non-atomic limits to the operator; obtain confirmation before advancing. Expires for first execution after 30 minutes. No Yoast, discovery, copy generation, robots, social or schema.",
+      inputSchema: z.object({ provider: z.enum(["tsf", "rank_math"]), brief: z.object({ name: z.string().min(1).max(80), version: z.number().int().positive() }).strict(), pages: z.array(z.object({ id: z.number().int().positive(), changes: z.array(seoChange).min(1).max(2) }).strict()).min(1).max(20) }).strict(),
+      annotations: { readOnlyHint: false, idempotentHint: false },
+      _meta: { idempotent: "false" },
+    },
+    seoRolloutTransport("plan"),
+    { target: "seo_rollout", capabilityKey: "seo_rollout_v1" },
+  );
+  registerProTool(
+    "diviops_seo_rollout_advance",
+    {
+      description: "After operator confirmation of the exact plan/hash, advance at most one page. Each explicit call can advance another page; never automatically retry a lost response. Read status first. Stops on drift, permission loss or uncertain evidence. Acknowledgement binds the reviewed request but is not proof of human identity. No background work or atomic batch guarantee.",
+      inputSchema: z.object(seoAdvance).strict(),
+      annotations: { readOnlyHint: false, idempotentHint: false },
+      _meta: { idempotent: "conditional" },
+    },
+    seoRolloutTransport("advance"),
+    { target: "seo_rollout", capabilityKey: "seo_rollout_v1" },
+  );
+  registerProTool(
+    "diviops_seo_rollout_get",
+    {
+      description: "Read the retained rollout plan, per-page outcome, operation references and handover report. Permission loss redacts stored content. Prepared/uncertain evidence or retained leases require stop and inspection, not blind retries. Metadata verification never claims rendered output or rankings.",
+      inputSchema: z.object({ plan_id: z.string().uuid() }).strict(),
+      annotations: { readOnlyHint: true, idempotentHint: true },
+      _meta: { idempotent: "true" },
+    },
+    seoRolloutTransport("get"),
+    { target: "seo_rollout", capabilityKey: "seo_rollout_v1" },
+  );
+  registerProTool(
+    "diviops_seo_rollout_recovery_plan",
+    {
+      description: "Create a separate immutable recovery plan from verified applied references in reverse order, using Free conditional restores. Freezes further original advances. Show the recovery before/target and obtain operator confirmation. Later untouched fields are preserved; conflicts refuse. Basic individual recovery remains Free.",
+      inputSchema: z.object(seoPlanIdentity).strict(),
+      annotations: { readOnlyHint: false, idempotentHint: false },
+      _meta: { idempotent: "conditional" },
+    },
+    seoRolloutTransport("recovery_plan"),
+    { target: "seo_rollout", capabilityKey: "seo_rollout_v1" },
+  );
+  registerProTool(
+    "diviops_seo_rollout_recover",
+    {
+      description: "After confirmation of the separate recovery plan/hash, restore at most one page through Free conditional recovery. Stops at the first conflict or uncertainty and retains inverse evidence. Read status after response loss; no automatic retry, force restore or lease takeover.",
+      inputSchema: z.object(seoAdvance).strict(),
+      annotations: { readOnlyHint: false, idempotentHint: false },
+      _meta: { idempotent: "conditional" },
+    },
+    seoRolloutTransport("recover"),
+    { target: "seo_rollout", capabilityKey: "seo_rollout_v1" },
+  );
   const staffBodyApply = handshakeState.kind === "ok"
     && handshakeState.capabilities.cross_env_staff_body_evidence === true
     && handshakeState.capabilities.cross_env_staff_body_apply === true;

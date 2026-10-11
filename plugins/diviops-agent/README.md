@@ -8,6 +8,14 @@ Divi is a registered trademark of Elegant Themes, Inc. DiviOps Agent is not affi
 
 > **Don't use this plugin standalone** — it's the WordPress side of a two-piece suite; install + configure the [DiviOps MCP Server](../../../diviops-server/) next.
 
+## 1.5.43 candidate release note
+
+- Adds persistent conditional recovery for supported The SEO Framework title and description edits, preserving existing indexing behavior.
+- Adds exact operation-outcome lookup for TSF and Rank Math text changes. Single-page authoring, validation and recovery remain Free; uncertain outcomes and conflicting later edits stop instead of being overwritten.
+- Native saves, frontend text, conditional recovery and interruption checks passed for TSF 5.1.4 and Rank Math 1.0.279 in the Classic editor on WordPress 7.1, PHP 8.3 and Divi 5.13.1. Other provider versions/editors and process-death recovery are outside this qualification.
+
+Pair with MCP 1.5.72 for operation correlation and outcome lookup. Pro coordination is optional; the Free safety primitives remain independently usable. Final package qualification and delivery are separate gates.
+
 ## 1.5.38 release note
 
 Variable scans now report incompatible legacy non-color IDs, whether they are defined, and their known page/preset references. Scan coverage and truncation are explicit. Existing orphan and unused classifications are unchanged. Native page-usage detection is not proof of successful frontend rendering.

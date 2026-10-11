@@ -8,6 +8,12 @@ The Node.js MCP server inside the DiviOps harness. It gives Claude Code, Codex, 
 Claude Code <-> MCP Server (stdio) <-> WordPress REST API <-> DiviOps Agent plugin
 ```
 
+## 1.5.72 candidate release note
+
+Adds five capability-gated Pro SEO text workflow tools: plan, advance, status/report, recovery plan and recover. Existing Free SEO tools gain bounded operation correlation and exact outcome lookup. Pair with Free 1.5.43 and Pro 1.0.18-beta for the complete reviewed workflow; availability follows capabilities, not a shared version floor.
+
+Each advance affects at most one explicit page. After an interrupted request, read status before deciding whether to advance again; do not automatically retry. Single-page authoring and recovery remain Free. Restart or reconnect the MCP client after supported component updates to refresh discovery. Candidate packaging and publication remain separate.
+
 ## 1.5.68 release note — named site-wide CSS blocks
 
 With Free Agent 1.5.39, `diviops_custom_css_get`, `diviops_custom_css_upsert`

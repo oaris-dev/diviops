@@ -26,7 +26,7 @@ final class DiviOps_SEO_Rank_Math {
 			'version' => $version, 'compatible' => self::VERSION === $version, 'readable' => $ready, 'writable' => $ready,
 			'adapter' => 'source_assessed', 'runtime_verified' => true,
 			'fields' => array_keys( self::KEYS ),
-			'capabilities' => [ 'canonical_url' => [ 'read', 'set', 'clear' ], 'noindex' => [ 'read', 'set_noindex' ], 'seo_title' => [ 'read', 'set', 'clear' ], 'meta_description' => [ 'read', 'set', 'clear' ], 'operation_restore' => true ],
+			'capabilities' => [ 'text_operation' => [ 'available' => $ready, 'lookup' => 'seo_metadata_get.operation_key', 'key_scope' => 'site_provider', 'runtime_verified' => false ], 'canonical_url' => [ 'read', 'set', 'clear' ], 'noindex' => [ 'read', 'set_noindex' ], 'seo_title' => [ 'read', 'set', 'clear' ], 'meta_description' => [ 'read', 'set', 'clear' ], 'operation_restore' => true ],
 			'version_support' => [ 'exact' => self::VERSION ],
 		];
 	}
@@ -113,7 +113,7 @@ final class DiviOps_SEO_Rank_Math {
 			self::authorize( $id );
 			$rows = self::rows( $id ); $context = self::context( $id );
 			$effective = ( new \RankMath\Paper\Singular() )->get_seo_meta( $id );
-			return [ 'ok' => true, 'post_id' => $id, 'provider' => self::discovery(), 'checksum' => self::digest( $rows, $context ), 'fields' => self::fields( $rows, $context ),
+			return [ 'ok' => true, 'post_id' => $id, 'provider' => self::discovery(), 'checksum' => self::digest( $rows, $context ), 'fields' => self::fields( $rows, $context ), 'text_evidence' => DiviOps_SEO_Operation::text_evidence( $id, 'rank_math', $rows, $context ),
 				'computed' => [ 'seo_title' => $effective['title'] ?? null, 'meta_description' => $effective['description'] ?? null, 'canonical_url' => $effective['canonical'] ?? null, 'robots' => $effective['robots'] ?? null, 'source' => 'rank_math_singular_api', 'frontend_verified' => false, 'limits' => 'REST context; title/description may contain unresolved templates; frontend filters/pagination may differ. Rank Math suppresses canonical output under noindex.' ],
 				'cache' => 'read_only' ];
 		} catch ( Throwable $error ) { return self::failure( $error ); }
@@ -157,14 +157,29 @@ final class DiviOps_SEO_Rank_Math {
 		return [ 'after' => $after, 'inherited_directives_pinned' => $pinned ];
 	}
 
+	public static function operation_get( int $id, $key ): array {
+		try {
+			self::authorize( $id );
+			$operation = DiviOps_SEO_Operation::identity( $id, 'rank_math', self::VERSION, $key );
+			return DiviOps_SEO_Operation::find( $operation ) ?? DiviOps_SEO_Operation::summary( $operation );
+		} catch ( Throwable $error ) { return self::failure( $error ); }
+	}
+
 	/** Restore is explicit in the same tool, never in the content-snapshot API. */
 	public static function update( int $id, $request, callable $validate_text ): array {
 		$lock = ''; $record = null; $mutation = false;
 		try {
 			self::authorize( $id );
+			$operation = null;
+			if ( null !== $request->get_param( 'operation_key' ) ) {
+				$operation = DiviOps_SEO_Operation::identity( $id, 'rank_math', self::VERSION, $request->get_param( 'operation_key' ), $request );
+				$previous = rest_sanitize_boolean( $request->get_param( 'dry_run' ) ?? false ) ? null : DiviOps_SEO_Operation::find( $operation );
+				if ( $previous ) { return $previous; }
+			}
 			$expected = $request->get_param( 'expected_checksum' );
 			if ( ! is_string( $expected ) || ! preg_match( '/\Asha256:[a-f0-9]{64}\z/', $expected ) ) { throw new RuntimeException( 'invalid_input' ); }
 			$before = self::rows( $id ); $context = self::context( $id );
+			DiviOps_SEO_Operation::check_text_context( $id, 'rank_math', $before, $context, $request->get_param( 'expected_text_context' ) );
 			if ( ! hash_equals( self::digest( $before, $context ), $expected ) ) { throw new RuntimeException( 'metadata_drift' ); }
 			$restore_id = $request->get_param( 'restore_snapshot_id' );
 			$source = null;
@@ -180,6 +195,7 @@ final class DiviOps_SEO_Rank_Math {
 					}
 				}
 				self::validate_rows( $source['before'] ); self::validate_rows( $source['after'] );
+				if ( $operation ) { foreach ( [ 'canonical_url', 'noindex' ] as $field ) { if ( $source['before'][ $field ] !== $source['after'][ $field ] ) { throw new RuntimeException( 'operation_scope_unsupported' ); } } }
 				$after = $before;
 				foreach ( self::KEYS as $field => $key ) {
 					if ( $source['before'][ $field ] === $source['after'][ $field ] ) { continue; }
@@ -194,12 +210,14 @@ final class DiviOps_SEO_Rank_Math {
 				if ( $before[ $field ] !== $after[ $field ] ) { $edits[] = [ 'kind' => 'seo_metadata.' . $field, 'before' => self::fields( $before, $context )[ $field ], 'after' => self::fields( $after, $context )[ $field ] ]; }
 			}
 			$preview = [ 'changes' => $edits, 'summary' => $source ? 'Restore recorded SEO fields; preserve untouched fields.' : 'Update explicit SEO fields on one Rank Math page.', 'before' => self::fields( $before, $context ), 'after' => self::fields( $after, $context ), 'inherited_directives_pinned' => $plan['inherited_directives_pinned'], 'noop' => $noop, 'frontend_verified' => false, 'canonical_under_noindex' => 'suppressed_by_rank_math_frontend' ];
-			if ( rest_sanitize_boolean( $request->get_param( 'dry_run' ) ?? false ) || $noop ) { return [ 'ok' => true, 'dry_run' => rest_sanitize_boolean( $request->get_param( 'dry_run' ) ?? false ), 'noop' => $noop, 'plan' => $preview, 'checksum' => $expected, 'proposed_checksum' => self::digest( $after, $context ), 'write_applied' => false ]; }
+			if ( rest_sanitize_boolean( $request->get_param( 'dry_run' ) ?? false ) || $noop ) { return [ 'ok' => true, 'dry_run' => rest_sanitize_boolean( $request->get_param( 'dry_run' ) ?? false ), 'noop' => $noop, 'plan' => $preview, 'checksum' => $expected, 'proposed_checksum' => self::digest( $after, $context ), 'text_evidence' => DiviOps_SEO_Operation::text_evidence( $id, 'rank_math', $after, $context ), 'write_applied' => false ]; }
 			$lock = 'diviops_seo_lock_' . $id;
 			if ( ! add_option( $lock, wp_generate_uuid4(), '', 'no' ) ) { $lock = ''; throw new RuntimeException( 'busy' ); }
+			if ( $operation && ( $previous = DiviOps_SEO_Operation::find( $operation ) ) ) { return $previous; }
 			if ( self::rows( $id ) !== $before || self::context( $id ) !== $context ) { throw new RuntimeException( 'metadata_drift' ); }
 			$record = [ 'schema' => 2, 'snapshot_id' => 'rm_' . wp_generate_uuid4(), 'site' => home_url( '/' ), 'post_id' => $id, 'provider_version' => self::VERSION, 'before' => $before, 'after' => $after, 'created_at' => gmdate( 'c' ), 'status' => 'prepared' ];
-			self::save_record( $record );
+			if ( $operation ) { $record['snapshot_id'] = DiviOps_SEO_Operation::snapshot_id( $operation ); $record['operation'] = $operation; }
+			self::save_record( $record, null !== $operation );
 			if ( self::rows( $id ) !== $before || self::context( $id ) !== $context ) { throw new RuntimeException( 'metadata_drift' ); }
 			$mutation = true;
 			try {
@@ -246,13 +264,14 @@ final class DiviOps_SEO_Rank_Math {
 		\RankMath\Sitemap\Cache_Watcher::invalidate_object_type( 'post', $id );
 		\RankMath\Sitemap\Cache_Watcher::clear_queued();
 	}
-	private static function save_record( array $record ): void {
+	private static function save_record( array $record, bool $initial = false ): void {
 		$key = self::RECOVERY_PREFIX . $record['snapshot_id'];
-		update_option( $key, $record, false );
+		if ( $initial ) { if ( ! add_option( $key, $record, '', 'no' ) ) { throw new RuntimeException( 'snapshot_failed' ); } }
+		else { update_option( $key, $record, false ); }
 		if ( get_option( $key ) !== $record ) { throw new RuntimeException( 'snapshot_failed' ); }
 	}
 	private static function failure( Throwable $error ): array {
-		$known = [ 'not_found', 'forbidden', 'provider_absent', 'provider_incompatible', 'post_type_unsupported', 'stored_shape_unsupported', 'invalid_input', 'invalid_url', 'field_unsupported', 'field_operation_unsupported', 'metadata_drift', 'snapshot_unavailable', 'snapshot_failed', 'recovery_conflict', 'busy' ];
+		$known = [ 'not_found', 'forbidden', 'provider_absent', 'provider_incompatible', 'post_type_unsupported', 'stored_shape_unsupported', 'invalid_input', 'invalid_url', 'field_unsupported', 'field_operation_unsupported', 'metadata_drift', 'snapshot_unavailable', 'snapshot_failed', 'recovery_conflict', 'busy', 'operation_conflict', 'operation_unavailable', 'operation_scope_unsupported' ];
 		return [ 'ok' => false, 'error' => in_array( $error->getMessage(), $known, true ) ? $error->getMessage() : 'provider_runtime_error' ];
 	}
 }

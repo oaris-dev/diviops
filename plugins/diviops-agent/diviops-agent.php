@@ -3,7 +3,7 @@
  * Plugin Name: DiviOps Agent
  * Plugin URI: https://github.com/oaris-dev/diviops
  * Description: REST API bridge for DiviOps — connects Claude Code to your Divi 5 site for AI-powered page building and design management.
- * Version: 1.5.42
+ * Version: 1.5.43
  * Author: oaris.de
  * Author URI: https://oaris.de
  * Text Domain: diviops-agent
@@ -76,7 +76,7 @@ class DiviOps_Agent {
 	 * Plugin version — surfaced in /handshake for self-diagnosis only;
 	 * server no longer gates on it (capability map is the gate).
 	 */
-	const VERSION = '1.5.42';
+	const VERSION = '1.5.43';
 
 	/**
 	 * Minimum MCP server version this plugin is compatible with.
@@ -705,6 +705,7 @@ class DiviOps_Agent {
 			// Preserve the handler's canonical target-specific error envelope.
 			'permission_callback' => [ __CLASS__, 'check_authenticated_permission' ],
 			'args'                => [
+				'operation_key' => [ 'required' => false, 'type' => 'string', 'pattern' => '^[a-zA-Z0-9][a-zA-Z0-9_-]{15,63}$' ],
 				'id'       => [ 'required' => true, 'type' => 'integer', 'minimum' => 1 ],
 				'provider' => [
 					'required' => false,
@@ -721,6 +722,7 @@ class DiviOps_Agent {
 			// The handler enforces edit_post before any provider payload read.
 			'permission_callback' => [ __CLASS__, 'check_authenticated_permission' ],
 			'args'                => [
+				'operation_key' => [ 'required' => false, 'type' => 'string', 'pattern' => '^[a-zA-Z0-9][a-zA-Z0-9_-]{15,63}$' ],
 				'id'                => [ 'required' => true, 'type' => 'integer', 'minimum' => 1 ],
 				'provider'          => [
 					'required' => false,
@@ -728,12 +730,13 @@ class DiviOps_Agent {
 					'enum'     => [ 'auto', 'tsf', 'rank_math' ],
 					'default'  => 'auto',
 				],
+				'expected_text_context' => [ 'required' => false, 'type' => 'string', 'pattern' => '^sha256:[a-f0-9]{64}$' ],
 				'expected_checksum' => [
 					'required' => true,
 					'type'     => 'string',
 					'pattern'  => '^sha256:[a-f0-9]{64}$',
 				],
-				'restore_snapshot_id' => [ 'required' => false, 'type' => 'string', 'pattern' => '^(?:rm|tsf)_[a-f0-9-]{36}$' ],
+				'restore_snapshot_id' => [ 'required' => false, 'type' => 'string', 'pattern' => '^(?:rm|tsf|tsft)_[a-f0-9-]{36}$' ],
 				'changes'            => [
 					'required' => false,
 					'type'     => 'array',
