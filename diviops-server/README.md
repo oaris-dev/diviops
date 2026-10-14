@@ -512,7 +512,10 @@ The server exposes **100 always-on tools** across the categories below. Each cat
 Source candidate: `diviops_scf_text_value_update` is a Free REST writer, separate
 from the existing SCF CLI schema tools. It previews by default and updates one
 existing applicable top-level text field on an editable post, with exact expected
-value, SCF 6.9.4 field validation and persisted value/reference readback. It requires
+value, field validation and persisted value/reference readback. It supports exactly
+SCF 6.9.4 and 6.9.5 based on source review; runtime evidence remains limited to the
+recorded one-field MCP fixture on 6.9.4. The 6.9.5 extension is source-only and
+unpublished. It requires
 the precise Free plugin capability, not Pro or WP-CLI. Empty/literal-"0", multiline,
 markup, nested/conditional fields and schema changes are outside its initial
 scope. See the separately supplied DiviOps SCF skill's text-value contract

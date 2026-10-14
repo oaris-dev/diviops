@@ -8,6 +8,13 @@ Divi is a registered trademark of Elegant Themes, Inc. DiviOps Agent is not affi
 
 > **Don't use this plugin standalone** — it's the WordPress side of a two-piece suite; install + configure the [DiviOps MCP Server](../../../diviops-server/) next.
 
+## 1.5.44 release note
+
+- Exact-set preset cleanup now accepts present SQL NULL metadata as known-empty evidence without changing stored values. Missing fields, invalid identities, references, defaults, stale checksums and scan limits still refuse.
+- Includes source-reviewed support for SCF 6.9.5 and Rank Math 1.0.280 alongside the existing supported versions. Rank Math recovery remains bound to its original provider version; cross-version restore stops for inspection.
+
+No new cleanup permission or automatic deletion is introduced. Review a fresh exact-set preview before applying with its registry checksum.
+
 ## 1.5.43 candidate release note
 
 - Adds persistent conditional recovery for supported The SEO Framework title and description edits, preserving existing indexing behavior.

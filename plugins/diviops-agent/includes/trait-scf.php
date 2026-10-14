@@ -5,6 +5,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 trait DiviOps_Agent_SCF {
+	private static $scf_text_supported_versions = [ '6.9.4', '6.9.5' ];
 	private static function scf_text_provider_ready(): bool {
 		$plugin  = 'secure-custom-fields/secure-custom-fields.php';
 		$active  = (array) get_option( 'active_plugins', [] );
@@ -17,7 +18,7 @@ trait DiviOps_Agent_SCF {
 				return false;
 			}
 		}
-		return class_exists( 'SCF\\Meta\\Post', false ) && '6.9.4' === acf_get_setting( 'version' );
+		return class_exists( 'SCF\\Meta\\Post', false ) && in_array( acf_get_setting( 'version' ), self::$scf_text_supported_versions, true );
 	}
 
 	private static function scf_text_plain( $value ): bool {
@@ -39,7 +40,7 @@ trait DiviOps_Agent_SCF {
 			return self::envelope_error( 'scf.unsupported_post', 'Only an ordinary existing post or CPT record is supported.', null, 422 );
 		}
 		if ( ! self::scf_text_provider_ready() ) {
-			return self::envelope_error( 'scf.unsupported_provider', 'This writer requires active SCF 6.9.4 and its field APIs.', 'Other SCF/ACF versions are not qualified by this contract.', 412 );
+			return self::envelope_error( 'scf.unsupported_provider', 'This writer requires active SCF 6.9.4 or 6.9.5 and its field APIs.', 'Only these exact source-reviewed versions are supported. Inspect provider identity and API readiness; do not downgrade automatically.', 412, [ 'supported_versions' => self::$scf_text_supported_versions, 'detected_version' => function_exists( 'acf_get_setting' ) ? acf_get_setting( 'version' ) : null ] );
 		}
 		$field = acf_get_field( $key );
 		if ( ! is_array( $field ) || $key !== ( $field['key'] ?? null ) || 'text' !== ( $field['type'] ?? null )
@@ -57,7 +58,11 @@ trait DiviOps_Agent_SCF {
 			|| ! acf_get_field_group_visibility( $group, [ 'post_id' => $post_id, 'post_type' => $post->post_type ] ) ) {
 			return self::envelope_error( 'scf.inapplicable_field', 'The field must belong directly to an active group applicable to this post.', null, 422 );
 		}
-		return [ 'field' => $field, 'group' => $group ];
+		return [ 'field' => $field, 'group' => $group, 'provider' => [
+			'id' => 'scf', 'version' => acf_get_setting( 'version' ),
+			'version_support' => [ 'supported' => self::$scf_text_supported_versions, 'source_assessed' => self::$scf_text_supported_versions, 'runtime_verified' => [ '6.9.4' ] ],
+			'verification_scope' => 'One existing text-value MCP fixture; not full native form-save equivalence.',
+		] ];
 	}
 
 	private static function scf_text_persisted( int $post_id, string $name ): array {
@@ -120,7 +125,7 @@ trait DiviOps_Agent_SCF {
 			if ( $fresh !== $context || self::scf_text_persisted( $post_id, $field['name'] ) !== $before ) {
 				return self::envelope_error( 'scf.conflict', 'Field context or stored state changed during review.', 'Review again; no provider update was attempted.', 409 );
 			}
-			$data = [ 'post_id' => $post_id, 'field_key' => $key, 'dry_run' => $dry_run, 'noop' => $noop, 'write_applied' => false ];
+			$data = [ 'provider' => $context['provider'], 'post_id' => $post_id, 'field_key' => $key, 'dry_run' => $dry_run, 'noop' => $noop, 'write_applied' => false ];
 			if ( $dry_run ) {
 				$data['plan'] = [
 					'summary' => $noop ? 'Text is unchanged.' : 'Update one existing SCF text value.',

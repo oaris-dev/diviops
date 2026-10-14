@@ -9,6 +9,11 @@ Policy:
 - Keep entries customer-facing. Avoid internal issue numbers unless they are needed to explain a user-visible change.
 - Do not include secrets, credentials, customer data, or environment-specific URLs.
 
+## 1.5.44
+
+- Exact-set preset cleanup now accepts present SQL NULL metadata as known-empty evidence without changing stored values. Missing fields, invalid identities, references, defaults, stale checksums and scan limits still refuse.
+- Includes source-reviewed support for SCF 6.9.5 and Rank Math 1.0.280 alongside the existing supported versions. Rank Math recovery remains bound to its original provider version; cross-version restore stops for inspection.
+
 ## 1.5.43
 
 - Adds persistent conditional recovery for supported The SEO Framework title and description edits, preserving existing indexing behavior.

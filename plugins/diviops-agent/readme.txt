@@ -3,7 +3,7 @@ Contributors: diviops
 Tags: divi, mcp, ai, rest-api, site-builder
 Requires at least: 6.5
 Tested up to: 7.1
-Stable tag: 1.5.43
+Stable tag: 1.5.44
 Requires PHP: 7.4
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -18,14 +18,18 @@ DiviOps is in public beta. It targets Divi 5 today, with WordPress as the wider 
 
 = What you can do with Free =
 
-* Build and update native Divi page content that remains editable in the Visual Builder.
+* Build and update native Divi pages that remain editable in the Visual Builder.
 * Inspect module schemas and validate block structures before applying supported changes.
-* Inspect and manage supported Divi presets and design variables, including preset audits.
+* Reuse your design system: inspect presets and variables, and compose supported group presets into module presets.
+* Reduce preset clutter: preview an exact selection of unused presets for removal, with fresh reference checks before applying the change.
+* Refine supported page backgrounds and manage named blocks of site-wide Custom CSS while preserving unrelated settings.
+* Review and update a page's SEO title and description with supported Rank Math or The SEO Framework setups, including supported recovery and operation-outcome checks.
 * Work with supported Divi Library and Theme Builder operations.
-* Inspect site capabilities and diagnose the connected setup.
-* Inspect saved layout snapshots and use supported guarded restore operations. These are not full-site backups.
+* Inspect site capabilities, diagnose the connected setup and use supported guarded layout restores. Layout snapshots are not full-site backups.
 
-Available operations depend on your installed versions, WordPress permissions and the capabilities reported by the connected site. A successful structural check does not replace a visual review.
+Available operations depend on your installed versions, WordPress permissions and the capabilities reported by the connected site. A successful structural check does not replace a visual review. Preset reference checks have bounded coverage; review uncertain or incomplete results before removing anything.
+
+For the SEO text and recovery workflow, use Free Agent 1.5.43 or later with a compatible MCP server (1.5.72 or later). The tested baseline is The SEO Framework 5.1.4 or Rank Math 1.0.279 in the Classic editor; other provider versions and editors are not covered by that qualification. Single-page SEO work remains Free. Research and analytics come from separate tools connected to your AI client.
 
 = Bring your project context =
 
@@ -105,6 +109,11 @@ No. Free includes the core site-authoring bridge described above. Selected advan
 2. An agent-authored page open in the Divi 5 Visual Builder, with the native Heading module content controls available for continued editing. Divi is a separate required product.
 
 == Changelog ==
+
+= 1.5.44 =
+
+* Exact-set preset cleanup now accepts present SQL NULL metadata as known-empty evidence without changing stored values. Missing fields, invalid identities, references, defaults, stale checksums and scan limits still refuse.
+* Includes source-reviewed support for SCF 6.9.5 and Rank Math 1.0.280 alongside the existing supported versions. Rank Math recovery remains bound to its original provider version; cross-version restore stops for inspection.
 
 = 1.5.43 =
 
@@ -320,6 +329,10 @@ No. Free includes the core site-authoring bridge described above. Selected advan
 * Keeps `Stable tag` aligned with the plugin header version.
 
 == Upgrade Notice ==
+
+= 1.5.44 =
+
+Fixes cleanup previews on sites with optional SQL NULL metadata. No metadata normalization or automatic preset deletion. Existing deletion safeguards remain required.
 
 = 1.5.43 =
 Adds Free text recovery and operation-outcome evidence for supported SEO providers. Pair with MCP 1.5.72 for the new transport parameters; Pro rollout additionally requires compatible Pro capabilities. Existing indexing behavior and global compatibility floors are unchanged.

@@ -1821,7 +1821,14 @@ trait DiviOps_Agent_Preset {
 					$diagnostic[ $label ] = (int) $id;
 				}
 				if ( $invalid_identity ) self::preset_delete_evidence_error( $diagnostic, 'invalid_identity', 'Incomplete post evidence row.' );
-				if ( ! isset( $row[ $column ] ) || ! is_string( $row[ $column ] ) ) self::preset_delete_evidence_error( $diagnostic, 'invalid_row', 'Incomplete post evidence row.' );
+				if ( ! array_key_exists( $column, $row ) ) self::preset_delete_evidence_error( $diagnostic, 'invalid_row', 'Incomplete post evidence row.' );
+				// WordPress permits SQL NULL metadata (e.g. Brevo's optional push settings).
+				// Count this known-empty value without changing storage or skipping later rows.
+				if ( 'postmeta' === $scope && null === $row[ $column ] ) {
+					$coverage[ $scope ]++;
+					continue;
+				}
+				if ( ! is_string( $row[ $column ] ) ) self::preset_delete_evidence_error( $diagnostic, 'invalid_row', 'Incomplete post evidence row.' );
 				$diagnostic['stage'] = 'content';
 				$content = $row[ $column ];
 				$coverage['bytes'] += strlen( $content );
