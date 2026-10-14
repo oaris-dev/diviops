@@ -549,6 +549,7 @@ trait DiviOps_Agent_SEO {
 		$code = $result['error']; unset( $result['ok'], $result['error'] );
 		$status = 'forbidden' === $code ? 403 : ( 'not_found' === $code ? 404 : ( in_array( $code, [ 'metadata_drift', 'recovery_conflict', 'snapshot_version_mismatch', 'busy', 'operation_conflict', 'operation_unavailable' ], true ) ? 409 : 400 ) );
 		if ( in_array( $code, [ 'write_failed', 'snapshot_failed', 'provider_runtime_error' ], true ) ) { $status = 500; }
+		if ( 'provider_incompatible' === $code ) { return self::envelope_error( 'seo.' . $code, 'The provider version or API setup is outside the supported contract.', 'Inspect compatibility_reason and version_support. Request assessment of an unreviewed version; do not downgrade or override automatically.', $status, $result ); }
 		if ( 'snapshot_version_mismatch' === $code ) { return self::envelope_error( 'seo.' . $code, 'The recovery record belongs to a different provider version.', 'Stop and inspect the original record and current metadata. Cross-version restore is unsupported; do not downgrade or retry automatically.', $status, $result ); }
 		return self::envelope_error( 'seo.' . $code, 'SEO operation refused or incomplete: ' . $code . '.', 'Read current metadata before retrying. Retain snapshot_id for explicit restore; never blindly retry a failed write.', $status, $result );
 	}

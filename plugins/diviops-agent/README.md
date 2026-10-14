@@ -8,6 +8,12 @@ Divi is a registered trademark of Elegant Themes, Inc. DiviOps Agent is not affi
 
 > **Don't use this plugin standalone** — it's the WordPress side of a two-piece suite; install + configure the [DiviOps MCP Server](../../../diviops-server/) next.
 
+## 1.5.45 candidate release note
+
+- Centralizes exact reviewed Rank Math and SCF version support and reports why a provider is unavailable, distinguishing unreviewed versions from inactive identity or missing APIs/setup.
+- Aligns bounded verification evidence for Rank Math 1.0.279/1.0.280 and SCF 6.9.4/6.9.5. These are the existing supported sets; no future-version range or bypass is added.
+- Preserves permission, checksum, version-drift and recovery guards. Provider-backed reads and previews remain blocked on unreviewed versions. TSF behavior is unchanged.
+
 ## 1.5.44 release note
 
 - Exact-set preset cleanup now accepts present SQL NULL metadata as known-empty evidence without changing stored values. Missing fields, invalid identities, references, defaults, stale checksums and scan limits still refuse.
@@ -65,7 +71,7 @@ The plugin includes a WordPress.org-format `readme.txt` and a plugin-local `chan
 
 Current metadata policy:
 
-- `Stable tag` matches the plugin header `Version` (`1.5.35`).
+- `Stable tag` matches the plugin header `Version` (`1.5.45` for this candidate).
 - `Requires at least` and `Requires PHP` mirror the main plugin header.
 - `Tested up to` is evidence-based for this repo/substrate and should not be raised until the Free plugin is actually tested on that WordPress version.
 - External-service/authentication disclosure must mention the separately distributed npm MCP server, WordPress Application Passwords, and the rule that secrets do not belong in issues, examples, screenshots, or repo files.

@@ -4,21 +4,23 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
+require_once __DIR__ . '/class-provider-support.php';
 trait DiviOps_Agent_SCF {
-	private static $scf_text_supported_versions = [ '6.9.4', '6.9.5' ];
-	private static function scf_text_provider_ready(): bool {
+	private static $scf_text_supported_versions = DiviOps_Provider_Support::SCF;
+	private static function scf_text_provider_status(): string {
 		$plugin  = 'secure-custom-fields/secure-custom-fields.php';
 		$active  = (array) get_option( 'active_plugins', [] );
 		$network = (array) get_site_option( 'active_sitewide_plugins', [] );
 		if ( ! in_array( $plugin, $active, true ) && ! array_key_exists( $plugin, $network ) ) {
-			return false;
+			return 'provider_inactive_or_missing';
 		}
 		foreach ( [ 'acf_get_setting', 'acf_get_field', 'acf_get_field_group', 'acf_get_field_group_visibility', 'acf_validate_value', 'update_field' ] as $function ) {
 			if ( ! function_exists( $function ) ) {
-				return false;
+				return 'provider_api_unavailable';
 			}
 		}
-		return class_exists( 'SCF\\Meta\\Post', false ) && in_array( acf_get_setting( 'version' ), self::$scf_text_supported_versions, true );
+		if ( ! class_exists( 'SCF\\Meta\\Post', false ) ) { return 'provider_api_unavailable'; }
+		return in_array( acf_get_setting( 'version' ), self::$scf_text_supported_versions, true ) ? 'ready' : 'version_unreviewed';
 	}
 
 	private static function scf_text_plain( $value ): bool {
@@ -39,8 +41,9 @@ trait DiviOps_Agent_SCF {
 			|| preg_match( '/^(acf-|et_|wp_)/', $post->post_type ) || in_array( $post->post_status, [ 'trash', 'auto-draft' ], true ) ) {
 			return self::envelope_error( 'scf.unsupported_post', 'Only an ordinary existing post or CPT record is supported.', null, 422 );
 		}
-		if ( ! self::scf_text_provider_ready() ) {
-			return self::envelope_error( 'scf.unsupported_provider', 'This writer requires active SCF 6.9.4 or 6.9.5 and its field APIs.', 'Only these exact source-reviewed versions are supported. Inspect provider identity and API readiness; do not downgrade automatically.', 412, [ 'supported_versions' => self::$scf_text_supported_versions, 'detected_version' => function_exists( 'acf_get_setting' ) ? acf_get_setting( 'version' ) : null ] );
+		$provider_status = self::scf_text_provider_status();
+		if ( 'ready' !== $provider_status ) {
+			return self::envelope_error( 'scf.unsupported_provider', 'This writer requires an explicitly supported active SCF version and its field APIs.', 'Only these exact source-reviewed versions are supported. Inspect provider identity and API readiness; do not downgrade automatically.', 412, [ 'compatibility_reason' => $provider_status, 'version_support' => DiviOps_Provider_Support::evidence( 'scf' ), 'supported_versions' => self::$scf_text_supported_versions, 'detected_version' => function_exists( 'acf_get_setting' ) ? acf_get_setting( 'version' ) : null ] );
 		}
 		$field = acf_get_field( $key );
 		if ( ! is_array( $field ) || $key !== ( $field['key'] ?? null ) || 'text' !== ( $field['type'] ?? null )
@@ -60,8 +63,8 @@ trait DiviOps_Agent_SCF {
 		}
 		return [ 'field' => $field, 'group' => $group, 'provider' => [
 			'id' => 'scf', 'version' => acf_get_setting( 'version' ),
-			'version_support' => [ 'supported' => self::$scf_text_supported_versions, 'source_assessed' => self::$scf_text_supported_versions, 'runtime_verified' => [ '6.9.4' ] ],
-			'verification_scope' => 'One existing text-value MCP fixture; not full native form-save equivalence.',
+			'version_support' => array_merge( DiviOps_Provider_Support::evidence( 'scf' ), [ 'runtime_verified' => DiviOps_Provider_Support::SCF_NATIVE ] ),
+			'verification_scope' => DiviOps_Provider_Support::evidence( 'scf' )['verification_scope'],
 		] ];
 	}
 

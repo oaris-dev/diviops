@@ -3,7 +3,7 @@ Contributors: diviops
 Tags: divi, mcp, ai, rest-api, site-builder
 Requires at least: 6.5
 Tested up to: 7.1
-Stable tag: 1.5.44
+Stable tag: 1.5.45
 Requires PHP: 7.4
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -29,7 +29,7 @@ DiviOps is in public beta. It targets Divi 5 today, with WordPress as the wider 
 
 Available operations depend on your installed versions, WordPress permissions and the capabilities reported by the connected site. A successful structural check does not replace a visual review. Preset reference checks have bounded coverage; review uncertain or incomplete results before removing anything.
 
-For the SEO text and recovery workflow, use Free Agent 1.5.43 or later with a compatible MCP server (1.5.72 or later). The tested baseline is The SEO Framework 5.1.4 or Rank Math 1.0.279 in the Classic editor; other provider versions and editors are not covered by that qualification. Single-page SEO work remains Free. Research and analytics come from separate tools connected to your AI client.
+For the SEO text and recovery workflow, use Free Agent 1.5.43 or later with a compatible MCP server (1.5.72 or later). Bounded native evidence covers The SEO Framework 5.1.4 and Rank Math 1.0.279/1.0.280; separate SCF text-field evidence covers 6.9.4/6.9.5. Evidence is limited to the recorded fixtures, not arbitrary extensions or other editors. Single-page SEO work remains Free. Research and analytics come from separate tools connected to your AI client.
 
 = Bring your project context =
 
@@ -109,6 +109,12 @@ No. Free includes the core site-authoring bridge described above. Selected advan
 2. An agent-authored page open in the Divi 5 Visual Builder, with the native Heading module content controls available for continued editing. Divi is a separate required product.
 
 == Changelog ==
+
+= 1.5.45 =
+
+* Centralizes exact reviewed Rank Math and SCF version support and reports why a provider is unavailable, distinguishing unreviewed versions from inactive identity or missing APIs/setup.
+* Aligns bounded verification evidence for Rank Math 1.0.279/1.0.280 and SCF 6.9.4/6.9.5. These are the existing supported sets; no future-version range or bypass is added.
+* Preserves permission, checksum, version-drift and recovery guards. Provider-backed reads and previews remain blocked on unreviewed versions. TSF behavior is unchanged.
 
 = 1.5.44 =
 
@@ -329,6 +335,10 @@ No. Free includes the core site-authoring bridge described above. Selected advan
 * Keeps `Stable tag` aligned with the plugin header version.
 
 == Upgrade Notice ==
+
+= 1.5.45 =
+
+Improves exact-version support diagnostics and scoped verification evidence. No new provider versions, automatic downgrade or override. Reconnect MCP after supported updates.
 
 = 1.5.44 =
 

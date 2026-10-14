@@ -8,7 +8,18 @@ The Node.js MCP server inside the DiviOps harness. It gives Claude Code, Codex, 
 Claude Code <-> MCP Server (stdio) <-> WordPress REST API <-> DiviOps Agent plugin
 ```
 
-## 1.5.72 candidate release note
+## MCP 1.5.73 source candidate
+
+Aligns Rank Math and SCF tool descriptions and current verification guidance with
+the reviewed exact version sets. No new tools, schemas or dispatch behavior.
+Free 1.5.45 carries improved provider diagnostics; Pro 1.0.19-beta includes the
+pending Rank Math controller extension. Compatibility remains capability-based,
+and component labels alone do not establish installed support. These candidate
+artifacts require separate delivery approval. Restart MCP after selecting a
+supported runtime or target update; reconnecting an older binary retains its
+older tool schema.
+
+## 1.5.72 historical release note
 
 Adds five capability-gated Pro SEO text workflow tools: plan, advance, status/report, recovery plan and recover. Existing Free SEO tools gain bounded operation correlation and exact outcome lookup. Pair with Free 1.5.43 and Pro 1.0.18-beta for the complete reviewed workflow; availability follows capabilities, not a shared version floor.
 
@@ -509,19 +520,20 @@ The server exposes **100 always-on tools** across the categories below. Each cat
 | WP-CLI passthrough | Escape hatch for site ops | `meta_wp_cli` |
 | Cache + meta | Connection probe, identity, icons, cache flush | `meta_*` |
 
-Source candidate: `diviops_scf_text_value_update` is a Free REST writer, separate
+`diviops_scf_text_value_update` is a Free REST writer, separate
 from the existing SCF CLI schema tools. It previews by default and updates one
 existing applicable top-level text field on an editable post, with exact expected
 value, field validation and persisted value/reference readback. It supports exactly
-SCF 6.9.4 and 6.9.5 based on source review; runtime evidence remains limited to the
-recorded one-field MCP fixture on 6.9.4. The 6.9.5 extension is source-only and
-unpublished. It requires
+SCF 6.9.4 and 6.9.5. The 6.9.5 extension shipped in Free 1.5.44 (GitHub v1.5.86).
+Separate bounded verification passed the 6.9.4 → 6.9.5 upgrade, one text-field
+write, native save/reopen and restoration. It requires
 the precise Free plugin capability, not Pro or WP-CLI. Empty/literal-"0", multiline,
 markup, nested/conditional fields and schema changes are outside its initial
 scope. See the separately supplied DiviOps SCF skill's text-value contract
 for exact inputs and failure semantics. No full native-form equivalence, atomic
-CAS, SCF snapshot backup or automatic rollback/retry. The retained one-field
-local proof does not qualify the new candidate packages or another runtime.
+CAS, SCF snapshot backup or automatic rollback/retry. These provider fixtures do not qualify another runtime. The exact Free 1.5.44
+ZIP separately passed its Free-alone package gate; see the
+[verification matrix](../docs/provider-support-evidence-29.md).
 
 Use `diviops_meta_info` as the S0 preflight before dogfooding or product work. It returns `server_version`, a numeric `tool_count`, a `tools` catalog summary (`registered_total`, always-on count, Pro possible/registered counts by target), `plugins` version records for `diviops-agent`, `diviops-agent-pro`, FluentCart, and FluentCart Pro when available, plus the existing handshake and slice state. In regular npm/stdio sessions, successfully observed plugin, module, capability, and registered-tool fields are the immutable handshake snapshot that built the session catalog. The additive `startup_capture` record supplies its non-secret timestamp, exact covered evidence, independent-component compatibility rule, and deterministic reconnect guidance. A failed handshake instead reports `startup_unavailable`, a bounded `startup_handshake_failed` reason class, and no covered target evidence. After a supported plugin, theme, or target change, reconnect or restart MCP before treating `meta_info`, the registered tools, or capability gates as current. Live read tools such as `diviops_fc_status` remain separate current observations; they do not rewrite startup registry truth.
 
@@ -806,7 +818,7 @@ or second pre-restore snapshot in this MVP.
 `diviops_seo_metadata_update` accepts fixed semantic fields and requires the
 checksum from `diviops_seo_metadata_get`. TSF retains its title/description
 set/clear contract and request-local rollback. The Rank Math
-1.0.279 adapter adds `canonical_url` set/clear and `noindex` set with the string
+adapter supports exactly 1.0.279 and 1.0.280 and adds `canonical_url` set/clear and `noindex` set with the string
 value `noindex`, on pages only. It requires per-page edit permission and Rank
 Math general/advanced metadata capabilities. Other robots writes are refused.
 
@@ -837,13 +849,15 @@ TSF retains a custom canonical under noindex and suppresses generated fallback.
 Homepage canonical settings can override a page value. Typed recovery records
 have no automatic expiry and require operator cleanup.
 
-Pair MCP 1.5.71 with Free Agent 1.5.42 and restart the server. Native Classic
+Historical indexing qualification used MCP 1.5.71 with Free Agent 1.5.42. Native Classic
 editor save/reopen, frontend canonical/robots, primed sitemap exclusion and
 restoration, defaults drift and permission refusal passed on WordPress 7.1,
 PHP 8.3 and Divi 5.13.1 for Rank Math 1.0.279 and TSF 5.1.4. TSF additionally
 passed exact empty/zero/force-index restore and homepage/scheme checks. Block
 editor, other provider versions, external cache eviction and MCP stdio runtime
-are outside this qualification. Rank Math title/description set/clear uses the same
+are outside that historical qualification. A separate 2026-10-14 run passed the
+bounded Rank Math 1.0.279 → 1.0.280 upgrade and metadata/indexing/recovery workflows;
+see the [current matrix](../docs/provider-support-evidence-29.md). Rank Math title/description set/clear uses the same
 plain-text safety checks, top-level checksum and typed recovery. Its separate native
 qualification passed both page save/reopen paths, frontend output, clear/default
 fallback, exact absent/empty/template recovery and legacy-record compatibility. Refresh checksums after updating;

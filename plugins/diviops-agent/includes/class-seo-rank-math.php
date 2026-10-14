@@ -2,9 +2,10 @@
 /** Fixed-field Rank Math adapter. No generic metadata or abilities proxy. */
 if ( ! defined( 'ABSPATH' ) ) { exit; }
 
+require_once __DIR__ . '/class-provider-support.php';
 final class DiviOps_SEO_Rank_Math {
-	const SUPPORTED_VERSIONS = [ '1.0.279', '1.0.280' ];
-	const NATIVE_VERIFIED_VERSIONS = [ '1.0.279' ];
+	const SUPPORTED_VERSIONS = DiviOps_Provider_Support::RANK_MATH;
+	const NATIVE_VERIFIED_VERSIONS = DiviOps_Provider_Support::RANK_MATH_NATIVE;
 	const PLUGIN = 'seo-by-rank-math/rank-math.php';
 	const RECOVERY_PREFIX = 'diviops_seo_rm_';
 	private const KEYS = [ 'canonical_url' => 'rank_math_canonical_url', 'noindex' => 'rank_math_robots', 'seo_title' => 'rank_math_title', 'meta_description' => 'rank_math_description' ];
@@ -29,7 +30,8 @@ final class DiviOps_SEO_Rank_Math {
 			'adapter' => 'source_assessed', 'runtime_verified' => $ready && in_array( $version, self::NATIVE_VERIFIED_VERSIONS, true ),
 			'fields' => array_keys( self::KEYS ),
 			'capabilities' => [ 'text_operation' => [ 'available' => $ready, 'lookup' => 'seo_metadata_get.operation_key', 'key_scope' => 'site_provider', 'runtime_verified' => false ], 'canonical_url' => [ 'read', 'set', 'clear' ], 'noindex' => [ 'read', 'set_noindex' ], 'seo_title' => [ 'read', 'set', 'clear' ], 'meta_description' => [ 'read', 'set', 'clear' ], 'operation_restore' => true ],
-			'version_support' => [ 'supported' => self::SUPPORTED_VERSIONS, 'source_assessed' => self::SUPPORTED_VERSIONS, 'native_verified' => self::NATIVE_VERIFIED_VERSIONS ],
+			'version_support' => DiviOps_Provider_Support::evidence( 'rank_math' ),
+			'compatibility_reason' => ! $active ? 'provider_inactive_or_missing' : ( ! $compatible ? 'version_unreviewed' : ( ! $ready ? 'provider_api_or_setup_unavailable' : 'ready' ) ),
 		];
 	}
 
@@ -292,6 +294,10 @@ final class DiviOps_SEO_Rank_Math {
 	}
 	private static function failure( Throwable $error ): array {
 		$known = [ 'not_found', 'forbidden', 'provider_absent', 'provider_incompatible', 'post_type_unsupported', 'stored_shape_unsupported', 'invalid_input', 'invalid_url', 'field_unsupported', 'field_operation_unsupported', 'metadata_drift', 'snapshot_unavailable', 'snapshot_version_mismatch', 'snapshot_failed', 'recovery_conflict', 'busy', 'operation_conflict', 'operation_unavailable', 'operation_scope_unsupported' ];
-		return [ 'ok' => false, 'error' => in_array( $error->getMessage(), $known, true ) ? $error->getMessage() : 'provider_runtime_error' ];
+		$result = [ 'ok' => false, 'error' => in_array( $error->getMessage(), $known, true ) ? $error->getMessage() : 'provider_runtime_error' ];
+		if ( 'provider_incompatible' === $result['error'] ) {
+			$result['compatibility'] = [ 'version' => (string) RANK_MATH_VERSION, 'version_support' => DiviOps_Provider_Support::evidence( 'rank_math' ), 'compatibility_reason' => in_array( (string) RANK_MATH_VERSION, self::SUPPORTED_VERSIONS, true ) ? 'provider_api_or_setup_unavailable' : 'version_unreviewed' ];
+		}
+		return $result;
 	}
 }
