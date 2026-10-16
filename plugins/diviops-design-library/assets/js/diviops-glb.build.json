@@ -1,0 +1,19 @@
+{
+  "profile": "diviops-static-glb-v1",
+  "package": "three",
+  "version": "0.186.1",
+  "coreGlobal": "THREE",
+  "coreSha256": "da0c38531465535e02e69a98719d3c4f107ab1ac34afc323d8bfc371fec736ce",
+  "sourceIntegrity": "sha512-blFeqb49wRCSGUGj7gtpfnSGHy2lwDk94RhUmS1c/hTby70kvChbWpkJ4Pm1390LqzzvTmzgXKHPEafJwCb8jA==",
+  "buildTool": "esbuild@0.28.2",
+  "bytes": 67697,
+  "sha256": "1b46f2eba1b3e4bd0924c626954ef2237958ff96f32bec6d1561be622fc924bf",
+  "inputs": {
+    "diviops-existing-core:three": "b2a5672c6f97847843011f989345b4ba82ef1d77e43bb2d83803b6f04ed96378",
+    "glb/entry.mjs": "cd347ff8f96b7f6cfea1adfb449bc2cb7a54e6f3ae679be20cc36797f9127fd5",
+    "glb/profile.mjs": "3b513016da2f844e1423f63fba94c6a1289382d5f6b157443004762461179e44",
+    "node_modules/three/examples/jsm/loaders/GLTFLoader.js": "131c0f78c01d19368ae495caa65b3adaa10487810a36a05bb5901b769a35ac16",
+    "node_modules/three/examples/jsm/utils/BufferGeometryUtils.js": "9fb63427ce6641fa14fd0baff9cc4d1b5f9c3d85fd084bf2e90e803c44ec1797",
+    "node_modules/three/examples/jsm/utils/SkeletonUtils.js": "b1632a703206c3d830de9fcbe515696770d04b71a15ee6b50afa6d2c3298c86f"
+  }
+}

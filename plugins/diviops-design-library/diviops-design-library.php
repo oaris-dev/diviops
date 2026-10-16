@@ -3,7 +3,7 @@
  * Plugin Name: DiviOps Design Library
  * Plugin URI: https://github.com/oaris-dev/diviops
  * Description: Modern design effects for Divi 5 with Three.js, CSS animations, and reusable design elements.
- * Version: 1.0.0-beta.24
+ * Version: 1.0.0-beta.25
  * Author: oaris.de
  * Author URI: https://oaris.de
  * Requires at least: 6.0
@@ -19,12 +19,12 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 class DiviOps_Design_Library {
 
-	const VERSION = '1.0.0-beta.24';
+	const VERSION = '1.0.0-beta.25';
 
 	/**
 	 * Three.js version to bundle.
 	 */
-	const THREEJS_VERSION = 'r128';
+	const THREEJS_VERSION = '0.186.1';
 
 	/**
 	 * Initialize the plugin.
@@ -41,12 +41,22 @@ class DiviOps_Design_Library {
 	public static function register_scripts() {
 		$base_url = plugin_dir_url( __FILE__ ) . 'assets/js/';
 
-		// Three.js — only loaded when needed.
+		// Pinned official core, reproducibly bundled as the classic THREE global.
+		// Keep synchronous script ordering; module/defer would change Code consumers.
 		wp_register_script(
 			'threejs',
 			$base_url . 'three.min.js',
 			[],
 			self::THREEJS_VERSION,
+			[ 'in_footer' => true ]
+		);
+
+		// Optional static GLB profile; dependency reuses the existing core instance.
+		wp_register_script(
+			'diviops-glb',
+			$base_url . 'diviops-glb.min.js',
+			[ 'threejs' ],
+			self::THREEJS_VERSION . '-static-v1',
 			[ 'in_footer' => true ]
 		);
 
@@ -108,6 +118,12 @@ class DiviOps_Design_Library {
 		// Three.js only when explicitly requested.
 		if ( get_post_meta( $post_id, '_divi_design_threejs', true ) === '1' ) {
 			wp_enqueue_script( 'threejs' );
+		}
+
+		// No content sniffing for models: require this exact profile opt-in.
+		if ( get_post_meta( $post_id, '_divi_design_glb', true ) === 'static-v1'
+			&& ! ( function_exists( 'et_fb_is_enabled' ) && et_fb_is_enabled() ) ) {
+			wp_enqueue_script( 'diviops-glb' );
 		}
 
 		// Also check if the content contains Three.js markers.
