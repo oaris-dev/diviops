@@ -1,6 +1,6 @@
 ---
 name: diviops-divi-5
-description: Use this skill when users want to build, edit, or design pages and layouts on Divi 5 WordPress sites. Triggers include creating landing pages, hero sections, testimonial cards, pricing tables, feature grids, blog listing pages with post loops and pagination; adding or modifying sections on existing pages by page ID; setting up design systems with tokens and presets; theme builder templates for headers, footers, and post/page body layouts; mega menus and site navigation; saving to or loading from the Divi library; auditing or cleaning up presets. Handles animations, hover effects, responsive design, and dynamic content. Also covers special effects like WebGL shader backgrounds and advanced CSS animations via the DiviOps Design Library plugin. Do NOT use for custom PHP/plugins, child theme development, standalone CSS authoring, SQL queries, WooCommerce configuration, SEO setup, standalone Three.js projects without WordPress, or non-Divi builders like Elementor.
+description: Use this skill when users want to build, edit, or design pages and layouts on Divi 5 WordPress sites. Triggers include creating landing pages, hero sections, testimonial cards, pricing tables, feature grids, blog listing pages with post loops and pagination; adding or modifying sections on existing pages by page ID; setting up design systems with tokens and presets; theme builder templates for headers, footers, and post/page body layouts; mega menus and site navigation; saving to or loading from the Divi library; auditing or cleaning up presets. Handles animations, hover effects, responsive design, and dynamic content. Also covers special effects like WebGL shader backgrounds and advanced CSS animations via the DiviOps Visuals plugin. Do NOT use for custom PHP/plugins, child theme development, standalone CSS authoring, SQL queries, WooCommerce configuration, SEO setup, standalone Three.js projects without WordPress, or non-Divi builders like Elementor.
 compatibility: Requires diviops-mcp MCP server connected to a WordPress site with Divi 5 and the diviops-agent plugin active.
 metadata:
   author: oaris-dev
@@ -313,7 +313,7 @@ See [design-guide.md](references/design-guide.md) for copy-paste JSON patterns:
 - Gradient hero (CSS animation), marquee (continuous scroll)
 
 For mega menus: [mega-menu-pattern.md](references/mega-menu-pattern.md)
-For WebGL shaders and DiviOps Design Library effects: [design-effects.md](references/design-effects.md)
+For WebGL shaders and DiviOps Visuals effects: [design-effects.md](references/design-effects.md)
 
 ## Presets
 

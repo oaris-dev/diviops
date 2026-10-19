@@ -55,7 +55,7 @@ Each example explains the implementation and review steps. External research ser
 | **`@diviops/mcp-server`** | Connects MCP clients to the WordPress plugin | `npx -y --package @diviops/mcp-server diviops-mcp` |
 | **`diviops-divi-5`** Free skill | Native block formats, Tier 1 attribute guidance, design patterns and tool references | `skills/diviops-divi-5/`; see [skill installation](#4-load-the-diviops-divi-5-skill) |
 | **`diviops`** harness primer | Shared conventions for the connected agent workflow | `skills/diviops/` |
-| **`diviops-design-library`** plugin | Optional visual effects, including CSS animations, gradients, glass effects and Three.js shaders | `diviops-design-library.zip` at the repo root |
+| **DiviOps Visuals** (`diviops-design-library`) plugin | Optional visual effects, including CSS animations, gradients, glass effects and Three.js shaders | `diviops-design-library.zip` at the repo root |
 
 Core SCF MCP tools are Free. Pro adds extended Divi guidance, the deeper SCF skill guide and supported paid workflows through the separate Pro plugin. **Pro packages are not included in this public Free repository.** See [Free vs Pro](#free-vs-pro) or [compare plans](https://diviops.com/pricing/).
 
@@ -231,7 +231,7 @@ DiviOps is a harness. The Free distribution carries the core Divi authoring surf
 The Free distribution (`oaris-dev/diviops`) carries the core DiviOps execution surface:
 
 - `diviops-agent` WordPress plugin (REST bridge, Divi 5 + SCF + CPT + WP-CLI handlers)
-- `diviops-design-library` plugin (CSS effects, gradients, glass, Three.js shaders)
+- DiviOps Visuals (`diviops-design-library`) plugin (CSS effects, gradients, glass, Three.js shaders)
 - `@diviops/mcp-server` on npm — the shared MCP server package
 - `diviops-divi-5` skill, free slice: `SKILL.md`, design patterns, tools reference, preset system, design-effects, mega-menu, minimal snippets, SaaS landing, and the **Tier 1** attribute reference (universal decoration, `innerContent[]` variants, attribute tree layout, design tokens, exceptions quick reference)
 
@@ -243,7 +243,7 @@ The Pro distribution adds the Pro plugin, license/update gating, target coverage
 |---|:---:|:---:|
 | `diviops-agent` WordPress plugin | ✓ | ✓ (same binary) |
 | `diviops-agent-pro` WordPress plugin | — | ✓ |
-| `diviops-design-library` plugin | ✓ | ✓ (same binary) |
+| DiviOps Visuals (`diviops-design-library`) plugin | ✓ | ✓ (same binary) |
 | `@diviops/mcp-server` on npm | ✓ | ✓ (same package) |
 | Skill: SKILL.md, design patterns, tools reference, preset system, design-effects, mega-menu, minimal snippets, SaaS landing | ✓ | ✓ |
 | Skill: **Tier 1** attribute reference — universal decoration, innerContent variants, attribute tree layout, design tokens, exceptions quick reference | ✓ | ✓ |

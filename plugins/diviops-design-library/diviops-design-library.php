@@ -1,9 +1,9 @@
 <?php
 /**
- * Plugin Name: DiviOps Design Library
+ * Plugin Name: DiviOps Visuals
  * Plugin URI: https://github.com/oaris-dev/diviops
  * Description: Modern design effects for Divi 5 with Three.js, CSS animations, and reusable design elements.
- * Version: 1.0.0-beta.25
+ * Version: 1.0.0-beta.26
  * Author: oaris.de
  * Author URI: https://oaris.de
  * Requires at least: 6.0
@@ -19,7 +19,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 class DiviOps_Design_Library {
 
-	const VERSION = '1.0.0-beta.25';
+	const VERSION = '1.0.0-beta.26';
 
 	/**
 	 * Three.js version to bundle.

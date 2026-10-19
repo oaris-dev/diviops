@@ -1,25 +1,45 @@
-# DiviOps Design Library
+# DiviOps Visuals
 
 WordPress plugin providing modern design effects for Divi 5 pages. CSS animations, glass morphism, Three.js WebGL shaders, and scroll-triggered effects.
 
-## Upgrade From The Previous Plugin Name
+## Name and installation identity
 
-1. Deactivate the old `Divi Design Library` plugin.
-2. Install or copy `diviops-design-library/`.
-3. Activate `DiviOps Design Library`.
+**DiviOps Visuals** is the Free companion previously displayed as **DiviOps
+Design Library**. This is a display-name change: keep the installed
+`diviops-design-library/` directory and `diviops-design-library.zip` package name.
+Existing users do not need to deactivate, reinstall or migrate content for the
+name change. Older delivered packages may still show the previous display name.
+The PHP class, script handles, `ddl-*` classes and meta keys are unchanged.
 
-## Version 1.0.0-beta.25
+If migrating the much older `Divi Design Library` installation with a different
+plugin directory, reconcile that installation separately; this display change
+is not an automatic directory migration.
 
-The Free/GPL Design Library retains its existing effects and upgrades the local
+## Version 1.0.0-beta.26 candidate
+
+Displays the Free companion as **DiviOps Visuals**. Technical installation
+identity, effects, Three.js core and GLB runtime assets are unchanged from the
+published beta.25 package. This candidate changes version metadata and guidance;
+source preparation does not establish publication or installation.
+
+For customers receiving the private distribution's beta.24 copy, the upgrade
+also includes the beta.25 foundation described below. Review existing Three.js
+consumers against the migration notes before installation. This is not a new
+paid plugin, an automatic migration or an automatic update feed.
+
+### Foundation introduced in beta.25
+
+The Free/GPL companion retains its existing effects and upgrades the local
 Three.js core from r128 to official `three@0.186.1` (r186). An optional static GLB
 profile uses that same core. Existing custom Three.js consumers need the migration
 review below before installing; a matching plugin version alone does not establish
 matching files for earlier candidate builds.
 
-**DiviOps Visuals Pro** is the proposed maintained scene and workflow offering.
-This package remains the Free **DiviOps Design Library**. Its installed directory,
-PHP entry file/class, WordPress handles, `ddl-*` classes and meta keys are preserved.
-Existing effects remain Free; a possible Free rename is deferred.
+The engine, supported GLB profile and existing effects remain Free. Maintained
+professional recipes and coordinated workflows are the proposed visual value
+within **DiviOps Pro**; this plugin does not create another paid product or
+require a commercial key. A new configuration dashboard, addon installer and
+automatic update feed are not supplied by this naming change.
 
 ### Verification scope
 
@@ -97,7 +117,7 @@ reduced motion and a Visual Builder save round trip. That proof used beta.22
 plus the image-reveal effect delta, not the complete beta.24 package. Synthetic
 fixtures provide additional isolated checks, not broader live compatibility
 qualification. That bounded proof does not establish whole-package or site
-upgrade readiness for beta.25.
+upgrade readiness for beta.25 or later packages.
 
 ### Three.js WebGL
 - Official Three.js `0.186.1` core (r186), bundled locally (no CDN)

@@ -3,7 +3,7 @@ Contributors: diviops
 Tags: divi, mcp, ai, rest-api, site-builder
 Requires at least: 6.5
 Tested up to: 7.1
-Stable tag: 1.5.45
+Stable tag: 1.5.46
 Requires PHP: 7.4
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -109,6 +109,11 @@ No. Free includes the core site-authoring bridge described above. Selected advan
 2. An agent-authored page open in the Divi 5 Visual Builder, with the native Heading module content controls available for continued editing. Divi is a separate required product.
 
 == Changelog ==
+
+= 1.5.46 =
+
+* Displays the optional Free companion as DiviOps Visuals in the addon card, keeping its existing installation identity.
+* Preserves existing capabilities, permissions and recovery behavior. The label change does not install or update the companion.
 
 = 1.5.45 =
 
@@ -335,6 +340,10 @@ No. Free includes the core site-authoring bridge described above. Selected advan
 * Keeps `Stable tag` aligned with the plugin header version.
 
 == Upgrade Notice ==
+
+= 1.5.46 =
+
+Updates the optional companion's dashboard label to DiviOps Visuals. No companion installation, content migration or MCP reconnect is required for this label change.
 
 = 1.5.45 =
 

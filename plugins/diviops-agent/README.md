@@ -8,7 +8,13 @@ Divi is a registered trademark of Elegant Themes, Inc. DiviOps Agent is not affi
 
 > **Don't use this plugin standalone** — it's the WordPress side of a two-piece suite; install + configure the [DiviOps MCP Server](../../../diviops-server/) next.
 
-## 1.5.45 candidate release note
+## 1.5.46 candidate release note
+
+- Displays the optional Free companion as **DiviOps Visuals** in the addon card.
+- Preserves the installed `diviops-design-library` identity and existing capability, permission and recovery behavior. This label change does not install or update the companion.
+- Candidate guidance accompanies Visuals beta.26 and builder package 1.4.12. MCP 1.5.73 and Agent Pro 1.0.19-beta remain unchanged; no server rebuild or reconnect is required for this label change.
+
+## 1.5.45 release note
 
 - Centralizes exact reviewed Rank Math and SCF version support and reports why a provider is unavailable, distinguishing unreviewed versions from inactive identity or missing APIs/setup.
 - Aligns bounded verification evidence for Rank Math 1.0.279/1.0.280 and SCF 6.9.4/6.9.5. These are the existing supported sets; no future-version range or bypass is added.
@@ -71,18 +77,17 @@ The plugin includes a WordPress.org-format `readme.txt` and a plugin-local `chan
 
 Current metadata policy:
 
-- `Stable tag` matches the plugin header `Version` (`1.5.45` for this candidate).
+- `Stable tag` matches the plugin header `Version` (`1.5.46` for this candidate).
 - `Requires at least` and `Requires PHP` mirror the main plugin header.
 - `Tested up to` is evidence-based for this repo/substrate and should not be raised until the Free plugin is actually tested on that WordPress version.
 - External-service/authentication disclosure must mention the separately distributed npm MCP server, WordPress Application Passwords, and the rule that secrets do not belong in issues, examples, screenshots, or repo files.
 - Free/Pro copy must keep the Free plugin useful while making clear that Pro is the paid workflow-leverage layer and that not every MCP tool is Free-backed.
 
-The current source candidate is Free 1.5.35 for bounded incomplete-evidence
-diagnostics during exact-set preset deletion. MCP remains 1.5.62 and public
-builder remains 1.4.11. Source acceptance, package qualification and publication
-are separate steps; this version bump does not establish publication or an
-installed-site update. The delivered baseline at preparation is Free 1.5.34,
-MCP 1.5.62 and public builder 1.4.11.
+The current source candidate is Free 1.5.46 for the DiviOps Visuals addon-card
+label. MCP remains 1.5.73; accompanying builder guidance is package 1.4.12.
+The delivered baseline at preparation is Free 1.5.45 and builder package 1.4.11.
+Source acceptance, exact-package qualification and publication are separate
+steps; this version bump does not establish publication or a site update.
 
 ### Historical source preparation notes
 

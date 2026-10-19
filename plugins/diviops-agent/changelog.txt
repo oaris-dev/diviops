@@ -9,6 +9,11 @@ Policy:
 - Keep entries customer-facing. Avoid internal issue numbers unless they are needed to explain a user-visible change.
 - Do not include secrets, credentials, customer data, or environment-specific URLs.
 
+## 1.5.46
+
+- Displays the optional Free companion as DiviOps Visuals in the addon card, keeping its existing installation identity.
+- Preserves existing capabilities, permissions and recovery behavior. The label change does not install or update the companion.
+
 ## 1.5.45
 
 - Centralizes exact reviewed Rank Math and SCF version support and reports why a provider is unavailable, distinguishing unreviewed versions from inactive identity or missing APIs/setup.

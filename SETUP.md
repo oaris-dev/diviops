@@ -283,18 +283,43 @@ claude mcp add diviops-mysite \
   -- node "$(npm root -g)/@diviops/mcp-server/dist/index.js"
 ```
 
-## Step 6: Optional — Install the Design Library Plugin
+<a id="step-6-optional--install-the-design-library-plugin"></a>
+
+## Step 6: Optional — Install DiviOps Visuals
 
 For CSS entrance animations (`ddl-fade-up`, `ddl-scale-in`), gradient text effects, and Three.js WebGL shaders:
 
 1. Download `diviops-design-library.zip` from the dist repo root (also at the top level of `oaris-dev/diviops` and `oaris-dev/diviops-internal`)
 2. Upload and activate in **WP Admin → Plugins → Add New → Upload Plugin**
 
-This is optional — the MCP agent works without it.
+This is optional — the MCP agent works without it. DiviOps Visuals is the Free
+companion formerly displayed as DiviOps Design Library. Its installed directory
+and ZIP name remain `diviops-design-library`; older releases may still display
+the former name. The display change does not require reinstallation.
 
 ## Step 7: Load the Divi 5 Builder Skill
 
 The skill teaches the assistant the correct Divi 5 block format — module attribute paths, design patterns, and format rules. **Without it, the agent will guess attribute formats and produce broken pages** (e.g., empty buttons, wrong innerContent format).
+
+### Skill names and folder layout
+
+The `diviops-<target>` convention is a naming namespace, not a parent directory:
+
+```text
+skills/
+├── diviops/             # shared harness primer
+├── diviops-divi-5/      # Divi coverage, with its own references/
+├── diviops-scf/         # separately distributed SCF coverage
+└── diviops-fluentcart/  # separately distributed FluentCart coverage
+```
+
+Each coverage slice is a sibling skill. `diviops/` contains the shared primer;
+it is not a folder into which other skills should be moved. A recipe belongs in
+the relevant skill's references, rather than becoming a skill for each visual.
+Install only the slices in your selected distribution. The Free Desktop uploads preserve
+`diviops-divi-5` and `diviops` in separate ZIPs; their self-contained reference
+packaging does not change the convention. The legacy marketplace package identifier described
+below is a third identity, separate from the skill name and folder layout.
 
 ### Claude Desktop chat — upload the Free skill ZIP
 

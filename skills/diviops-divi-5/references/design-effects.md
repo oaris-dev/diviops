@@ -1,4 +1,4 @@
-# DiviOps Design Library — CSS Effects & Three.js
+# DiviOps Visuals — CSS Effects & Three.js
 
 Plugin: `wp-content/plugins/diviops-design-library/`
 Provides modern design effects via CSS classes, IntersectionObserver JS, and Three.js.
@@ -269,7 +269,7 @@ Plus a belt-and-suspenders net: `@media(max-width:980px){ .card{ width:100%!impo
 
 ### `<script>` survival + distribution caveat
 
-The inline `<script>` in a Code module or `htmlBefore` is stored verbatim **only if the saving user has `unfiltered_html`** (admin, non-multisite). For lower-capability editors, `wp_kses_post` strips `<script>` on save and the canvas sits blank. The inline carrier is the only approach that's identical on local and remote (MCP) sites, so it's the documented default. A parameterized loader (one enqueued script + `data-effect` registry, no inline `<script>`) would be capability-independent and reusable, but that runtime belongs in the Design Library plugin — not a per-page inline script or a local-only mu-plugin. (Deferred.)
+The inline `<script>` in a Code module or `htmlBefore` is stored verbatim **only if the saving user has `unfiltered_html`** (admin, non-multisite). For lower-capability editors, `wp_kses_post` strips `<script>` on save and the canvas sits blank. The inline carrier is the only approach that's identical on local and remote (MCP) sites, so it's the documented default. A parameterized loader (one enqueued script + `data-effect` registry, no inline `<script>`) would be capability-independent and reusable, but that runtime belongs in the DiviOps Visuals plugin — not a per-page inline script or a local-only mu-plugin. (Deferred.)
 
 ### Common rules (all patterns)
 - Script polling: `if(typeof THREE==='undefined'){setTimeout(fn,100);return;}`
