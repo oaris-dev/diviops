@@ -3,7 +3,7 @@ Contributors: diviops
 Tags: divi, mcp, ai, rest-api, site-builder
 Requires at least: 6.5
 Tested up to: 7.1
-Stable tag: 1.5.46
+Stable tag: 1.5.47
 Requires PHP: 7.4
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -109,6 +109,13 @@ No. Free includes the core site-authoring bridge described above. Selected advan
 2. An agent-authored page open in the Divi 5 Visual Builder, with the native Heading module content controls available for continued editing. Divi is a separate required product.
 
 == Changelog ==
+
+= 1.5.47 =
+
+* Adds permission-checked inspection of four literal Rank Math storage keys for one editable page, separate from computed SEO and inherited defaults.
+* Distinguishes missing from empty values and refuses duplicate, oversized or unsupported storage without a partial result. Serialized values remain untrusted text, not recovery evidence or retry permission.
+* Preserves existing exact-version gates for semantic reads, previews, writes and recovery. No automatic fallback or override; SCF and TSF behavior is unchanged.
+* Pair with MCP 1.5.74 and restart/reconnect the client. Bounded native inspector checks passed with Rank Math 1.0.280 on WordPress 7.1, PHP 8.3.35 and Divi 5.13.1; other versions and environments are not covered by that native result.
 
 = 1.5.46 =
 
@@ -340,6 +347,10 @@ No. Free includes the core site-authoring bridge described above. Selected advan
 * Keeps `Stable tag` aligned with the plugin header version.
 
 == Upgrade Notice ==
+
+= 1.5.47 =
+
+Pair with MCP 1.5.74 and reconnect for the new Rank Math stored-value inspector. Inspection does not establish effective SEO, write readiness or retry safety. Existing semantic version gates remain intact.
 
 = 1.5.46 =
 

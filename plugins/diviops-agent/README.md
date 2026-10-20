@@ -8,11 +8,27 @@ Divi is a registered trademark of Elegant Themes, Inc. DiviOps Agent is not affi
 
 > **Don't use this plugin standalone** — it's the WordPress side of a two-piece suite; install + configure the [DiviOps MCP Server](../../../diviops-server/) next.
 
-## 1.5.46 candidate release note
+## 1.5.47 candidate release note
 
-- Displays the optional Free companion as **DiviOps Visuals** in the addon card.
-- Preserves the installed `diviops-design-library` identity and existing capability, permission and recovery behavior. This label change does not install or update the companion.
-- Candidate guidance accompanies Visuals beta.26 and builder package 1.4.12. MCP 1.5.73 and Agent Pro 1.0.19-beta remain unchanged; no server rebuild or reconnect is required for this label change.
+- Adds permission-checked inspection of literal Rank Math title, description,
+  canonical and robots storage for one editable page. Missing and empty remain
+  distinct; duplicate, oversized or unsupported storage refuses without a
+  partial result. Serialized values remain untrusted text, not effective SEO,
+  inherited defaults, a write plan, recovery evidence or retry permission.
+- Pair with **MCP 1.5.74**, then restart/reconnect the MCP client to refresh the
+  `seo_storage_inspect` capability. Existing semantic reads, previews, writes and
+  recovery keep their exact-version gates; no automatic fallback or override.
+- The merged inspector passed bounded native checks with Rank Math 1.0.280 on
+  WordPress 7.1, PHP 8.3.35 and Divi 5.13.1. Exact candidate-package qualification
+  and publication remain pending; other versions and environments are not
+  covered by that native result. SCF, TSF, Agent Pro and Visuals are unchanged.
+
+## 1.5.46 historical release note
+
+- Displayed the optional Free companion as **DiviOps Visuals** in the addon card.
+- Preserved the installed `diviops-design-library` identity and existing
+  capability, permission and recovery behavior. That label change did not
+  install or update the companion and did not require an MCP reconnect.
 
 ## 1.5.45 release note
 

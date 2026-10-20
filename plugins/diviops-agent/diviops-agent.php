@@ -3,7 +3,7 @@
  * Plugin Name: DiviOps Agent
  * Plugin URI: https://diviops.com/
  * Description: REST API bridge for DiviOps — connects Claude Code to your Divi 5 site for AI-powered page building and design management.
- * Version: 1.5.46
+ * Version: 1.5.47
  * Author: oaris.de
  * Author URI: https://oaris.de
  * Text Domain: diviops-agent
@@ -39,6 +39,7 @@ require_once __DIR__ . '/includes/trait-render.php';
 require_once __DIR__ . '/includes/trait-rollback.php';
 require_once __DIR__ . '/includes/trait-scf.php';
 require_once __DIR__ . '/includes/trait-seo.php';
+require_once __DIR__ . '/includes/trait-seo-storage.php';
 require_once __DIR__ . '/includes/trait-theme-builder.php';
 require_once __DIR__ . '/includes/trait-validate.php';
 require_once __DIR__ . '/includes/trait-variable.php';
@@ -68,6 +69,7 @@ class DiviOps_Agent {
 	use DiviOps_Agent_Rollback;
 	use DiviOps_Agent_SCF;
 	use DiviOps_Agent_SEO;
+	use DiviOps_Agent_SEO_Storage;
 	use DiviOps_Agent_ThemeBuilder;
 	use DiviOps_Agent_Validate;
 	use DiviOps_Agent_Variable;
@@ -76,7 +78,7 @@ class DiviOps_Agent {
 	 * Plugin version — surfaced in /handshake for self-diagnosis only;
 	 * server no longer gates on it (capability map is the gate).
 	 */
-	const VERSION = '1.5.46';
+	const VERSION = '1.5.47';
 
 	/**
 	 * Minimum MCP server version this plugin is compatible with.
@@ -134,7 +136,7 @@ class DiviOps_Agent {
 		// existing SCF text-value authoring
 		'scf_text_value_update',
 		// semantic SEO metadata
-		'seo_provider_list', 'seo_metadata_get', 'seo_metadata_update',
+		'seo_provider_list', 'seo_metadata_get', 'seo_metadata_update', 'seo_storage_inspect',
 		// schema
 		'schema_get_module', 'schema_get_module_dump_all', 'schema_get_settings', 'schema_list_modules',
 		// section
@@ -697,6 +699,13 @@ class DiviOps_Agent {
 			'methods'             => 'GET',
 			'callback'            => [ __CLASS__, 'seo_provider_list' ],
 			'permission_callback' => [ __CLASS__, 'check_read_permission' ],
+		] );
+
+		register_rest_route( self::REST_NAMESPACE, '/seo/storage/(?P<id>\d+)', [
+			'methods' => 'GET',
+			'callback' => [ __CLASS__, 'seo_storage_inspect' ],
+			'permission_callback' => [ __CLASS__, 'check_authenticated_permission' ],
+			// Handler validates raw inputs without coercion and authorizes before payload.
 		] );
 
 		register_rest_route( self::REST_NAMESPACE, '/seo/metadata/(?P<id>\d+)', [

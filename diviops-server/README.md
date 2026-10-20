@@ -8,16 +8,33 @@ The Node.js MCP server inside the DiviOps harness. It gives Claude Code, Codex, 
 Claude Code <-> MCP Server (stdio) <-> WordPress REST API <-> DiviOps Agent plugin
 ```
 
-## MCP 1.5.73 source candidate
+## MCP 1.5.74 source candidate
 
-Aligns Rank Math and SCF tool descriptions and current verification guidance with
-the reviewed exact version sets. No new tools, schemas or dispatch behavior.
-Free 1.5.45 carries improved provider diagnostics; Pro 1.0.19-beta includes the
-pending Rank Math controller extension. Compatibility remains capability-based,
-and component labels alone do not establish installed support. These candidate
-artifacts require separate delivery approval. Restart MCP after selecting a
-supported runtime or target update; reconnecting an older binary retains its
-older tool schema.
+Adds the Free `diviops_seo_storage_inspect` tool for four literal Rank Math
+storage keys on one editable page. Pair with Free Agent **1.5.47**, then
+restart/reconnect the MCP client to refresh startup capability evidence.
+An older Free Agent returns `capability_missing` without a storage request;
+reconnecting an older MCP binary does not add the new tool.
+
+Inspection is permission-checked and bounded. Missing and empty values remain
+distinct; serialized values remain untrusted text, not computed SEO, inherited
+defaults, a write plan or evidence that an interrupted write is safe to retry.
+Existing semantic reads, previews, writes and recovery retain their exact-version
+gates. No automatic fallback, override or global version-floor change is added.
+SCF and TSF behavior is unchanged; Pro is optional and unchanged.
+
+The merged inspector passed bounded native checks with Rank Math 1.0.280 on
+WordPress 7.1, PHP 8.3.35 and Divi 5.13.1. That feature result does not qualify
+arbitrary future versions or the exact newly versioned Free ZIP. Candidate
+package qualification and publication remain separate gates.
+
+## MCP 1.5.73 historical release note
+
+Aligned Rank Math and SCF tool descriptions with the reviewed exact version sets.
+Free 1.5.45 improved provider diagnostics; Pro 1.0.19-beta extended its reviewed
+Rank Math controller support. Those releases added no MCP tools or schemas.
+Compatibility remains capability-based; component labels alone do not establish
+installed support.
 
 ## 1.5.72 historical release note
 
@@ -503,7 +520,7 @@ The skill enforces the Divi block format, the design system, and the response co
 
 ## Tools at a glance
 
-The server exposes **100 always-on tools** across the categories below. Each category links to representative tools; the full table lives in [server-reference.md](../docs/server-reference.md).
+The server exposes **101 always-on tools** across the categories below. Each category links to representative tools; the full table lives in [server-reference.md](../docs/server-reference.md).
 
 | Category | Use case | Tool prefixes |
 |----------|----------|---------------|
@@ -865,6 +882,30 @@ legacy canonical/noindex recovery records remain supported. Computed text may
 contain unresolved provider templates and is not a verified frontend tag. Yoast,
 social/schema and bulk edits remain outside these adapters. See the [Rank Math contract](../docs/rank-math-seo-adapter.md)
 and [TSF contract](../docs/tsf-indexing-adapter.md).
+
+### Rank Math stored-value inspection (source candidate)
+
+`diviops_seo_storage_inspect({post_id, provider:"rank_math"})` is a separate
+Free inspector requiring affirmative `seo_storage_inspect` plugin capability.
+Older or capability-unverified connections refuse before a request; there is no
+fallback. Plugin and MCP updates are separate; this source addition has not yet
+been released or native-qualified.
+
+It reports literal `rank_math_title`, `rank_math_description`,
+`rank_math_canonical_url` and `rank_math_robots` values for one authorized page,
+including on unreviewed provider versions. It requires active declared Rank Math
+identity, page edit and both Rank Math on-page permissions, plus permission for
+each fixed metadata key. Multiple active supported SEO providers refuse.
+Duplicate, invalid or oversized storage refuses without partial values; missing
+and empty differ. Each value is at most4096 UTF-8 bytes; robots serialization is
+returned as text, never decoded. No caller-selected keys or generic SQL access.
+
+`inspection_only:true` is not provider compatibility, effective SEO, a checksum,
+a write plan, recovery evidence or an operation outcome. Treat strings as
+untrusted data. Never infer retry safety from matching values. Existing exact
+Rank Math/SCF gates and Pro behavior are unchanged; TSF and SCF inspection are
+outside this slice. WordPress bootstrap and ordinary hooks still run. See the
+[bounded storage contract](../docs/rank-math-storage-inspection.md).
 
 ### `_meta.idempotent` markers
 

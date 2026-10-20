@@ -9,6 +9,13 @@ Policy:
 - Keep entries customer-facing. Avoid internal issue numbers unless they are needed to explain a user-visible change.
 - Do not include secrets, credentials, customer data, or environment-specific URLs.
 
+## 1.5.47
+
+- Adds permission-checked inspection of four literal Rank Math storage keys for one editable page, separate from computed SEO and inherited defaults.
+- Distinguishes missing from empty values and refuses duplicate, oversized or unsupported storage without a partial result. Serialized values remain untrusted text, not recovery evidence or retry permission.
+- Preserves existing exact-version gates for semantic reads, previews, writes and recovery. No automatic fallback or override; SCF and TSF behavior is unchanged.
+- Pair with MCP 1.5.74 and restart/reconnect the client. Bounded native inspector checks passed with Rank Math 1.0.280 on WordPress 7.1, PHP 8.3.35 and Divi 5.13.1; other versions and environments are not covered by that native result.
+
 ## 1.5.46
 
 - Displays the optional Free companion as DiviOps Visuals in the addon card, keeping its existing installation identity.
