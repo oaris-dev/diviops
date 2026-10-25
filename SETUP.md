@@ -1,6 +1,6 @@
 # DiviOps — Setup Guide
 
-Get from zero to generating Divi 5 pages with Claude Code or Codex in ~15 minutes. This file ships as `SETUP.md` at the root of the free + pro dist repos; for project framing, suite components, use cases, and the response-contract overview, see the dist-root README.
+Connect an AI client, load the Divi authoring skill, and create one reviewed native Divi draft on a staging or disposable local site. This first-page path is available with DiviOps Free. This guide ships as `SETUP.md` in the Free and Pro distributions; see the [README](README.md) for suite components and Free/Pro scope.
 
 > **Beta software.** DiviOps is under active development. Use on production sites at your own discretion. Always back up your WordPress site before running write operations.
 
@@ -9,8 +9,9 @@ Get from zero to generating Divi 5 pages with Claude Code or Codex in ~15 minute
 - **WordPress** 6.5+ with **Divi 5** theme (5.1.0+)
 - **PHP** 7.4+
 - **Node.js** 22+ (for the MCP server)
-- **Claude Code** CLI or **Codex** installed
-- A local or remote WordPress site (Local by Flywheel recommended for local dev)
+- **Claude Code**, **Codex**, or **Claude Desktop** installed, with access to its MCP and skill features
+- A staging or disposable local WordPress site you are authorized to edit
+- For a remote site: valid HTTPS, a reachable WordPress REST API and Application Password authentication permitted for your account by the site/host policy
 
 ## Three independent components
 
@@ -27,40 +28,42 @@ Updating WordPress or npm does not update a manually copied skill. Verify all th
 components before the first write and after changing clients, workspaces, or skill
 installation methods.
 
+## Choose your client
+
+Install the Free plugin and create an Application Password below, then follow one row:
+
+| Client | Connect WordPress | Load the authoring skill | Continue |
+|---|---|---|---|
+| Claude Code | [Terminal command](#claude-code) | [Marketplace or one owned directory](#claude-code--existing-plugin-or-directory-installation) | Restart/open a fresh session, then [verify](#step-4-verify-registration) |
+| Codex | [Local TOML configuration](#codex) | [Copy bundled skills](#codex-skills) | Restart/open a fresh session, then [verify](#step-4-verify-registration) |
+| Claude Desktop chat | [Local JSON configuration](#claude-desktop-json) | [Upload the complete Free builder ZIP](#claude-desktop-chat--upload-the-free-skill-zip) | Restart Desktop/open a fresh chat, then [verify](#step-4-verify-registration) |
+
+These terminal examples use macOS/Linux shell syntax. Windows/PowerShell and WSL
+paths and client discovery need their own verification; do not paste multiline
+shell examples into PowerShell unchanged. Client/organization policies can limit
+MCP or skill availability. A missing feature is a reason to stop and resolve setup,
+not to let the assistant guess native Divi markup.
+
 ## Step 1: Install the WordPress Plugin
 
-1. If installing from WordPress.org after listing, go to **WP Admin → Plugins → Add New**, search for **DiviOps Agent**, install it, and activate it.
-2. For a pre-listing package or manual fallback install, upload `diviops-agent.zip` via **WP Admin → Plugins → Add New → Upload Plugin** and activate it.
-3. Verify: visit `http://your-site.local/wp-json/diviops/v1/schema/settings` — you should get a 401 (auth required)
+1. Go to **WP Admin → Plugins → Add New**, search for **DiviOps Agent**, install it, and activate it.
+2. For a manual alternative, download [diviops-agent.zip](diviops-agent.zip) from this distribution and upload it via **WP Admin → Plugins → Add New → Upload Plugin** and activate it.
+3. Confirm **DiviOps Agent** is active in Plugins. The [connection check](#step-5-test-connection) below verifies the selected target after client setup.
 
 > **If Divi is not active**, authenticated requests return `503 divi_unavailable`. Unauthenticated requests return 401 first.
 
 ### Free plugin updates
 
-The npm MCP server updates with `npx`/npm. Once the Free WordPress plugin is published on WordPress.org, WordPress delivers plugin updates through the normal **Dashboard → Updates** and **Plugins** screens.
+WordPress delivers Free plugin updates through **Dashboard → Updates** and **Plugins**. The npm MCP server and skills update separately; updating one does not update the others. Restart/reconnect MCP after a plugin or server update and verify the reported versions and capabilities before authoring.
 
-For pre-listing test packages or a manual fallback install, replace the plugin ZIP through WordPress admin:
+For a manual fallback, replace the plugin ZIP through WordPress admin:
 
-1. Download `diviops-agent.zip` from the public dist repo root
+1. Download [diviops-agent.zip](diviops-agent.zip) from the selected distribution
 2. Go to **WP Admin → Plugins → Add New → Upload Plugin**
 3. Upload the new `diviops-agent.zip`
 4. When WordPress asks, choose **Replace current with uploaded**
 
 Your Application Password and MCP client config stay the same across Free plugin updates.
-
-### Purchased Pro: install the Pro plugin too
-
-If you downloaded the Pro package, install the Pro add-on after the Free plugin:
-
-1. Upload and activate `diviops-agent-pro.zip`
-2. Confirm both plugins are active: **DiviOps Agent** and **DiviOps Agent Pro**
-3. Open **DiviOps → Pro License**
-4. Paste your license key and activate it
-5. Confirm the status shows an active matched plan and update eligibility
-
-The Pro plugin requires the Free plugin. Pro runtime features continue to work after install, while the license gates updates and support.
-
-> **Activation policy.** A license activation represents one active WordPress environment where DiviOps Pro is installed and used, including local development sites such as `localhost`, `.local`, `.test`, and `.lab`. Deactivate old environments from your customer account when they are no longer in active use.
 
 ## Step 2: Create an Application Password
 
@@ -69,9 +72,18 @@ The Pro plugin requires the Free plugin. Pro runtime features continue to work a
 3. Enter a name (e.g., "Claude MCP") and click **Add New Application Password**
 4. Copy the generated password
 
-> **Strip the spaces.** WordPress generates passwords like `758r WQ1X URcg GW3s wCwQ QI0V` for readability but accepts them without spaces. Use `758rWQ1XURcgGW3swCwQQI0V` in `claude mcp add` — spaces can be misparsed as separate arguments.
+Keep the generated password in private storage; WordPress displays it only once.
+Do not paste it into AI chat, issue reports, screenshots or shared logs. Substitute
+it only in your chosen client's local command/configuration below.
 
-> Save this — you won't see it again.
+If Application Passwords is absent, ask the administrator to check your account,
+HTTPS and site/security policy. For a deliberately local HTTP site, see
+[local environment guidance](#local-development-environments); do not weaken
+production TLS or mark a production site as local.
+
+[WordPress accepts grouping spaces](https://developer.wordpress.org/reference/functions/wp_authenticate_application_password/)
+with or without removal. The client command/configuration must preserve the value
+as one argument or string; removing spaces is optional, not an authentication fix.
 
 ## Step 3: Register with Your AI Client
 
@@ -95,34 +107,38 @@ unreleased.
 
 ### Claude Code
 
-#### Minimal (REST API only — works with any WordPress host)
+Run the following in your computer's terminal shell, from the project where you
+will use Claude Code, **not in an AI chat**. Replace `WP_URL`, `WP_USER` and
+`WP_APP_PASSWORD` placeholders locally; use HTTPS for a remote target and keep
+each complete `KEY=VALUE` argument quoted. The examples use double quotes; escape
+shell-special characters in your own values if needed. The generated Application
+Password is alphanumeric with optional grouping spaces. Keep credentials out of
+shared shell history/transcripts.
+
+`diviops-mysite` is your connection name: choose a unique name per site. The final
+`diviops-mcp` is the package executable; keep that spelling. These are the native
+[Claude Code stdio/--env options](https://code.claude.com/docs/en/mcp).
+
+<a id="minimal-rest-api-only--works-with-any-wordpress-host"></a>
+
+#### Minimal (REST API only)
 
 ```bash
 claude mcp add diviops-mysite \
-  --env WP_URL=http://your-site.local \
-  --env WP_USER=your-username \
-  --env WP_APP_PASSWORD=xxxxXXXXxxxxXXXXxxxxXXXX \
+  --env "WP_URL=http://your-site.local" \
+  --env "WP_USER=your-username" \
+  --env "WP_APP_PASSWORD=xxxxXXXXxxxxXXXXxxxxXXXX" \
   -- npx -y --package @diviops/mcp-server diviops-mcp
 ```
-
-#### With WP-CLI (Local by Flywheel — enables the `diviops_meta_wp_cli` tool)
-
-```bash
-claude mcp add diviops-mysite \
-  --env WP_URL=http://your-site.local \
-  --env WP_USER=your-username \
-  --env WP_APP_PASSWORD=xxxxXXXXxxxxXXXXxxxxXXXX \
-  --env "WP_PATH=/Users/you/Local Sites/your-site/app/public" \
-  -- npx -y --package @diviops/mcp-server diviops-mcp
-```
-
-> **Use `--env` flags, not the `env` command.** Claude Code's native `--env KEY=VALUE` flags survive copy-paste; the older `-- env KEY=VALUE` form (piping through unix `env`) breaks silently when any value contains a space. Quote any value with spaces using regular double quotes — no backslash escaping needed inside quotes.
-
-> `LOCAL_SITE_ID` is auto-detected from `WP_PATH` — no need to find it manually.
 
 ### Codex
 
-Add an MCP server entry to `~/.codex/config.toml`:
+On the computer/host running Codex, open `~/.codex/config.toml` in a local text
+editor. Add one entry for the intended site, preserving other entries. This is a
+local configuration edit, **not text to send to Codex chat**. Replace the three
+placeholder values inside the strings; use HTTPS for a remote site. If you change
+`diviops-mysite`, change it in both table headings. Keep the file private and out
+of version control. See the [official MCP configuration reference](https://learn.chatgpt.com/docs/extend/mcp?surface=cli).
 
 ```toml
 [mcp_servers.diviops-mysite]
@@ -143,105 +159,15 @@ WP_PATH = "/absolute/path/to/wordpress"
 
 Restart Codex after changing MCP config.
 
-Operators working from a DiviOps source checkout can audit existing classic
-Codex entries without printing raw environment values, arguments, or local
-paths. This read-only connector guardrail is not included in the packaged
-Free/Pro ZIPs or their root `SETUP.md`. From the source repository root, pass
-an explicit config path; the audit never changes the file:
-
-```bash
-npm --prefix diviops-launcher ci
-node diviops-launcher/scripts/codex-connector-audit.mjs \
-  --config "$HOME/.codex/config.toml"
-```
-
-Source-repository operators can also review
-`docs/codex-mcp-connector-hygiene.md` for the separately authorized
-one-connector migration and rollback contract.
-
-### Local Development Environments
-
-DiviOps connects via standard WordPress REST API and works with any host that exposes WordPress over HTTP with Application Password support.
-
-| Environment | `WP_URL` | WP-CLI setup | Notes |
-|-------------|----------|--------------|-------|
-| **Local by Flywheel** | `http://site-name.local` | `WP_PATH=/path/to/site/app/public` | Site ID auto-detected |
-| **WordPress Studio** | `http://localhost:{port}` | `WP_CLI_CMD="studio wp --path=/path/to/site"` | Port auto-assigned (8881, 8882, …); SQLite |
-| **DDEV** | `https://site-name.ddev.site` | `WP_CLI_CMD="ddev wp"` plus `WP_PATH=/path/to/project` | Wrapper runs from `WP_PATH` |
-| **wp-env** | `http://localhost:8888` | `WP_CLI_CMD="npx wp-env run cli wp"` plus `WP_PATH=/path/to/project` | Requires `WP_ENVIRONMENT_TYPE=local` (see below) |
-| **DevKinsta** | `https://site-name.local` | `WP_CLI_CMD="docker exec -u www-data devkinsta_fpm wp --path=/www/kinsta/public/sitename"` | HTTPS with self-signed certs |
-| **Custom / Remote** | Your site URL | `WP_PATH=/path/to/site` or `WP_CLI_CMD="..."` | Works with any WP host |
-
-> **Application Passwords on HTTP:** WordPress requires HTTPS for Application Passwords unless `WP_ENVIRONMENT_TYPE` is set to `'local'`. HTTPS environments (DDEV, DevKinsta) work out of the box. HTTP environments (wp-env, WordPress Studio) need this in `wp-config.php`:
-> ```php
-> define('WP_ENVIRONMENT_TYPE', 'local');
-> ```
-> Local by Flywheel sets this automatically.
-
-### Environment Variables
-
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `WP_URL` | Yes | WordPress site URL (e.g. `http://mysite.local`) |
-| `WP_USER` | Yes | WordPress username with Editor or Admin role |
-| `WP_APP_PASSWORD` | Yes | Application Password (spaces stripped) |
-| `WP_PATH` | No | WordPress filesystem path for Local by Flywheel, or wrapper working directory when `WP_CLI_CMD` needs project context |
-| `WP_CLI_CMD` | No | Custom WP-CLI command prefix for containerized environments |
-| `LOCAL_SITE_ID` | No | Override auto-detection of Local by Flywheel site ID |
-| `DIVIOPS_WP_CLI_ALLOW` | No | Comma-separated list of extended WP-CLI commands to enable ([see below](#wp-cli-security)) |
-
-### Common Pitfalls
-
-- **Strip spaces from the app password** — covered above; this is the #1 setup snag
-- **Use absolute paths** for `WP_PATH` — relative paths break when Claude Code runs from a different directory
-- **Unique MCP name** — don't reuse a name from another project
-- **Paths with spaces** — wrap the entire `KEY=VALUE` argument in double quotes (e.g. `--env "WP_PATH=/path with spaces/"`). Same goes for any custom server script path passed after `--`
-- **MCP not appearing after registration** — in Claude Code, run `claude mcp list` to verify. If it's not there, `claude mcp remove` and re-add. In Codex, verify the `~/.codex/config.toml` entry and restart Codex.
-
-## Step 4: Verify Registration
-
-```bash
-claude mcp list
-```
-
-You should see your MCP server listed with the correct env vars. If anything looks wrong, remove and re-add:
-
-```bash
-claude mcp remove diviops-mysite
-claude mcp add diviops-mysite --env KEY=VALUE ... -- npx -y --package @diviops/mcp-server diviops-mcp
-```
-
-## Step 5: Test Connection
-
-Restart Claude Code or Codex, then run:
-
-```
-Use diviops_meta_ping to verify the MCP is working.
-```
-
-You should see your site URL, WordPress version, and Divi version.
-
-Then try:
-
-```
-Use diviops_page_list to show all pages.
-```
-
-> **If tools don't appear**: In Claude Code, check `claude mcp list`. In Codex, check `~/.codex/config.toml` and restart Codex. The `npx` command must be reachable on your `PATH` (it ships with Node.js, which provides `npm`/`npx`). The `-y --package @diviops/mcp-server diviops-mcp` form avoids `npx` prompts and explicitly selects the MCP server bin from the package.
-
-### Purchased Pro: verify Pro capabilities
-
-After activating `diviops-agent-pro.zip` and the Pro license, restart the MCP client and run:
-
-```
-Use diviops_meta_info to show the plugin handshake and capability summary. In a regular npm/stdio session, inspect `startup_capture`: successfully observed plugin, module, capability, and registered-tool evidence is the immutable startup snapshot. A failed handshake reports `startup_unavailable` with no covered target evidence. Reconnect or restart MCP after a plugin, theme, or target change before treating successful startup evidence as current. A live read such as `diviops_fc_status` is a separate current observation and does not refresh the startup tool catalog.
-```
-
-If FluentCart and FluentCart Pro are active on the target site, `diviops_meta_info` should report `slices.fluentcart.active: true` and list `fluentcart_*` entries under `slices.fluentcart.tool_capabilities`. Pro coverage tools such as `diviops_fc_status`, `diviops_fc_product_list`, `diviops_fc_gateway_list`, and license/order readback tools should also appear in the MCP tool list. If the target plugin is not installed or the Pro plugin is inactive, those tools are intentionally omitted.
-
 ### Claude Desktop JSON
 
-Use the same command shape in Claude Desktop:
+In Claude Desktop's application settings, choose **Developer → Edit Config**
+to open `claude_desktop_config.json` in a local editor. Add the named entry under
+`mcpServers`, preserving existing entries; do not replace the whole file or paste
+credentials into chat. Substitute the URL, username and password strings locally
+(use HTTPS remotely), choose a unique connection name, then save and restart
+Desktop. See the [MCP Desktop configuration guide](https://modelcontextprotocol.io/docs/develop/connect-local-servers).
+The example shows a file with just one connection:
 
 ```json
 {
@@ -259,45 +185,41 @@ Use the same command shape in Claude Desktop:
 }
 ```
 
-### Fallback: Global Install
+## Step 4: Verify Registration
 
-If Claude cannot find `npx`, install the package globally and register the installed bin:
+After configuring the connection, [load the skill for your client](#step-7-load-the-divi-5-builder-skill),
+then restart/reconnect and open a fresh session. In Claude Code, `claude mcp list`
+can help inspect registration; in Codex/Desktop, check the selected entry in the
+client's MCP settings. Do not post raw configuration or credential-bearing output.
+If the server is absent or disconnected, resolve that before the next step.
 
-```bash
-npm install -g @diviops/mcp-server@latest
+## Step 5: Test Connection
 
-claude mcp add diviops-mysite \
-  --env WP_URL=http://your-site.local \
-  --env WP_USER=your-username \
-  --env WP_APP_PASSWORD=xxxxXXXXxxxxXXXXxxxxXXXX \
-  -- diviops-mcp
+Use this one read-only check in your chosen client's fresh session:
+
+```text
+Use diviops_meta_ping and diviops_meta_info to confirm the connection.
+Report the target URL, WordPress/Divi and Free/MCP versions and available
+capabilities, without credentials. Do not create or change content. If the
+connection fails or the target differs from the staging/local site I intend,
+stop and explain what needs correcting.
 ```
 
-If the global bin directory is also missing from Claude's `PATH`, register the absolute entrypoint:
+Confirm the reported target yourself. A connection and capability report do not
+prove the authoring skill loaded; continue only after the [skill/reference check](#step-7-load-the-divi-5-builder-skill)
+and [native draft verification](#first-run-native-divi-verification).
+After a target, plugin, theme or server change, reconnect and repeat this check;
+an existing session's startup tool catalog can be stale.
 
-```bash
-claude mcp add diviops-mysite \
-  --env WP_URL=http://your-site.local \
-  --env WP_USER=your-username \
-  --env WP_APP_PASSWORD=xxxxXXXXxxxxXXXXxxxxXXXX \
-  -- node "$(npm root -g)/@diviops/mcp-server/dist/index.js"
-```
+> **If tools don't appear:** verify the selected registration and `npx` availability
+> on the client host, then restart/reconnect. The explicit
+> `-y --package @diviops/mcp-server diviops-mcp` form selects the package binary.
+> See [Common Pitfalls](#common-pitfalls) for recovery; do not replace a different
+> site's connection or let the assistant write without the required tools.
 
-<a id="step-6-optional--install-the-design-library-plugin"></a>
+<a id="step-7-load-the-divi-5-builder-skill"></a>
 
-## Step 6: Optional — Install DiviOps Visuals
-
-For CSS entrance animations (`ddl-fade-up`, `ddl-scale-in`), gradient text effects, and Three.js WebGL shaders:
-
-1. Download `diviops-design-library.zip` from the dist repo root (also at the top level of `oaris-dev/diviops` and `oaris-dev/diviops-internal`)
-2. Upload and activate in **WP Admin → Plugins → Add New → Upload Plugin**
-
-This is optional — the MCP agent works without it. DiviOps Visuals is the Free
-companion formerly displayed as DiviOps Design Library. Its installed directory
-and ZIP name remain `diviops-design-library`; older releases may still display
-the former name. The display change does not require reinstallation.
-
-## Step 7: Load the Divi 5 Builder Skill
+## Load the Divi 5 Builder Skill
 
 The skill teaches the assistant the correct Divi 5 block format — module attribute paths, design patterns, and format rules. **Without it, the agent will guess attribute formats and produce broken pages** (e.g., empty buttons, wrong innerContent format).
 
@@ -359,10 +281,10 @@ claude --plugin-dir .
 
 **Option C — Copy skill to your project** (auto-loads without flags):
 
-For an existing installation, follow the replacement procedure below before copying. These copy commands assume the destination skill does not already exist.
+For an existing installation, follow the replacement procedure below before copying. These copy commands assume both destination skill directories are absent. They copy the builder and its required sibling primer.
 ```bash
 mkdir -p /path/to/your-project/.claude/skills
-cp -r /path/to/diviops/skills/diviops-divi-5 /path/to/your-project/.claude/skills/
+cp -R /path/to/diviops/skills/diviops /path/to/diviops/skills/diviops-divi-5 /path/to/your-project/.claude/skills/
 cd /path/to/your-project
 claude
 ```
@@ -371,10 +293,10 @@ This project-local path is
 `<workspace>/.claude/skills/diviops-divi-5/SKILL.md`. Start Claude Code from that
 workspace so the project skill is discoverable.
 
-**Option D — Copy skill for Claude Code user-wide use**:
+**Option D — Copy skill for Claude Code user-wide use** (the same ownership/replacement checks apply to both directories):
 ```bash
 mkdir -p "$HOME/.claude/skills"
-cp -R /path/to/diviops/skills/diviops-divi-5 "$HOME/.claude/skills/"
+cp -R /path/to/diviops/skills/diviops /path/to/diviops/skills/diviops-divi-5 "$HOME/.claude/skills/"
 ```
 
 The resulting path is `~/.claude/skills/diviops-divi-5/SKILL.md`.
@@ -383,7 +305,7 @@ Verify the skill loaded:
 ```
 What skills do you have?
 ```
-You should see `diviops-divi-5` in the list.
+You should see `diviops-divi-5` and the sibling `diviops` primer in the list. Ask it to read `references/module-formats.md` and the bundled `diviops` primer; the displayed name alone does not prove reference access. If either cannot be read, stop before authoring.
 
 Use one ownership path for a skill. Do not keep a Claude plugin-managed copy and a
 stale manual copy active at the same time. Plugin-managed skills update with
@@ -392,17 +314,25 @@ update only when you replace those copied files from a newer distribution.
 
 Pro packages include additional slice skills such as `diviops-fluentcart` and `diviops-scf`. Install or copy all bundled `skills/*` entries when you want those Pro workflows available to the agent.
 
-**Codex — copy bundled skills into Codex's skill directory** (requires a local repo clone from Option B, or an extracted DiviOps distribution that contains `skills/`):
+<a id="codex-skills"></a>
+
+**Codex — copy bundled skills into one owned skill directory** (requires a local repo clone from Option B, or an extracted DiviOps distribution containing `skills/`). For a new user-wide installation, current [Codex documentation](https://developers.openai.com/codex/skills) specifies `~/.agents/skills`. The following commands assume the bundled destination directories are absent:
+
 ```bash
-mkdir -p "$HOME/.codex/skills"
-cp -R /path/to/diviops/skills/* "$HOME/.codex/skills/"
+mkdir -p "$HOME/.agents/skills"
+cp -R /path/to/diviops/skills/* "$HOME/.agents/skills/"
 ```
+
+For existing installations (including earlier `~/.codex/skills` copies), inspect
+which copy your client actually loads before replacing or relocating anything.
+Apply the replacement procedure below to each selected bundled skill; do not
+merge-copy over local changes or create duplicates across discovery roots.
 
 Restart Codex after copying skills. Verify with:
 ```
 What skills do you have?
 ```
-You should see `diviops-divi-5` and any bundled DiviOps slice skills you installed.
+You should see `diviops-divi-5` and any bundled DiviOps slice skills you installed. Ask the client to read the builder's `references/module-formats.md` and the bundled `diviops` primer before writing. If either is unavailable, stop and resolve the installation.
 
 Codex manual skills are not updated by npm, WordPress, or Claude plugin updates;
 replace the copied directory from the new distribution and restart Codex. For
@@ -419,36 +349,194 @@ The renamed skill preserves the existing Free/Pro guidance split; it does not re
 3. For plugin-managed installations, use the existing plugin update command above; do not manually edit plugin caches. Verify the resulting package contains only the new builder skill. For manual installations, retire only the confirmed old builder directory and replace the confirmed destination with the selected distribution's complete builder directory. Do not merge-copy over an existing directory or discard local edits. Keep other skills untouched.
 4. Restart/re-discover using the client's supported mechanism and open a fresh session. Verify `diviops-divi-5` is available once and the old skill is no longer selected. Files on disk do not prove that an existing session refreshed its context. Keep rollback until the new session is accepted.
 
+Apply the same ownership and rollback checks when replacing the required sibling `diviops` primer. Keep it beside the builder; do not merge-copy over an existing primer or overwrite unrelated skills.
+
 The skill's frontmatter version and the enclosing plugin package version are separate identities. Updating npm or the WordPress plugin does not update manual skill copies. Source migration alone is not evidence that a published package or installed client has migrated.
 
 ## First-run native Divi verification
 
-Run this on a disposable local site or disposable draft before real authoring:
+After the read-only connection and skill checks pass, explicitly choose a staging
+or disposable local target and authorize one disposable draft there. Replace
+`[confirmed site URL]` below; stop if the reported target does not match.
 
 ```text
-Confirm that diviops-divi-5 is available, then call diviops_meta_info. Construct
-inline markup containing native Divi section, row, column, heading, text, and
-button modules and validate that inline content with diviops_validate_blocks
-before any write. Do not use a Code module, page-sized HTML, an iframe layout, or
-structural HTML inside text or container fields. Only when inline validation has
-zero errors, create one disposable draft from the validated bytes, validate the
-saved page again by page ID, and report the exact native module names written:
-divi/section, divi/row, divi/column, divi/heading, divi/text, and divi/button. If
-the skill or required DiviOps tools are unavailable, stop without creating or
-changing content.
+On [confirmed site URL], confirm diviops-divi-5 and its required references
+are loaded, then call diviops_meta_info. If the target, skill or required
+tools are unavailable or uncertain, stop without changing content.
+Construct inline markup containing native Divi section, row, column, heading,
+text and button modules. Validate it with diviops_validate_blocks before any
+write. Do not use a Code module, page-sized HTML, an iframe layout or structural
+HTML inside text/container fields. Only with zero inline validation errors,
+create one disposable unpublished draft from those validated bytes. Validate
+the saved page by its exact ID and report both results plus the native module
+names: divi/section, divi/row, divi/column, divi/heading, divi/text, divi/button.
+Return its ID and preview for my review. Do not edit existing pages, shared
+presets or publish anything. If a step fails, stop and report the draft ID if
+one exists; do not create another draft automatically.
 ```
 
-Pass only when the client reports the native module tree and validation succeeds.
-A visually correct page made from large HTML blobs is a failed setup, not an
-acceptable fallback. Trash the disposable draft after verification.
+Pass only with zero inline and saved-page validation errors, the required native
+module tree and human review of the draft. An HTML-blob substitute is not a
+successful native setup. After review, trash **only that exact disposable draft**;
+if verification failed, inspect the reported draft before deciding its cleanup.
+Then continue to the useful-page example below, which is kept for further editing.
 
-## Step 8: Optional — Bootstrap the Design System
+<a id="quick-test-generate-your-first-page"></a>
+
+## Create a useful draft to keep
+
+After verification, try a small service introduction on the same confirmed safe
+site. Fill in the brief and button destination; this is a separate draft to keep
+for editing, not the disposable test above.
+
+```text
+On [confirmed site URL], plan a small service introduction for [service/audience]
+with a native heading, short text and one button to [URL]. Inspect existing
+variables and presets first and show me the plan before creating one draft.
+Use the loaded diviops-divi-5 skill and native Divi modules. Validate inline
+markup before writing and the saved draft afterwards, with zero errors.
+Stop if the target, skill, references or required tools are uncertain/unavailable.
+Do not edit existing pages, change shared presets, use a Code/HTML fallback or
+publish. Return the unpublished draft ID/preview and what I should review.
+Keep this useful draft for further editing; do not trash it with the test draft.
+```
+
+Review the text, button destination, native editability and desktop/mobile layout
+in WordPress/Divi. Publishing is a later explicit decision.
+
+## Optional features and advanced setup
+
+The Free path above does not require a Pro purchase, Visuals, WP-CLI passthrough
+or a design-system bootstrap. These sections retain their separate setup and
+permission requirements. Free/Pro scope lives in the [distribution README](README.md).
+
+### Purchased Pro: install the Pro plugin too
+
+If you downloaded the Pro package, install the Pro add-on after the Free plugin:
+
+1. Upload and activate `diviops-agent-pro.zip`
+2. Confirm both plugins are active: **DiviOps Agent** and **DiviOps Agent Pro**
+3. Open **DiviOps → Pro License**
+4. Paste your license key and activate it
+5. Confirm the status shows an active matched plan and update eligibility
+
+The Pro plugin requires the Free plugin. Pro runtime features continue to work after install, while the license gates updates and support.
+
+> **Activation policy.** A license activation represents one active WordPress environment where DiviOps Pro is installed and used, including local development sites such as `localhost`, `.local`, `.test`, and `.lab`. Deactivate old environments from your customer account when they are no longer in active use.
+
+### Purchased Pro: verify Pro capabilities
+
+After activating `diviops-agent-pro.zip` and the Pro license, restart the MCP client and run:
+
+```
+Use diviops_meta_info to show the plugin handshake and capability summary. In a regular npm/stdio session, inspect `startup_capture`: successfully observed plugin, module, capability, and registered-tool evidence is the immutable startup snapshot. A failed handshake reports `startup_unavailable` with no covered target evidence. Reconnect or restart MCP after a plugin, theme, or target change before treating successful startup evidence as current. A live read such as `diviops_fc_status` is a separate current observation and does not refresh the startup tool catalog.
+```
+
+If FluentCart and FluentCart Pro are active on the target site, `diviops_meta_info` should report `slices.fluentcart.active: true` and list `fluentcart_*` entries under `slices.fluentcart.tool_capabilities`. Pro coverage tools such as `diviops_fc_status`, `diviops_fc_product_list`, `diviops_fc_gateway_list`, and license/order readback tools should also appear in the MCP tool list. If the target plugin is not installed or the Pro plugin is inactive, those tools are intentionally omitted.
+
+<a id="step-6-optional--install-the-design-library-plugin"></a>
+
+<a id="step-6-optional--install-diviops-visuals"></a>
+
+### Install DiviOps Visuals
+
+For CSS entrance animations (`ddl-fade-up`, `ddl-scale-in`), gradient text effects, and Three.js WebGL shaders:
+
+1. Download [diviops-design-library.zip](diviops-design-library.zip) from this distribution
+2. Upload and activate in **WP Admin → Plugins → Add New → Upload Plugin**
+
+This is optional — the MCP agent works without it. DiviOps Visuals is the Free
+companion formerly displayed as DiviOps Design Library. Its installed directory
+and ZIP name remain `diviops-design-library`; older releases may still display
+the former name. The display change does not require reinstallation.
+
+### With WP-CLI (Local by Flywheel — enables the `diviops_meta_wp_cli` tool)
+
+```bash
+claude mcp add diviops-mysite \
+  --env "WP_URL=http://your-site.local" \
+  --env "WP_USER=your-username" \
+  --env "WP_APP_PASSWORD=xxxxXXXXxxxxXXXXxxxxXXXX" \
+  --env "WP_PATH=/Users/you/Local Sites/your-site/app/public" \
+  -- npx -y --package @diviops/mcp-server diviops-mcp
+```
+
+> Use Claude Code's `--env` options before `--`; the server command comes after it. Quoting the full `KEY=VALUE` argument preserves grouping spaces in a password and spaces in a path.
+
+> `LOCAL_SITE_ID` is auto-detected from `WP_PATH` — no need to find it manually.
+
+### Fallback: Global Install
+
+If Claude cannot find `npx`, install the package globally and register the installed bin:
+
+```bash
+npm install -g @diviops/mcp-server@latest
+
+claude mcp add diviops-mysite \
+  --env "WP_URL=http://your-site.local" \
+  --env "WP_USER=your-username" \
+  --env "WP_APP_PASSWORD=xxxxXXXXxxxxXXXXxxxxXXXX" \
+  -- diviops-mcp
+```
+
+If the global bin directory is also missing from Claude's `PATH`, register the absolute entrypoint:
+
+```bash
+claude mcp add diviops-mysite \
+  --env "WP_URL=http://your-site.local" \
+  --env "WP_USER=your-username" \
+  --env "WP_APP_PASSWORD=xxxxXXXXxxxxXXXXxxxxXXXX" \
+  -- node "$(npm root -g)/@diviops/mcp-server/dist/index.js"
+```
+
+### Local Development Environments
+
+DiviOps needs a reachable WordPress REST API and permitted Application Password authentication. Remote targets need valid HTTPS; host restrictions, proxies and security plugins can block requests. The following local-environment examples are configuration references, not a tested compatibility guarantee for every host or OS.
+
+| Environment | `WP_URL` | WP-CLI setup | Notes |
+|-------------|----------|--------------|-------|
+| **Local by Flywheel** | `http://site-name.local` | `WP_PATH=/path/to/site/app/public` | Site ID auto-detected |
+| **WordPress Studio** | `http://localhost:{port}` | `WP_CLI_CMD="studio wp --path=/path/to/site"` | Port auto-assigned (8881, 8882, …); SQLite |
+| **DDEV** | `https://site-name.ddev.site` | `WP_CLI_CMD="ddev wp"` plus `WP_PATH=/path/to/project` | Wrapper runs from `WP_PATH` |
+| **wp-env** | `http://localhost:8888` | `WP_CLI_CMD="npx wp-env run cli wp"` plus `WP_PATH=/path/to/project` | Requires `WP_ENVIRONMENT_TYPE=local` (see below) |
+| **DevKinsta** | `https://site-name.local` | `WP_CLI_CMD="docker exec -u www-data devkinsta_fpm wp --path=/www/kinsta/public/sitename"` | HTTPS with self-signed certs |
+| **Custom / Remote** | Your HTTPS site URL | Optional; requires separately configured execution access | REST reachability and account/host policy must allow it |
+
+> **Application Passwords on local HTTP:** On a deliberately local development site, WordPress can expose Application Passwords when `WP_ENVIRONMENT_TYPE` is `'local'`, subject to account/site policy. If that local environment does not already set it, its administrator can configure:
+> ```php
+> define('WP_ENVIRONMENT_TYPE', 'local');
+> ```
+> Check the effective local environment configuration. Never use this exception on production or disable certificate verification; HTTPS targets need a certificate trusted by the client host.
+
+### Environment Variables
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `WP_URL` | Yes | WordPress site URL (e.g. `http://mysite.local`) |
+| `WP_USER` | Yes | WordPress username with Editor or Admin role |
+| `WP_APP_PASSWORD` | Yes | Application Password (grouping spaces optional; preserve as one string) |
+| `WP_PATH` | No | WordPress filesystem path for Local by Flywheel, or wrapper working directory when `WP_CLI_CMD` needs project context |
+| `WP_CLI_CMD` | No | Custom WP-CLI command prefix for containerized environments |
+| `LOCAL_SITE_ID` | No | Override auto-detection of Local by Flywheel site ID |
+| `DIVIOPS_WP_CLI_ALLOW` | No | Comma-separated list of extended WP-CLI commands to enable ([see below](#wp-cli-security)) |
+
+### Common Pitfalls
+
+- **Password grouping spaces are optional** — quote the complete shell argument or JSON/TOML string. Do not paste credentials into chat.
+- **Use absolute paths** for `WP_PATH` — relative paths break when Claude Code runs from a different directory
+- **Unique MCP name** — don't reuse a name from another project
+- **Paths with spaces** — wrap the entire `KEY=VALUE` argument in double quotes (e.g. `--env "WP_PATH=/path with spaces/"`). Same goes for any custom server script path passed after `--`
+- **MCP not appearing after registration** — in Claude Code, run `claude mcp list` to verify. If it's not there, `claude mcp remove` and re-add. In Codex, verify the selected `~/.codex/config.toml` entry and restart Codex. In Desktop, verify the selected MCP JSON entry and restart the app. Preserve unrelated connections when correcting an entry.
+
+<a id="step-8-optional--bootstrap-the-design-system"></a>
+
+## Optional — Bootstrap the Design System
 
 The skill uses a per-project design system manifest (`.claude/design-system.json`) to resolve preset role keys to site-specific UUIDs. Without it, the agent falls back to inline styling or runtime discovery via `diviops_preset_audit`.
 
 > **This is optional.** Pages can be generated without a design system — the agent uses inline values. The design system adds consistency and reduces token count.
 
-Start with the audit prompt — it detects your project's state and tells you which phases to run.
+Inspect existing brand values and presets before proposing changes. The `oa` names below are an optional convention, not required setup; keep established project names and reuse their IDs where appropriate. Token/preset creation is a separate intentional write, not part of the first-page verification. Start with the audit prompt and review the proposed scope before any bootstrap.
 
 ### Start Here: Audit Your Site
 
@@ -508,7 +596,7 @@ Tokens exist but presets are missing. Skip to **Create Presets** below.
 
 Your site has presets with project-local names (not `oa *`). You can either:
 
-1. **Keep existing presets** and just generate a manifest mapping them:
+1. **Prefer keeping existing presets** and generate a manifest mapping them:
 ```
 My site has existing presets that are not oa-named. Run diviops_preset_audit
 and list all presets with their names, IDs, and groupNames. Help me map them
@@ -522,20 +610,25 @@ and generate .claude/design-system.json using my existing preset UUIDs.
 
 ### Create Presets (all paths)
 
-Presets must be created manually in the Visual Builder. Use the following prompt to get a checklist from Claude Code to guide your manual creation:
+First inspect the target's advertised tools/capabilities, installed versions and
+existing preset names/IDs. Released DiviOps supports `diviops_preset_create` for
+module presets and group (attribute-level) presets with the required group
+coordinates. This is not a promise that every group, attribute, composition or
+migration works on every installed version. Use only a supported shape described
+by the loaded skill and exposed by the current target.
 
-```
-Give me the preset creation checklist. I need to create oa attribute-level
-presets in the Visual Builder. List each preset name, which module to create
-it on, the groupId, groupName, and which tokens to reference.
+```text
+Inspect existing presets and the current tool/capability contract. Prefer reuse
+and preserve my established brand names. For any requested new preset, propose
+its exact module/group shape and a dry-run preview where supported. Do not apply,
+set defaults, reassign or delete presets without my approval. If the required
+shape is unsupported or uncertain, give me a Visual Builder creation checklist
+instead of guessing attributes or bypassing a version/capability gate.
 ```
 
-After creating each batch in the VB, have Claude inspect them:
-
-```
-Run diviops_preset_audit and verify the presets I just created.
-Capture the UUIDs for the manifest.
-```
+After an approved tool write or manual Visual Builder creation, inspect the stored
+preset and validate its use in a native draft. Capture its actual UUID for the
+manifest. A dry-run preview alone is not proof of saved/rendered correctness.
 
 ### Generate Manifest (all paths)
 
@@ -543,25 +636,13 @@ Once tokens and presets are in place:
 
 ```
 Generate .claude/design-system.json for my project.
-Map all oa preset names to role keys and capture UUIDs from diviops_preset_audit.
+Map my chosen existing or newly approved preset names to role keys and capture
+actual UUIDs from diviops_preset_audit; do not rename or replace existing presets.
 Also create .claude/instructions/design-system.md with my project's brand
 personality and design preferences.
 ```
 
 See [SKILL.md — Design System Lifecycle](https://github.com/oaris-dev/diviops/blob/main/skills/diviops-divi-5/SKILL.md#design-system-lifecycle) for the full technical reference.
-
-## Quick Test: Generate Your First Page
-
-Ask Claude Code:
-
-```
-Create a landing page called "Test Page" with a hero section (dark background,
-white heading "Hello World", subtitle, and a CTA button).
-```
-
-Claude will use the `diviops-divi-5` skill to generate the page. Check the result at your site URL.
-
-> Architecture overview, the per-tool category table, and Free vs Pro differences live in the dist-root README — this guide focuses on the operational walkthrough.
 
 ## Targeting Modules
 
@@ -593,9 +674,9 @@ To enable extended commands:
 
 ```bash
 claude mcp add diviops-mysite \
-  --env WP_URL=http://your-site.local \
-  --env WP_USER=admin \
-  --env WP_APP_PASSWORD=xxxxXXXXxxxxXXXXxxxxXXXX \
+  --env "WP_URL=http://your-site.local" \
+  --env "WP_USER=admin" \
+  --env "WP_APP_PASSWORD=xxxxXXXXxxxxXXXXxxxxXXXX" \
   --env "WP_PATH=/Users/you/Local Sites/your-site/app/public" \
   --env "DIVIOPS_WP_CLI_ALLOW=option update,post delete,search-replace" \
   -- npx -y --package @diviops/mcp-server diviops-mcp
@@ -619,18 +700,18 @@ The MCP server is a Node.js process that connects to any WordPress site via HTTP
 **Register multiple sites** with different names:
 
 ```bash
-# Production site
+# Remote staging site
 claude mcp add diviops-main \
-  --env WP_URL=http://main-site.local \
-  --env WP_USER=admin \
-  --env WP_APP_PASSWORD=xxxx \
+  --env "WP_URL=https://staging.example.com" \
+  --env "WP_USER=admin" \
+  --env "WP_APP_PASSWORD=xxxx" \
   -- npx -y --package @diviops/mcp-server diviops-mcp
 
 # Test site (same MCP package, different credentials)
 claude mcp add diviops-test \
-  --env WP_URL=http://test-site.local \
-  --env WP_USER=admin \
-  --env WP_APP_PASSWORD=yyyy \
+  --env "WP_URL=http://test-site.local" \
+  --env "WP_USER=admin" \
+  --env "WP_APP_PASSWORD=yyyy" \
   -- npx -y --package @diviops/mcp-server diviops-mcp
 ```
 
@@ -642,15 +723,24 @@ Each registration is independent — different site, different credentials, diff
 3. `claude mcp add ... npx -y --package @diviops/mcp-server diviops-mcp` with their own `WP_URL`, `WP_USER`, `WP_APP_PASSWORD`
 4. The bundled skills via `claude plugin marketplace add oaris-dev/diviops` followed by `claude plugin install divi-5-builder@diviops`, or by copying `skills/*` into their Codex skill directory
 
-No clone, no build.
+No source build is needed. Manual skill copies need a downloaded/extracted distribution or clone.
 
 ## Troubleshooting
 
 | Issue | Solution |
 |-------|----------|
-| 401 Unauthorized | Check `WP_USER` and `WP_APP_PASSWORD` (strip spaces) |
+| 401 Unauthorized | Check the intended target, username and Application Password, quoting/string handling and account policy; grouping-space removal is optional |
 | 503 Divi unavailable | Activate Divi 5 theme |
 | WP-CLI "not configured" | Set `WP_PATH` (Local by Flywheel) or `WP_CLI_CMD` (containerized) |
 | Styles not rendering | Hard-refresh browser (Cmd+Shift+R) — CSS cache |
 | VB shows raw `$variable()$` | Dynamic content binding — click the chip to edit |
 | `npx` can't find package | Update Node.js to 22+; verify `npx --version` works; use `npx -y --package @diviops/mcp-server diviops-mcp`; the explicit package/bin form is required |
+
+## Verification scope
+
+Configuration syntax and generated distribution references are checked separately
+from real client sessions. These instructions do not certify every client/OS
+combination. Record your client/OS, Free/MCP versions, selected skill distribution
+and target when you perform the checks; do not include credentials. Missing skill,
+disconnected client or wrong target must stop authoring. A dashboard screenshot,
+plugin activation or successful ping is not a completed first-page test.

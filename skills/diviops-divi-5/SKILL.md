@@ -115,6 +115,12 @@ Every page you generate uses one of three tiers for any given style value:
 
 **DiviOps generates working, design-complete pages at any tier.** Tokens and presets are consistency optimizations for projects that need them — they are NOT prerequisites.
 
+For an evolving multi-page site, visual consistency is not the same as shared
+editability. When the user wants central control or a reviewed design is being
+repeated across pages, use the [shared-style rollout checkpoint](references/presets.md#shared-style-rollout-checkpoint)
+before extending page-local styling further. This is a scoped consolidation
+choice, not a requirement to bootstrap a large preset catalog.
+
 For an existing brand, follow [the consumption convention](references/presets.md#when-to-use-presets-vs-inline-styles): reuse audited identities where appropriate, not names alone. Token presence does not require a preset system or authorize migration; a hybrid must identify which properties stay shared and which are page-local.
 
 ### First time on a project? Start here

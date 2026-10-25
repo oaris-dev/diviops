@@ -3,7 +3,7 @@
  * Plugin Name: DiviOps Agent
  * Plugin URI: https://diviops.com/
  * Description: REST API bridge for DiviOps — connects Claude Code to your Divi 5 site for AI-powered page building and design management.
- * Version: 1.5.47
+ * Version: 1.5.48
  * Author: oaris.de
  * Author URI: https://oaris.de
  * Text Domain: diviops-agent
@@ -78,7 +78,7 @@ class DiviOps_Agent {
 	 * Plugin version — surfaced in /handshake for self-diagnosis only;
 	 * server no longer gates on it (capability map is the gate).
 	 */
-	const VERSION = '1.5.47';
+	const VERSION = '1.5.48';
 
 	/**
 	 * Minimum MCP server version this plugin is compatible with.
@@ -2266,11 +2266,24 @@ class DiviOps_Agent {
 					<?php else : ?>
 					<div class="diviops-intro">
 						<h2><?php esc_html_e( 'Installation overview', 'diviops-agent' ); ?></h2>
-						<p><?php esc_html_e( 'Installed components and local configuration. MCP client connectivity is not verified here.', 'diviops-agent' ); ?></p>
+						<p><?php esc_html_e( 'This dashboard shows installed WordPress components. It cannot confirm that your AI client is connected or that its skill is loaded.', 'diviops-agent' ); ?></p>
 					</div>
 					<?php if ( ! $divi_active ) : ?>
 						<p class="diviops-callout"><?php esc_html_e( 'Divi is not active. Activate the Divi theme to use Divi-dependent MCP tools.', 'diviops-agent' ); ?></p>
 					<?php endif; ?>
+					<section aria-labelledby="diviops-first-steps-title">
+						<h2 id="diviops-first-steps-title"><?php esc_html_e( 'Start with one editable page', 'diviops-agent' ); ?></h2>
+						<p><?php esc_html_e( 'Free includes the tools and guidance for your first native Divi draft. Connect your AI client, load its authoring skill, then verify the result on a staging site.', 'diviops-agent' ); ?></p>
+						<ol>
+							<li><strong><?php esc_html_e( 'Connect your AI client.', 'diviops-agent' ); ?></strong> <?php esc_html_e( 'Choose your client and configure its WordPress connection using an Application Password.', 'diviops-agent' ); ?></li>
+							<li><strong><?php esc_html_e( 'Load the Divi authoring skill.', 'diviops-agent' ); ?></strong> <?php esc_html_e( 'Install the guidance for your chosen client, restart or open a fresh session, and confirm it can read the skill.', 'diviops-agent' ); ?></li>
+							<li><strong><?php esc_html_e( 'Verify, then build.', 'diviops-agent' ); ?></strong> <?php esc_html_e( 'Check the target site and create the native verification draft. Once that passes, try a small service-page brief and review it in Divi.', 'diviops-agent' ); ?></li>
+						</ol>
+						<p>
+							<a href="<?php echo esc_url( $docs_url . '#choose-client' ); ?>" target="_blank" rel="noopener noreferrer" class="button button-primary"><?php esc_html_e( 'Choose your client', 'diviops-agent' ); ?></a>
+							<a href="<?php echo esc_url( $docs_url . '#first-draft' ); ?>" target="_blank" rel="noopener noreferrer" class="button"><?php esc_html_e( 'Verify your first draft', 'diviops-agent' ); ?></a>
+						</p>
+					</section>
 					<section aria-labelledby="diviops-installation-title">
 						<h2 id="diviops-installation-title"><?php esc_html_e( 'Installed components & endpoint', 'diviops-agent' ); ?></h2>
 						<dl class="diviops-facts diviops-installation-facts">
@@ -2312,9 +2325,11 @@ class DiviOps_Agent {
 								<?php if ( $pro_version ) : ?>
 									<p><?php /* translators: %s: installed plugin version. */ echo esc_html( sprintf( __( 'Version %s', 'diviops-agent' ), $pro_version ) ); ?></p>
 								<?php endif; ?>
-								<p><?php echo esc_html( $pro_active ? __( 'Pro coverage slices and update/support licensing are managed separately.', 'diviops-agent' ) : __( 'Optional Pro plugin for paid coverage slices and Pro update access.', 'diviops-agent' ) ); ?></p>
+								<p><?php echo esc_html( $pro_active ? __( 'Pro coverage slices and update/support licensing are managed separately.', 'diviops-agent' ) : __( 'Optional Pro workflows for supported product campaigns, design rollouts and selected-page SEO. Your first native Divi page stays Free.', 'diviops-agent' ) ); ?></p>
 								<?php if ( $pro_active ) : ?>
 									<a href="<?php echo esc_url( $pro_url ); ?>"><?php esc_html_e( 'Manage Pro License', 'diviops-agent' ); ?></a>
+								<?php else : ?>
+									<a href="<?php echo esc_url( 'https://diviops.com/diviops-pro/' ); ?>" target="_blank" rel="noopener noreferrer"><?php esc_html_e( 'Explore Pro workflows', 'diviops-agent' ); ?></a>
 								<?php endif; ?>
 							</div>
 							<div class="diviops-addon">

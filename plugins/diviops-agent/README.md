@@ -8,7 +8,14 @@ Divi is a registered trademark of Elegant Themes, Inc. DiviOps Agent is not affi
 
 > **Don't use this plugin standalone** — it's the WordPress side of a two-piece suite; install + configure the [DiviOps MCP Server](../../../diviops-server/) next.
 
-## 1.5.47 candidate release note
+## 1.5.48 candidate release note
+
+- Adds a First steps dashboard section for connecting an AI client, loading the authoring skills and reviewing a first native Divi page.
+- Keeps connection and skill setup in the AI client; the dashboard does not claim an active MCP connection or completed onboarding. Existing permissions and provider version gates are unchanged.
+- The accompanying public builder 1.4.14 distribution aligns setup guidance and shared-style authoring instructions. Skill installation remains separate from the WordPress plugin. MCP stays at 1.5.74.
+- Prior dashboard browser and native checks passed. Exact 1.5.48 package qualification, remaining client verification and publication are pending.
+
+## 1.5.47 release note
 
 - Adds permission-checked inspection of literal Rank Math title, description,
   canonical and robots storage for one editable page. Missing and empty remain
@@ -19,9 +26,8 @@ Divi is a registered trademark of Elegant Themes, Inc. DiviOps Agent is not affi
   `seo_storage_inspect` capability. Existing semantic reads, previews, writes and
   recovery keep their exact-version gates; no automatic fallback or override.
 - The merged inspector passed bounded native checks with Rank Math 1.0.280 on
-  WordPress 7.1, PHP 8.3.35 and Divi 5.13.1. Exact candidate-package qualification
-  and publication remain pending; other versions and environments are not
-  covered by that native result. SCF, TSF, Agent Pro and Visuals are unchanged.
+  WordPress 7.1, PHP 8.3.35 and Divi 5.13.1. Exact 1.5.47 package qualification and delivery subsequently passed; other
+  versions and environments are not covered by that native result. SCF, TSF, Agent Pro and Visuals are unchanged.
 
 ## 1.5.46 historical release note
 
@@ -93,15 +99,16 @@ The plugin includes a WordPress.org-format `readme.txt` and a plugin-local `chan
 
 Current metadata policy:
 
-- `Stable tag` matches the plugin header `Version` (`1.5.46` for this candidate).
+- `Stable tag` matches the plugin header `Version` (`1.5.48` for this candidate).
 - `Requires at least` and `Requires PHP` mirror the main plugin header.
 - `Tested up to` is evidence-based for this repo/substrate and should not be raised until the Free plugin is actually tested on that WordPress version.
 - External-service/authentication disclosure must mention the separately distributed npm MCP server, WordPress Application Passwords, and the rule that secrets do not belong in issues, examples, screenshots, or repo files.
 - Free/Pro copy must keep the Free plugin useful while making clear that Pro is the paid workflow-leverage layer and that not every MCP tool is Free-backed.
 
-The current source candidate is Free 1.5.46 for the DiviOps Visuals addon-card
-label. MCP remains 1.5.73; accompanying builder guidance is package 1.4.12.
-The delivered baseline at preparation is Free 1.5.45 and builder package 1.4.11.
+The current source candidate is Free 1.5.48 for the First steps dashboard.
+MCP remains 1.5.74; accompanying setup and shared-style guidance is builder
+package 1.4.14. The delivered baseline at preparation is Free 1.5.47 and
+builder package 1.4.13.
 Source acceptance, exact-package qualification and publication are separate
 steps; this version bump does not establish publication or a site update.
 

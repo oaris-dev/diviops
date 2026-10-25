@@ -8,7 +8,26 @@ The Node.js MCP server inside the DiviOps harness. It gives Claude Code, Codex, 
 Claude Code <-> MCP Server (stdio) <-> WordPress REST API <-> DiviOps Agent plugin
 ```
 
-## MCP 1.5.74 source candidate
+## MCP 1.5.75 source candidate
+
+Adds explicit tool hints for seven existing onboarding tools. Block validation,
+page and layout reads, variable listing and preset auditing are marked read-only.
+Page creation is additive but mutating, including when publishing is requested;
+trash is destructive, including permanent deletion. Existing idempotency hints,
+inputs, handlers and capability checks are unchanged. Dry-run inputs do not
+reclassify a write tool as read-only.
+
+Hints describe tool behavior; they do not grant permission or guarantee that a
+client will run without approval. No tool is added and no provider version gate
+is changed. The planned onboarding bundle pairs this candidate with Free Agent
+**1.5.48** and public builder companion **1.4.14**, without introducing a shared
+version floor. Reconnect after a supported MCP update to refresh its tool catalog.
+
+Packaging and client verification remain separate from publication. Earlier
+Codex verification used MCP 1.5.74 with explicit tool permissions; it does not
+qualify this candidate or default client approval behavior.
+
+## MCP 1.5.74 historical release note
 
 Adds the Free `diviops_seo_storage_inspect` tool for four literal Rank Math
 storage keys on one editable page. Pair with Free Agent **1.5.47**, then
@@ -25,8 +44,8 @@ SCF and TSF behavior is unchanged; Pro is optional and unchanged.
 
 The merged inspector passed bounded native checks with Rank Math 1.0.280 on
 WordPress 7.1, PHP 8.3.35 and Divi 5.13.1. That feature result does not qualify
-arbitrary future versions or the exact newly versioned Free ZIP. Candidate
-package qualification and publication remain separate gates.
+arbitrary future versions. Feature verification, exact-package qualification
+and publication are separate evidence.
 
 ## MCP 1.5.73 historical release note
 

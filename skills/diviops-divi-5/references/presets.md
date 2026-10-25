@@ -686,6 +686,38 @@ A preset reference and valid blocks do not prove that the preset controls the re
 
 An offline CSS example does not qualify Divi-emitted CSS, persisted block/readback, implicit preset cascade or native VB save/reopen. Keep those live gates pending unless separately authorized and exercised.
 
+### Shared-style rollout checkpoint
+
+Use when a user wants central editing or an accepted design is being repeated
+across a multi-page site. Do not infer this requirement for a one-off page.
+
+- **Report actual coverage:** distinguish shared Theme Builder layouts, bound
+  presets/tokens, and repeated page-local values. A generator or transformation
+  script with one palette is not a shared WordPress design system. A preset
+  UUID alone does not prove a property follows it; inspect inline overrides.
+- **Propose the smallest useful shared set:** recurring button states,
+  typography and surface roles are candidates. Keep page-specific composition,
+  imagery, content and responsive exceptions local. Do not require an `oa`
+  prefix, full catalog, registry cleanup or sitewide default changes.
+- **Bound the migration:** identify exact roles, pages and existing consumers;
+  obtain the necessary scope before changing shared definitions. Prefer a
+  distinct reviewed role where updating an old preset would restyle pages
+  outside the authorized batch. Preserve newer editorial changes.
+- **Prove propagation, not just appearance:** audit identities and supported
+  native paths; capture recovery; validate/dry-run; attach bindings and remove
+  only the overrides intentionally superseded through the supported
+  [consolidation workflow](#consolidation-workflow); preserve its exact-removal
+  limits. Verify readback; when runtime verification is authorized, check native
+  VB Save/reopen and the covered property's shared source. If a reversible
+  preset-edit propagation test is authorized, check
+  representative consumers, restore the reviewed value and verify again.
+  Without that test, report structural binding evidence separately from an
+  observed edit-propagation result. Never mutate shared styles merely to audit.
+
+A page-local design experiment may legitimately precede consolidation. Record
+that debt and its next checkpoint instead of silently copying overrides through
+the whole site or calling the result centrally editable.
+
 ### When to Use Presets vs Inline Styles
 
 **If you're starting a new project, presets are optional.** DiviOps generates polished pages using hardcoded values from [design-guide.md](design-guide.md) patterns without any preset setup. See [SKILL.md "First time on a project?"](../SKILL.md#first-time-on-a-project-start-here) for the shortest path.

@@ -810,7 +810,7 @@ registerPluginTool(
       offset: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER).optional().describe("Byte offset for bounded mode; defaults to zero. Use the returned next_offset."),
       expected_checksum: z.string().regex(/^sha256:[a-f0-9]{64}$/).optional().describe("Required for nonzero bounded offsets; the exact initial full-page content_checksum."),
     },
-    annotations: { idempotentHint: true },
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
     _meta: { idempotent: "true" },
   },
   async ({ page_id, bounded, offset, expected_checksum }) => {
@@ -860,7 +860,7 @@ registerPluginTool(
           "Include full block attrs and raw content (default: false for slim mode)",
         ),
     },
-    annotations: { idempotentHint: true },
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
     _meta: { idempotent: "true" },
   },
   async ({ page_id, full }) => {
@@ -1950,7 +1950,7 @@ registerPluginTool(
           "WordPress post/page ID to read post_content from the DB. Requires edit_post capability on the page. Provide exactly one of {content, page_id}.",
         ),
     },
-    annotations: { idempotentHint: true },
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
     _meta: { idempotent: "true" },
   },
   async ({ content, page_id }) => {
@@ -2473,7 +2473,7 @@ registerPluginTool(
         .describe("Post status"),
       dry_run: DRY_RUN_FIELD,
     },
-    annotations: { idempotentHint: false },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
     _meta: { idempotent: "false" },
   },
   async ({ title, content, status, dry_run }) => {
@@ -2514,7 +2514,7 @@ registerPluginTool(
           "When true, return the change plan without mutating state.",
         ),
     },
-    annotations: { idempotentHint: true },
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true },
     _meta: { idempotent: "true" },
   },
   async ({ post_id, force, dry_run }) => {
@@ -2585,7 +2585,7 @@ registerPluginTool(
   {
     description:
       "Audit all Divi presets (module + group). Each entry reports `block_ref_count` (page-content refs via modulePreset / groupPreset block markup), `group_ref_count` (in-registry chain refs from other presets — module presets via top-level `groupPresets.<slot>.presetId`, group presets via `attrs.groupPreset.<slot>.presetId`), and `referenced` (true if either > 0). Group presets that are chain-referenced also expose `referenced_by_presets` (UUIDs of the presets that wire them in — typically module presets, but type-agnostic). Use this before deleting — orphan-cleanup based only on page refs would silently wipe load-bearing chain-wired group presets (font, border, box-shadow, spacing, button). Also reports `orphan_default_pointers`: per-bucket `default` pointers that reference a UUID no longer present in `items[]` (caused by past unsafe deletes). Render-safe but blocks Divi's lazy recreate-on-VB-use path; clear via diviops_preset_set_default with unset=true on the affected module/group. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }.",
-    annotations: { idempotentHint: true },
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
     _meta: { idempotent: "true" },
   },
   async () => {
@@ -4773,7 +4773,7 @@ registerPluginTool(
           'Filter by stored ID prefix only. Does not match labels; for semantic names such as "oa-*" labels, list by type and filter returned labels client-side.',
         ),
     },
-    annotations: { idempotentHint: true },
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
     _meta: { idempotent: "true" },
   },
   async (args, context?: Parameters<typeof requestAbortSignal>[1]) => {

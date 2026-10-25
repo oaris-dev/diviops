@@ -9,6 +9,11 @@ Policy:
 - Keep entries customer-facing. Avoid internal issue numbers unless they are needed to explain a user-visible change.
 - Do not include secrets, credentials, customer data, or environment-specific URLs.
 
+## 1.5.48
+
+- Adds a First steps dashboard section for connecting an AI client, loading the authoring skills and reviewing a first native Divi page.
+- Keeps connection and skill setup in the AI client; the dashboard does not claim an active MCP connection or completed onboarding. Existing permissions and provider version gates are unchanged.
+
 ## 1.5.47
 
 - Adds permission-checked inspection of four literal Rank Math storage keys for one editable page, separate from computed SEO and inherited defaults.
