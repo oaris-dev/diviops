@@ -72,6 +72,11 @@ acceptance: perform it when authorized, and disclose when it was not performed.
 
 ### Verification convention
 
+For routine supported edits, follow the DiviOps primer's
+[verification policy](../diviops/SKILL.md#verification-proportional-to-the-task).
+The evidence labels below describe supported claims; they are not a requirement
+to repeat browser or VB qualification on each edit.
+
 Skill docs label findings by evidence quality. **Runtime acceptance ≠ VB compatibility** — a path can render correctly via MCP write but get rewritten or rejected on VB save. When citing or extending these docs, preserve the existing tier:
 
 | Marker | Meaning | When to use |
@@ -84,12 +89,23 @@ The two real failure modes this prevents (`feedback_schema_canonical_path`, `fee
 - A path that renders but is **not VB-editable** — downstream user opens VB, value silently re-resolves to default
 - A path that runtime accepts but **VB rewrites on save** — the very next user save undoes our write
 
-Upgrade tier by VB round-trip: have the user save the shape in VB, then dump the registry/block markup. If the shape is preserved exactly, stamp `(VB-verified DATE)`. If VB rewrote it, document the canonical shape (what VB wrote) and the runtime-permissive variant separately.
+When the task explicitly establishes or upgrades a VB-compatibility claim,
+perform an authorized VB save/reopen and compare persisted parsed modules and
+attributes. Preserve existing evidence labels and their version/scope limits.
+Do not repeat this qualification step for every routine edit using an already
+supported shape. If VB rewrites the shape, document the canonical shape and the
+runtime-permissive variant separately; stamp `(VB-verified DATE)` only when the
+claimed round-trip has actually passed.
 
 ### Design Quality Checklist
-When generating pages, ALWAYS apply:
-Live visual checks below require task authorization. For planning-only or no-access
-tasks, record them as pending; never imply that an unperformed check passed.
+Apply the relevant checks below when creating or materially changing visual
+design or interaction. For routine supported edits, use the API-first verification
+policy above. Inspect only affected elements and relevant states/viewports; do
+not initiate a full-page review or VB round-trip without a concrete need.
+Live checks require task authorization. Mark required but unperformed checks
+pending; optional checks are not completion blockers. Never imply that an
+unperformed check passed. The design recipes below are not a mandate to add
+animations, hover effects or other design changes to a routine edit.
 - **Designer -> Builder -> Reviewer:** Use the [authoring review handoff](references/design-guide.md#authoring-review-handoff) for approved-page comparison, cumulative section spacing, repeated component rhythm and actual link states. These are portable sequential roles, not a required model/runtime; structural validation and persisted readback do not establish visual acceptance. This guidance applies to Free native authoring too.
 - **Entrance animations** on visible modules (`fade`/`slide` with staggered `delay`: 0ms, 150ms, 300ms, 450ms)
 - **Hover states** on cards, buttons, icons (use `desktop.hover` format)

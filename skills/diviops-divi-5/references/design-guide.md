@@ -23,6 +23,14 @@ Choose audited brand identities or reviewed page-local values using [the consump
 
 ### Authoring review handoff
 
+Use this handoff for new or materially changed visual design or interaction.
+Routine supported edits use the builder skill's API-first verification policy.
+Select only the affected elements and relevant states/viewports from the checks
+below; a link-destination or copy-only correction does not automatically require
+visual review or VB Save/reopen. Escalate when a concrete appearance, behavior or
+editor-compatibility question remains, or when explicitly requested. Preserve
+all explicit task-specific and product-qualification acceptance gates.
+
 Use these portable roles sequentially in one agent, or hand off between available
 specialists; no particular model or runtime is required. This is generic Free
 native authoring guidance, with inline values or existing tokens/presets, not a
@@ -41,11 +49,13 @@ paid workflow prerequisite.
 - **Expandable content:** For FAQs intended to fill their container, compare wrapper and Toggle widths with all answers closed, a short answer open and the longest answer open, at desktop/phone (and distinct tablet layouts). Check wrapping and overflow too; keyboard behavior, block validation and a successful Builder save do not establish width stability. See [centered FAQ sizing](#centered-faq-groups-and-intrinsic-width).
 
 Report structural validation/persisted readback separately from visual acceptance.
-When authorized, inspect rendered desktop/phone output (plus tablet when it has
-distinct values or behavior) and actual hover behavior;
-HTML previews alone are not live interaction proof. If access or authorization is
-missing, name the exact page/elements and mark those checks pending. Report any
-VB edit/save check separately; do not infer it from frontend appearance.
+When a scoped visual or interactive check is needed and authorized, inspect the
+affected rendered desktop/phone output (plus tablet when it has distinct values
+or behavior) and relevant interaction states. HTML previews alone are not live
+interaction proof. If a required check lacks access or authorization, name the
+exact page/elements and mark it pending. Otherwise report unused checks as not
+required for this scope. Report any VB edit/save check separately; do not infer
+it from frontend appearance or require it solely because Divi content changed.
 
 #### Bad/good review example: agenda and preparation
 

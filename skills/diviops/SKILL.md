@@ -12,6 +12,30 @@ Cross-cutting conventions every DiviOps target-coverage skill (`diviops-divi-5`,
 
 This skill carries no tool-surface documentation — tools live with the coverage slice that owns them.
 
+## Verification proportional to the task
+
+Routine supported site edits are API-first. Read the current target and affected
+state, validate the supported change, preserve permissions and sanitization, use
+applicable dry runs and checksum/concurrency protections, retain appropriately
+scoped recovery, and compare fresh persisted state with the intended delta and
+preserved dependencies. Stop on conflicts or ambiguous results; do not overwrite
+newer work or repeat a write blindly. Once these checks pass, the routine edit may
+be reported complete without browser inspection or Visual Builder Save/reopen.
+
+Use browser checks for a specific visual or interactive question, a known
+rendering risk, or an explicit request. Use Visual Builder Save/reopen only for a
+concrete editor/serialization compatibility question or an explicitly approved
+qualification requirement. A Builder save is a mutation, not a read-only
+verification step. Choose the smallest check that resolves the stated question;
+do not expand a routine edit into a full visual or qualification round.
+
+Keep API persistence, visual acceptance, Builder compatibility and product
+qualification claims separate. Report browser/VB checks as "not required for this
+scope" when applicable; mark them pending only when an actual acceptance
+requirement remains unmet. Existing qualification and explicit task-specific
+acceptance gates remain unchanged. This policy does not qualify unsupported
+operations, waive capability checks, or authorize publication or external activity.
+
 ## Response envelope
 
 Every `diviops_*` tool returns the same envelope:
