@@ -9,6 +9,12 @@ Policy:
 - Keep entries customer-facing. Avoid internal issue numbers unless they are needed to explain a user-visible change.
 - Do not include secrets, credentials, customer data, or environment-specific URLs.
 
+## 1.5.49
+
+- Reports nonempty module updates whose requested values are already stored as no-ops, without another write, cache invalidation or snapshot.
+- Reports recovery as restored only when restoration is verified; an unverified restore remains a failed write. Existing permission, validation and recovery safeguards remain unchanged.
+- This is a reporting correction. The historical distinct-value persistence discrepancy remains unresolved; no additional native or client qualification is claimed.
+
 ## 1.5.48
 
 - Adds a First steps dashboard section for connecting an AI client, loading the authoring skills and reviewing a first native Divi page.

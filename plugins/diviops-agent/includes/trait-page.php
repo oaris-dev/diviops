@@ -1760,6 +1760,8 @@ trait DiviOps_Agent_Page {
 			}
 		}
 
+		// Keep decoded values for semantic no-op detection before serialization.
+		$original_block_attrs = $block_attrs;
 		// Apply dot-notation attrs.
 		foreach ( $attrs as $path => $value ) {
 			$keys = self::split_dot_path( $path );
@@ -1804,18 +1806,29 @@ trait DiviOps_Agent_Page {
 			);
 		}
 
-		// Empty updates must not normalize the newly supported bare Text opener.
-		if ( $found_match['bare_text'] && [] === $attrs ) {
+		// Already-present values must not claim a write or normalize stored bytes.
+		// Preserve the existing empty-update behavior outside bare Text repair.
+		if ( ( $found_match['bare_text'] && [] === $attrs )
+			|| ( [] !== $attrs && $original_block_attrs === $block_attrs ) ) {
+			$preflight = self::assert_divi_full_content_safe_for_write( $content, 'content' );
+			if ( is_wp_error( $preflight ) ) {
+				return self::envelope_from_content_write_error( $preflight );
+			}
+			$target_desc = 'auto_index' === $mode ? $auto_index : ( 'label' === $mode ? $label : "text:{$match_text}" );
 			$response = [
 				'success'    => true,
 				'page_id'    => $post_id,
 				'matched_by' => $mode,
-				'target'     => $auto_index,
+				'target'     => $target_desc,
 				'updated'    => [],
 				'noop'       => true,
-				'message'    => "Module '{$auto_index}' has no requested attr updates (no-op).",
+				'message'    => "Module '{$target_desc}' already has the requested attr values (no-op).",
 			];
-			$snapshot = $backup ? self::rollback_snapshot_noop_for_post_write( $post, 'diviops_module_update', [ 'tool_operation' => 'module.update', 'target' => $auto_index, 'updated' => [] ] ) : null;
+			if ( 'label' === $mode && $total_matches > 1 ) {
+				$response['occurrence']    = $occurrence;
+				$response['total_matches'] = $total_matches;
+			}
+			$snapshot = $backup ? self::rollback_snapshot_noop_for_post_write( $post, 'diviops_module_update', [ 'tool_operation' => 'module.update', 'target' => $target_desc, 'updated' => [] ] ) : null;
 			return self::envelope_success( self::rollback_snapshot_add_to_response( $response, $snapshot ) );
 		}
 

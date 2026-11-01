@@ -3,7 +3,7 @@ Contributors: diviops
 Tags: divi, mcp, ai, rest-api, site-builder
 Requires at least: 6.5
 Tested up to: 7.1
-Stable tag: 1.5.48
+Stable tag: 1.5.49
 Requires PHP: 7.4
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -109,6 +109,12 @@ No. Free includes the core site-authoring bridge described above. Selected advan
 2. An agent-authored page open in the Divi 5 Visual Builder, with the native Heading module content controls available for continued editing. Divi is a separate required product.
 
 == Changelog ==
+
+= 1.5.49 =
+
+* Reports nonempty module updates whose requested values are already stored as no-ops, without another write, cache invalidation or snapshot.
+* Reports recovery as restored only when restoration is verified; an unverified restore remains a failed write. Existing permission, validation and recovery safeguards remain unchanged.
+* This is a reporting correction. The historical distinct-value persistence discrepancy remains unresolved; no additional native or client qualification is claimed.
 
 = 1.5.48 =
 
@@ -352,6 +358,10 @@ No. Free includes the core site-authoring bridge described above. Selected advan
 * Keeps `Stable tag` aligned with the plugin header version.
 
 == Upgrade Notice ==
+
+= 1.5.49 =
+
+Corrects no-op and recovery-outcome reporting. Already-present module attributes avoid another write; recovery is reported as restored only after verification. Existing permissions, validation and compatibility gates are unchanged.
 
 = 1.5.48 =
 

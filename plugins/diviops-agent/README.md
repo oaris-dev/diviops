@@ -8,7 +8,14 @@ Divi is a registered trademark of Elegant Themes, Inc. DiviOps Agent is not affi
 
 > **Don't use this plugin standalone** — it's the WordPress side of a two-piece suite; install + configure the [DiviOps MCP Server](../../../diviops-server/) next.
 
-## 1.5.48 candidate release note
+## 1.5.49 candidate release note
+
+- Reports nonempty module updates whose requested values are already stored as no-ops, without another write, cache invalidation or snapshot.
+- Reports recovery as restored only when restoration is verified; an unverified restore remains a failed write. Existing permission, validation and recovery safeguards remain unchanged.
+- This is a reporting correction. The historical distinct-value persistence discrepancy remains unresolved; no additional native or client qualification is claimed.
+- MCP 1.5.75 and the delivered builder/primer artifacts are unchanged. PHP remains 7.4+. This preparation does not establish publication or an installed-site update.
+
+## 1.5.48 historical preparation note
 
 - Adds a First steps dashboard section for connecting an AI client, loading the authoring skills and reviewing a first native Divi page.
 - Keeps connection and skill setup in the AI client; the dashboard does not claim an active MCP connection or completed onboarding. Existing permissions and provider version gates are unchanged.
@@ -99,16 +106,16 @@ The plugin includes a WordPress.org-format `readme.txt` and a plugin-local `chan
 
 Current metadata policy:
 
-- `Stable tag` matches the plugin header `Version` (`1.5.48` for this candidate).
+- `Stable tag` matches the plugin header `Version` (`1.5.49` for this candidate).
 - `Requires at least` and `Requires PHP` mirror the main plugin header.
 - `Tested up to` is evidence-based for this repo/substrate and should not be raised until the Free plugin is actually tested on that WordPress version.
 - External-service/authentication disclosure must mention the separately distributed npm MCP server, WordPress Application Passwords, and the rule that secrets do not belong in issues, examples, screenshots, or repo files.
 - Free/Pro copy must keep the Free plugin useful while making clear that Pro is the paid workflow-leverage layer and that not every MCP tool is Free-backed.
 
-The current source candidate is Free 1.5.48 for the First steps dashboard.
-MCP remains 1.5.74; accompanying setup and shared-style guidance is builder
-package 1.4.14. The delivered baseline at preparation is Free 1.5.47 and
-builder package 1.4.13.
+The current source candidate is Free 1.5.49 for no-op and recovery-outcome
+reporting. The delivered baseline is Free 1.5.48 with MCP 1.5.75.
+MCP and the delivered builder/primer artifacts are unchanged.
+Historical preparation notes retain their original evidence and scope.
 Source acceptance, exact-package qualification and publication are separate
 steps; this version bump does not establish publication or a site update.
 

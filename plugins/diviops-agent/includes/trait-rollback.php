@@ -255,7 +255,11 @@ trait DiviOps_Agent_Rollback {
 
 	private static function rollback_snapshot_mark_from_write_error( array $record, $error ): array {
 		$code   = is_object( $error ) && method_exists( $error, 'get_error_code' ) ? (string) $error->get_error_code() : '';
-		$status = false !== strpos( $code, '.content_write_corruption' ) ? 'write_failed_restored' : 'aborted_before_write';
+		$data   = is_object( $error ) && method_exists( $error, 'get_error_data' ) ? $error->get_error_data() : null;
+		$status = 'aborted_before_write';
+		if ( false !== strpos( $code, '.content_write_corruption' ) ) {
+			$status = is_array( $data ) && true === ( $data['revert']['verified'] ?? null ) ? 'write_failed_restored' : 'write_failed';
+		}
 		$current = get_post( (int) $record['target']['id'] );
 		$after   = $current && isset( $current->post_content ) ? (string) $current->post_content : null;
 		return self::rollback_snapshot_mark_post_write( $record, $status, $after );
