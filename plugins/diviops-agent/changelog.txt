@@ -9,6 +9,12 @@ Policy:
 - Keep entries customer-facing. Avoid internal issue numbers unless they are needed to explain a user-visible change.
 - Do not include secrets, credentials, customer data, or environment-specific URLs.
 
+## 1.5.50
+
+- Adds optional reviewed-content checksum guards to module and Theme Builder layout updates. Stale content, including same-length edits, refuses before backup or mutation; omission retains the legacy contract.
+- Preserves authorization, serialization, scoped recovery and unrelated module content. This is optimistic compare-before-write, not an atomic lock; later concurrent writes can still race.
+- Pair with MCP 1.5.76 and reconnect after supported updates. Existing client and runtime qualification limits remain unchanged.
+
 ## 1.5.49
 
 - Reports nonempty module updates whose requested values are already stored as no-ops, without another write, cache invalidation or snapshot.

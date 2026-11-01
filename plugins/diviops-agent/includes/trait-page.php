@@ -1491,6 +1491,12 @@ trait DiviOps_Agent_Page {
 			);
 		}
 
+		$expected_checksum = $request->get_param( 'expected_checksum' );
+		$checksum_error = self::expected_post_content_checksum_error( $post, $expected_checksum, 'module' );
+		if ( is_wp_error( $checksum_error ) ) {
+			return self::envelope_from_content_write_error( $checksum_error );
+		}
+
 		// Selector validation (missing / ambiguous / malformed auto_index)
 		// is centralized in resolve_module_target().
 		$target = self::resolve_module_target( $request );
@@ -1786,6 +1792,11 @@ trait DiviOps_Agent_Page {
 			}
 		}
 
+		// Bind previews and semantic no-ops as well as writes to fresh stored bytes.
+		$checksum_error = self::expected_post_content_checksum_error( $post, $expected_checksum, 'module', true );
+		if ( is_wp_error( $checksum_error ) ) {
+			return self::envelope_from_content_write_error( $checksum_error );
+		}
 		if ( $dry_run ) {
 			$target_desc = 'auto_index' === $mode ? $auto_index : ( 'label' === $mode ? $label : "text:{$match_text}" );
 			$changes     = [];
@@ -1865,6 +1876,11 @@ trait DiviOps_Agent_Page {
 			$target_desc = "text:{$match_text}";
 		}
 
+		// Serialization is complete; refuse drift before creating any backup or writing.
+		$checksum_error = self::expected_post_content_checksum_error( $post, $expected_checksum, 'module', true );
+		if ( is_wp_error( $checksum_error ) ) {
+			return self::envelope_from_content_write_error( $checksum_error );
+		}
 		$snapshot = null;
 		if ( $backup ) {
 			$snapshot = self::rollback_snapshot_create_for_post_write( $post, 'diviops_module_update', [ 'tool_operation' => 'module.update', 'target' => $target_desc, 'updated' => array_keys( $attrs ) ] );

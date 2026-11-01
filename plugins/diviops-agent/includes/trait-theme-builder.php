@@ -1259,6 +1259,11 @@ trait DiviOps_Agent_ThemeBuilder {
 				404
 			);
 		}
+		$expected_checksum = $request->get_param( 'expected_checksum' );
+		$checksum_error = self::expected_post_content_checksum_error( $post, $expected_checksum, 'tb' );
+		if ( is_wp_error( $checksum_error ) ) {
+			return self::envelope_from_content_write_error( $checksum_error );
+		}
 		if ( ! is_string( $content ) ) {
 			return self::envelope_error(
 				'invalid_input',
@@ -1284,6 +1289,11 @@ trait DiviOps_Agent_ThemeBuilder {
 			return self::envelope_from_content_write_error( $shape );
 		}
 
+		// Recheck after normalization/preflight, before preview, backup, or write.
+		$checksum_error = self::expected_post_content_checksum_error( $post, $expected_checksum, 'tb', true );
+		if ( is_wp_error( $checksum_error ) ) {
+			return self::envelope_from_content_write_error( $checksum_error );
+		}
 		if ( (bool) $request->get_param( 'dry_run' ) ) {
 			$extra = $backup ? [ 'backup' => self::rollback_snapshot_plan_for_post_write( $post, 'diviops_tb_layout_update', [ 'tool_operation' => 'tb_layout.update' ] ) ] : [];
 			return self::dry_run_response(

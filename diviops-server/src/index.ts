@@ -2188,6 +2188,7 @@ registerPluginTool(
       DRY_RUN_DESC_SUFFIX,
     inputSchema: {
       page_id: z.number().describe("WordPress post/page ID"),
+      expected_checksum: z.string().length(71).regex(/^sha256:[a-f0-9]{64}$/).optional().describe("Optional exact owning post_content checksum from diviops_page_get. Checked on preview/apply; drift is refused. Optimistic comparison, not an atomic lock. Omit for legacy writes."),
       label: z
         .string()
         .optional()
@@ -2223,7 +2224,12 @@ registerPluginTool(
     _meta: { idempotent: "conditional" },
   },
   async (args, context?: Parameters<typeof requestAbortSignal>[1]) => {
-    const { page_id, label, match_text, auto_index, occurrence, attrs, dry_run, backup } = args;
+    const { page_id, label, match_text, auto_index, occurrence, attrs, dry_run, backup, expected_checksum } = args;
+    const checksumGate = conditionalCapabilityError(
+      "diviops_module_update", "module_update_expected_checksum", expected_checksum !== undefined,
+      "Update the Agent to support guarded writes; do not drop expected_checksum to bypass this refusal.",
+    );
+    if (checksumGate) return checksumGate;
     const backupGate = backupCapabilityError("diviops_module_update", backup);
     if (backupGate) return backupGate;
     const isolationGate = writerIsolationErrorResult("diviops_module_update", {
@@ -2231,6 +2237,7 @@ registerPluginTool(
     });
     if (isolationGate) return isolationGate;
     const body: Record<string, any> = { attrs };
+    if (expected_checksum !== undefined) body.expected_checksum = expected_checksum;
     if (auto_index) body.auto_index = auto_index;
     if (label) body.label = label;
     if (match_text) body.match_text = match_text;
@@ -3488,6 +3495,7 @@ registerPluginTool(
       DRY_RUN_DESC_SUFFIX,
     inputSchema: {
       layout_id: z.number().describe("Layout post ID to update"),
+      expected_checksum: z.string().length(71).regex(/^sha256:[a-f0-9]{64}$/).optional().describe("Optional exact owning post_content checksum from diviops_page_get with the layout ID. Checked on preview/apply; drift is refused. Optimistic comparison, not an atomic lock. Omit for legacy writes."),
       content: z.string().describe("New block markup content"),
       dry_run: DRY_RUN_FIELD,
       backup: BACKUP_FIELD,
@@ -3495,7 +3503,12 @@ registerPluginTool(
     annotations: { idempotentHint: false },
     _meta: { idempotent: "conditional" },
   },
-  async ({ layout_id, content, dry_run, backup }) => {
+  async ({ layout_id, content, dry_run, backup, expected_checksum }) => {
+    const checksumGate = conditionalCapabilityError(
+      "diviops_tb_layout_update", "tb_layout_update_expected_checksum", expected_checksum !== undefined,
+      "Update the Agent to support guarded writes; do not drop expected_checksum to bypass this refusal.",
+    );
+    if (checksumGate) return checksumGate;
     const backupGate = backupCapabilityError("diviops_tb_layout_update", backup);
     if (backupGate) return backupGate;
     const isolationGate = writerIsolationErrorResult(
@@ -3504,6 +3517,7 @@ registerPluginTool(
     );
     if (isolationGate) return isolationGate;
     const body: Record<string, unknown> = { content };
+    if (expected_checksum !== undefined) body.expected_checksum = expected_checksum;
     if (dry_run) body.dry_run = true;
     if (backup) body.backup = true;
     const result = await authoringWrite(`/theme-builder/layout/update/${layout_id}`, "PUT", body, "tb_layout_update", dry_run === true);

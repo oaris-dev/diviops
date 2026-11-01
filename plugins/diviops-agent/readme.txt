@@ -3,7 +3,7 @@ Contributors: diviops
 Tags: divi, mcp, ai, rest-api, site-builder
 Requires at least: 6.5
 Tested up to: 7.1
-Stable tag: 1.5.49
+Stable tag: 1.5.50
 Requires PHP: 7.4
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -109,6 +109,12 @@ No. Free includes the core site-authoring bridge described above. Selected advan
 2. An agent-authored page open in the Divi 5 Visual Builder, with the native Heading module content controls available for continued editing. Divi is a separate required product.
 
 == Changelog ==
+
+= 1.5.50 =
+
+* Adds optional reviewed-content checksum guards to module and Theme Builder layout updates. Stale content, including same-length edits, refuses before backup or mutation; omission retains the legacy contract.
+* Preserves authorization, serialization, scoped recovery and unrelated module content. This is optimistic compare-before-write, not an atomic lock; later concurrent writes can still race.
+* Pair with MCP 1.5.76 and reconnect after supported updates. Existing client and runtime qualification limits remain unchanged.
 
 = 1.5.49 =
 
@@ -358,6 +364,10 @@ No. Free includes the core site-authoring bridge described above. Selected advan
 * Keeps `Stable tag` aligned with the plugin header version.
 
 == Upgrade Notice ==
+
+= 1.5.50 =
+
+Adds optional reviewed-content checksum guards for module and Theme Builder layout updates. Pair with MCP 1.5.76. Stale content is refused before backup or mutation. This is optimistic comparison, not an atomic lock; existing safeguards remain unchanged.
 
 = 1.5.49 =
 

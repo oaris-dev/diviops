@@ -3,7 +3,7 @@
  * Plugin Name: DiviOps Agent
  * Plugin URI: https://diviops.com/
  * Description: REST API bridge for DiviOps — connects Claude Code to your Divi 5 site for AI-powered page building and design management.
- * Version: 1.5.49
+ * Version: 1.5.50
  * Author: oaris.de
  * Author URI: https://oaris.de
  * Text Domain: diviops-agent
@@ -78,7 +78,7 @@ class DiviOps_Agent {
 	 * Plugin version — surfaced in /handshake for self-diagnosis only;
 	 * server no longer gates on it (capability map is the gate).
 	 */
-	const VERSION = '1.5.49';
+	const VERSION = '1.5.50';
 
 	/**
 	 * Minimum MCP server version this plugin is compatible with.
@@ -119,6 +119,7 @@ class DiviOps_Agent {
 		// module
 		'module_clone', 'module_get', 'module_lock', 'module_move', 'module_unlock', 'module_update',
 		'module_clone_backup', 'module_lock_backup', 'module_move_backup', 'module_unlock_backup', 'module_update_backup',
+		'module_update_expected_checksum',
 		// page
 		'page_create', 'page_get', 'page_get_bounded_utf8_v1', 'page_get_layout', 'page_list',
 		'page_settings_get', 'page_settings_update',
@@ -144,6 +145,7 @@ class DiviOps_Agent {
 		// theme builder
 		'cross_env_source_export_get', 'cross_env_target_context_get', 'cross_env_footer_layout_evidence', 'cross_env_staff_body_evidence',
 		'tb_layout_block_insert', 'tb_layout_block_insert_backup', 'tb_layout_get', 'tb_layout_update', 'tb_layout_update_backup', 'tb_template_create', 'tb_template_create_body', 'tb_template_list',
+		'tb_layout_update_expected_checksum',
 		'tb_template_trash',
 		// validate
 		'validate_blocks',
@@ -1218,6 +1220,7 @@ class DiviOps_Agent {
 			'permission_callback' => [ __CLASS__, 'check_admin_permission' ],
 			'args'                => [
 				'content' => [ 'required' => true, 'type' => 'string' ],
+				'expected_checksum' => [ 'required' => false, 'type' => 'string', 'pattern' => '^sha256:[a-f0-9]{64}$' ],
 				'dry_run' => [ 'required' => false, 'type' => 'boolean', 'default' => false ],
 				'backup'  => [ 'required' => false, 'type' => 'boolean', 'default' => false ],
 			],
@@ -1603,6 +1606,7 @@ class DiviOps_Agent {
 			'permission_callback' => [ __CLASS__, 'check_write_permission' ],
 			'args'                => [
 				'id'         => [ 'required' => true ],
+				'expected_checksum' => [ 'required' => false, 'type' => 'string', 'pattern' => '^sha256:[a-f0-9]{64}$' ],
 				'label'      => [
 					'required'    => false,
 					'type'        => 'string',

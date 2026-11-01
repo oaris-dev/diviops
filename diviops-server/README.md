@@ -8,7 +8,17 @@ The Node.js MCP server inside the DiviOps harness. It gives Claude Code, Codex, 
 Claude Code <-> MCP Server (stdio) <-> WordPress REST API <-> DiviOps Agent plugin
 ```
 
-## MCP 1.5.75 source candidate
+## MCP 1.5.76 source candidate
+
+Adds optional `expected_checksum` to module and Theme Builder layout updates.
+Pair with Free Agent **1.5.50** and reconnect to refresh capability evidence.
+MCP refuses guarded requests before dispatch when the required Agent capability
+is absent. Omitting the checksum retains the legacy contract. This is optimistic compare-before-write, not an
+atomic lock. A concurrent edit after the final comparison can still race.
+Existing permissions, validation, backup, recovery and client qualification
+limits remain unchanged. Publication and installation are separate steps.
+
+## MCP 1.5.75 historical release note
 
 Adds explicit tool hints for seven existing onboarding tools. Block validation,
 page and layout reads, variable listing and preset auditing are marked read-only.

@@ -16,6 +16,34 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 trait DiviOps_Agent_Core {
 
+	/** Optional optimistic content binding; comparison and WordPress write are not atomic. */
+	private static function expected_post_content_checksum_error( $post, $expected, string $namespace, bool $fresh = false ) {
+		if ( null === $expected ) {
+			return null;
+		}
+		if ( ! is_string( $expected ) || 1 !== preg_match( '/\Asha256:[a-f0-9]{64}\z/', $expected ) ) {
+			return new WP_Error( 'invalid_input', 'expected_checksum must be a lowercase SHA-256 content checksum.', [
+				'status' => 400,
+				'hint' => 'Read the owning post with diviops_page_get and pass its exact content_checksum.',
+				'field' => 'expected_checksum',
+				'mutated' => false,
+			] );
+		}
+		$content = $fresh ? self::page_content_read_uncached( (int) $post->ID ) : (string) $post->post_content;
+		$current = null === $content ? null : 'sha256:' . hash( 'sha256', $content );
+		if ( null === $current || ! hash_equals( $expected, $current ) ) {
+			return new WP_Error( $namespace . '.content_drift', 'The owning post content changed or could not be read.', [
+				'status' => 409,
+				'hint' => 'Re-read diviops_page_get and review the new content before retrying. There is no force path.',
+				'post_id' => (int) $post->ID,
+				'expected_checksum' => $expected,
+				'current_checksum' => $current,
+				'mutated' => false,
+			] );
+		}
+		return null;
+	}
+
 	/** Native names remain supported; extension names require Divi's own registration. */
 	private static function is_supported_divi_module( string $name ): bool {
 		if ( 0 === strpos( $name, 'divi/' ) ) return true;

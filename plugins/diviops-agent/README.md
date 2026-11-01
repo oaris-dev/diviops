@@ -8,7 +8,13 @@ Divi is a registered trademark of Elegant Themes, Inc. DiviOps Agent is not affi
 
 > **Don't use this plugin standalone** — it's the WordPress side of a two-piece suite; install + configure the [DiviOps MCP Server](../../../diviops-server/) next.
 
-## 1.5.49 candidate release note
+## 1.5.50 candidate release note
+
+- Adds optional reviewed-content checksum guards to module and Theme Builder layout updates. Stale content, including same-length edits, refuses before backup or mutation; omission retains the legacy contract.
+- Preserves authorization, serialization, scoped recovery and unrelated module content. This is optimistic compare-before-write, not an atomic lock; later concurrent writes can still race.
+- Pair with MCP 1.5.76 and reconnect after supported updates. Existing client and runtime qualification limits remain unchanged.
+
+## 1.5.49 historical release note
 
 - Reports nonempty module updates whose requested values are already stored as no-ops, without another write, cache invalidation or snapshot.
 - Reports recovery as restored only when restoration is verified; an unverified restore remains a failed write. Existing permission, validation and recovery safeguards remain unchanged.
@@ -241,6 +247,37 @@ write contract when the guard is omitted. The precise
 `page_update_content_expected_checksum` capability distinguishes enforcement
 from older Free versions that only advertise the base writer. The packaged plugin is syntax- and
 startup-tested across PHP 7.4, 8.0, 8.1, 8.2, and 8.3 before publication.
+
+### Optional targeted-write checksum binding
+
+`module_update` and `tb_layout_update` accept optional `expected_checksum`:
+`sha256:` followed by 64 lowercase hexadecimal characters, hashing the exact
+owning post's `post_content` bytes. Read `content_checksum` with
+`diviops_page_get`, using the page or Theme Builder layout post ID. A module
+checksum is not a checksum of only its selected attributes. The Theme Builder
+writer still replaces the full supplied content; it does not merge layouts.
+
+The Agent compares the reviewed checksum to the content used to prepare the
+operation, then checks uncached database content before preview/no-op or backup
+and mutation. Module apply rechecks after serialization as well. Mismatch or an
+unavailable fresh row returns HTTP 409 (`module.content_drift` or
+`tb.content_drift`, `mutated:false`) before this handler creates a backup,
+writes content, or invalidates caches. Invalid checksum syntax returns HTTP 400.
+Successful previews reserve nothing: apply must pass the same checksum and
+revalidate it. Module no-ops remain no-ops. Omission retains the legacy contract.
+
+This is an optimistic compare-before-write guarantee, **not an atomic
+compare-and-swap, transaction, or shared lock**. A concurrent write after the
+last comparison, including during backup/save hooks, can still race. Existing
+serialization checks, WordPress readback verification and recovery remain in
+place; they do not establish atomicity. Changes by other writers are not covered
+by `mutated:false`, which describes this handler's rejected operation.
+
+The precise `module_update_expected_checksum` and
+`tb_layout_update_expected_checksum` handshake capabilities advertise enforcement.
+MCP refuses a guarded request when its capability is absent, without dispatch or
+automatic fallback. Existing permission tiers and object checks are unchanged.
+This feature does not establish native qualification.
 
 Before a WordPress.org submission, validate the readme and plugin package:
 
