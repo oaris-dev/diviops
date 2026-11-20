@@ -4,6 +4,7 @@ Structured as a 3-tier classification: universal decoration (Tier 1), shared pat
 
 ## Table of Contents
 
+- [Component instances and Slots](#component-instances-and-slots)
 - [Tier 1 — Common Decoration](#tier-1--common-decoration-all-modules) — border, background, spacing, sizing, animation, scroll
   - [Key rules](#key-rules) — hover nesting, responsive, defaults, sync fields
   - [Universal Element Decoration](#universal-element-decoration-composable-settings) — any element, not just module
@@ -22,6 +23,12 @@ Structured as a 3-tier classification: universal decoration (Tier 1), shared pat
 - Loop & Dynamic Content (Pro)
 - Interactions (Pro)
 - [Charts](#charts-divi-511-source-adopted-runtime-pending) — source-adopted Free schema; runtime proof pending
+
+## Component instances and Slots
+
+For read-only inspection in Divi 5.19.1, check the shared Divi Library definition’s `localChildren` setting. With `localChildren=true`, inspect the saved component reference on the owner page. A self-closing reference has no child snapshot and inherits the template’s children. A paired reference supplies its own snapshot. An empty pair selects zero children. A populated pair supplies the instance’s children. With `localChildren=false` (the default), Divi uses the template structure, including its `divi/global-slot` shells and their preset bindings. It matches any Slot payloads in the instance snapshot to those shells by `slotId`, so two instances can show different children in the same Slot.
+
+Identify the owner page, the specific instance and its library definition before interpreting a slot. Resolve the slot ID within that instance, stopping at a nested component. A missing payload can render the slot empty. Duplicate IDs within one instance make the intended target ambiguous. If the owner or the payload is ambiguous, stop before editing. The page checksum covers only the saved page; a separate library edit can change what the instance inherits.
 
 ## Tier 1 — Common Decoration (all modules)
 
@@ -410,7 +417,7 @@ tiers remain unchanged.
 
 > Generated mechanically by `diviops-server/scripts/regen-module-formats.mjs` from `diviops_schema_get_module` dump-all output. Each module block lives between `BEGIN GENERATED:module:divi/<slug>` / `END GENERATED:module:divi/<slug>` HTML-comment sentinels (see `diviops-server/CONTRIBUTING.md` for the full convention). Do **not** edit between sentinels — edits are clobbered on regen.
 
-> Generated against Divi `5.13.1`, schema `4ae1b5c87949…`.
+> Generated against Divi `5.19.1`, schema `adba199f8b8c…`.
 
 Per CLAUDE.md "Suite architecture coherence": schema dump is the canonical index; VB-verified prose above is the canonical interpretation. The two sections are complementary, not competing — prose explains surprises, this index enumerates paths exhaustively. On conflicts, the prose above wins (per `feedback_vb_first_verification`).
 

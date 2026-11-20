@@ -1,6 +1,6 @@
 # MCP Tool Reference
 
-Curated Divi-builder authoring subset. The full DiviOps server currently registers 114 tools: 91 always-on tools (80 plugin-routed + 11 local) and 23 conditional Pro tools. See [`diviops-server/README.md`](../../../../diviops-server/README.md) for the complete inventory. SCF coverage lives in the [diviops-scf/](../../diviops-scf/SKILL.md) skill; cross-cutting harness conventions (response envelope, capability handshake, `dry_run` plan shape, idempotency) live in the [diviops/](../../diviops/SKILL.md) primer skill.
+Curated Divi-builder authoring subset. Use `diviops_meta_info` to check which tools are registered for the connected site. See [`diviops-server/README.md`](../../../../diviops-server/README.md) for the complete inventory. SCF coverage lives in the [diviops-scf/](../../diviops-scf/SKILL.md) skill; cross-cutting harness conventions (response envelope, capability handshake, `dry_run` plan shape, idempotency) live in the [diviops/](../../diviops/SKILL.md) primer skill.
 
 ## Divi 5.12.1 vendor boundary (source-proven)
 
@@ -98,6 +98,7 @@ All namespaces have adopted the envelope as of the last wave (`module_*` + `sect
 - `diviops_schema_get_settings` / `diviops_global_color_list` / `diviops_global_font_list` — site config. `diviops_global_font_list` always returns `{count, fonts}` even on empty substrates (never bare `false`)
 - `diviops_meta_find_icon` — search 1,989 icons by keyword (returns unicode, type, weight)
 - `diviops_module_get` — inspect one module by `auto_index`, `label`, or `match_text` (use `occurrence` for duplicate labels); compact metadata by default, `full: true` adds the selected module's attrs and raw markup
+- `diviops_component_slot_preview` — inspect a saved component Slot by `page_id`, `definition_id` and exact `slot_id`. If the page has several instances of that definition, add the one-based `instance_index` in page order. Read the shell and child sources separately. The two content checksums identify the page and definition used for the preview.
 - `diviops_section_get` — get a section's markup by admin label or text content
 - `diviops_template_list` / `diviops_template_get` — load verified block markup templates
 - `diviops_preset_audit` — audit presets with referenced/unreferenced analysis (exposes `block_ref_count`, `group_ref_count`, `referenced_by_presets` chain)
