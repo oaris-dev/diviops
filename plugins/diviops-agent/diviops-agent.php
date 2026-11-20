@@ -3,7 +3,7 @@
  * Plugin Name: DiviOps Agent
  * Plugin URI: https://diviops.com/
  * Description: REST API bridge for DiviOps — connects Claude Code to your Divi 5 site for AI-powered page building and design management.
- * Version: 1.5.50
+ * Version: 1.5.51
  * Author: oaris.de
  * Author URI: https://oaris.de
  * Text Domain: diviops-agent
@@ -24,6 +24,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 require_once __DIR__ . '/includes/trait-canvas.php';
 require_once __DIR__ . '/includes/trait-authoring-shape.php';
 require_once __DIR__ . '/includes/trait-compatibility.php';
+require_once __DIR__ . '/includes/trait-component.php';
 require_once __DIR__ . '/includes/trait-core.php';
 require_once __DIR__ . '/includes/trait-global-color.php';
 require_once __DIR__ . '/includes/trait-global-font.php';
@@ -54,6 +55,7 @@ class DiviOps_Agent {
 	use DiviOps_Agent_Canvas;
 	use DiviOps_Agent_AuthoringShape;
 	use DiviOps_Agent_Compatibility;
+	use DiviOps_Agent_Component;
 	use DiviOps_Agent_Core;
 	use DiviOps_Agent_GlobalColor;
 	use DiviOps_Agent_GlobalFont;
@@ -78,7 +80,7 @@ class DiviOps_Agent {
 	 * Plugin version — surfaced in /handshake for self-diagnosis only;
 	 * server no longer gates on it (capability map is the gate).
 	 */
-	const VERSION = '1.5.50';
+	const VERSION = '1.5.51';
 
 	/**
 	 * Minimum MCP server version this plugin is compatible with.
@@ -107,6 +109,8 @@ class DiviOps_Agent {
 	const CAPABILITIES = [
 		// canvas
 		'canvas_create', 'canvas_delete', 'canvas_duplicate', 'canvas_get', 'canvas_list', 'canvas_orphan_audit', 'canvas_update',
+		// saved component inspection
+		'component_slot_preview',
 		// global colors / fonts
 		'global_color_audit_storage', 'global_color_create', 'global_color_delete', 'global_color_list', 'global_color_update',
 		'global_font_audit_storage', 'global_font_create', 'global_font_delete', 'global_font_list', 'global_font_update',
@@ -233,6 +237,21 @@ class DiviOps_Agent {
 		add_filter( 'rest_post_dispatch', [ __CLASS__, 'wrap_rest_framework_validation_errors' ], 10, 3 );
 		add_action( 'admin_menu', [ __CLASS__, 'register_admin_page' ] );
 		add_action( 'admin_enqueue_scripts', [ __CLASS__, 'enqueue_admin_styles' ] );
+		add_action( 'wp_footer', [ __CLASS__, 'print_builder_slot_adapter' ], 9999 );
+	}
+
+	/** Load the saved-data preview only in the editable page's Divi Builder app frame. */
+	public static function print_builder_slot_adapter() {
+		if ( ! is_page() || ! is_callable( [ '\ET\Builder\Framework\Utility\Conditions', 'is_vb_app_window' ] )
+			|| ! \ET\Builder\Framework\Utility\Conditions::is_vb_app_window()
+			|| version_compare( self::divi_runtime_version_for_compatibility(), '5.19.1', '<' )
+			|| ! self::check_read_permission() || ! current_user_can( 'edit_post', get_queried_object_id() ) ) {
+			return;
+		}
+
+		wp_print_script_tag( [
+			'src' => add_query_arg( 'ver', self::VERSION, plugins_url( 'assets/builder-slot-preview.js', __FILE__ ) ),
+		] );
 	}
 
 	/**
@@ -1141,6 +1160,17 @@ class DiviOps_Agent {
 		] );
 
 		// ── Library Operations ───────────────────────────────────────
+
+		register_rest_route( self::REST_NAMESPACE, '/component/slot-preview/(?P<id>\d+)', [
+			'methods'             => 'GET',
+			'callback'            => [ __CLASS__, 'component_slot_preview' ],
+			'permission_callback' => [ __CLASS__, 'check_read_permission' ],
+			'args'                => [
+				'definition_id'  => [ 'required' => true, 'type' => 'integer', 'minimum' => 1 ],
+				'slot_id'        => [ 'required' => true, 'type' => 'string', 'minLength' => 1 ],
+				'instance_index' => [ 'required' => false, 'type' => 'integer', 'minimum' => 1 ],
+			],
+		] );
 
 		register_rest_route( self::REST_NAMESPACE, '/library/items', [
 			'methods'             => 'GET',

@@ -3,7 +3,7 @@ Contributors: diviops
 Tags: divi, mcp, ai, rest-api, site-builder
 Requires at least: 6.5
 Tested up to: 7.1
-Stable tag: 1.5.50
+Stable tag: 1.5.51
 Requires PHP: 7.4
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -109,6 +109,11 @@ No. Free includes the core site-authoring bridge described above. Selected advan
 2. An agent-authored page open in the Divi 5 Visual Builder, with the native Heading module content controls available for continued editing. Divi is a separate required product.
 
 == Changelog ==
+
+= 1.5.51 =
+
+* Shows whether a saved Slot shell and its immediate children come from the shared definition or the selected page instance. Specify the instance when several share the same definition. WordPress checks access to both records.
+* Inspect the saved shell and ordered children of a Divi component Slot. In Divi 5.19.1, Builder Ask can use the read-only preview after first-use trust approval. For MCP clients, pair with DiviOps MCP Server 1.5.77.
 
 = 1.5.50 =
 
@@ -364,6 +369,10 @@ No. Free includes the core site-authoring bridge described above. Selected advan
 * Keeps `Stable tag` aligned with the plugin header version.
 
 == Upgrade Notice ==
+
+= 1.5.51 =
+
+Inspect the saved shell and ordered children of a Divi component Slot. In Divi 5.19.1, Builder Ask can use the read-only preview after first-use trust approval. For MCP clients, pair with DiviOps MCP Server 1.5.77.
 
 = 1.5.50 =
 

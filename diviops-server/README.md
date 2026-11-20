@@ -8,7 +8,11 @@ The Node.js MCP server inside the DiviOps harness. It gives Claude Code, Codex, 
 Claude Code <-> MCP Server (stdio) <-> WordPress REST API <-> DiviOps Agent plugin
 ```
 
-## MCP 1.5.76 source candidate
+## MCP 1.5.77 release note
+
+Use `diviops_component_slot_preview` with DiviOps Agent 1.5.51 on Divi 5.19.1 to inspect a saved component Slot. Supply the page ID, shared definition ID, Slot ID and, when needed, the one-based instance index. The result identifies the owners of the shell and its ordered immediate children and includes checksums for both saved records. Reconnect the MCP client after updating to refresh its tool list.
+
+## MCP 1.5.76 historical release note
 
 Adds optional `expected_checksum` to module and Theme Builder layout updates.
 Pair with Free Agent **1.5.50** and reconnect to refresh capability evidence.

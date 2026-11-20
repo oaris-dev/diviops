@@ -1783,6 +1783,27 @@ registerPluginTool(
 );
 
 registerPluginTool(
+  "diviops_component_slot_preview",
+  {
+    description: "Inspect one saved Divi component Slot. Returns its shell and child sources, ordered child modules, and checksums for the page and Divi Library definition. Provide the exact slotId and select an instance_index when the page references the definition more than once.",
+    inputSchema: {
+      page_id: z.number().int().positive(),
+      definition_id: z.number().int().positive(),
+      slot_id: z.string().min(1),
+      instance_index: z.number().int().positive().optional().describe("One-based occurrence of this definition on the page, in document order."),
+    },
+    annotations: { readOnlyHint: true, idempotentHint: true },
+    _meta: { idempotent: "true" },
+  },
+  async ({ page_id, definition_id, slot_id, instance_index }, context) => {
+    const params: Record<string, string> = { definition_id: String(definition_id), slot_id };
+    if (instance_index !== undefined) params.instance_index = String(instance_index);
+    const result = await wp.requestEnveloped(`/component/slot-preview/${page_id}`, { params, signal: context?.signal });
+    return { content: [{ type: "text" as const, text: serializeEnvelope(result, "diviops_component_slot_preview") }] };
+  },
+);
+
+registerPluginTool(
   "diviops_page_settings_get",
   {
     description: "Read ordinary WordPress page background settings: stored values/presence, native defaults and a settings_checksum. These are not computed browser colors. Requires edit permission. No Theme Builder layout or global Theme Options access.",
