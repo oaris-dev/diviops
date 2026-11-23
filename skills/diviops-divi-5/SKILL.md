@@ -44,7 +44,7 @@ Read the right file for the task at hand — don't load everything.
 2. **Always label sections**: `module.meta.adminLabel.desktop.value` on every section
 3. **Label key modules**: Add admin labels to modules you might edit later
 4. **Validate before saving**: Use `diviops_validate_blocks` before `diviops_page_update_content`, `diviops_tb_layout_update`, or `diviops_library_save`
-5. **Use `diviops_meta_find_icon`**: Don't guess icon codes — search by keyword
+5. **Use `diviops_meta_find_icon`** to look up bundled Divi and Font Awesome icon codes by keyword. Uploaded icons and private collections are excluded.
 6. **Prefer VB-native**: Use Divi attributes over CSS whenever possible; for Divi-owned spacing, sizing, and visibility issues, find the native setting before reaching for CSS
 7. **Font inheritance**: Set global fonts via theme options, skip explicit `family` on modules
 8. **Use semantic HTML**: Set `elementType` for SEO/accessibility (`header`, `nav`, `main`, `article`, `footer`)

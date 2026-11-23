@@ -8,7 +8,13 @@ The Node.js MCP server inside the DiviOps harness. It gives Claude Code, Codex, 
 Claude Code <-> MCP Server (stdio) <-> WordPress REST API <-> DiviOps Agent plugin
 ```
 
-## MCP 1.5.77 release note
+## MCP 1.5.78 release note
+
+Pair with DiviOps Agent 1.5.52 for guarded canvas content replacement. Read the canvas post ID with `diviops_page_get` and reuse its `content_checksum` as `expected_checksum` on dry run and apply. The guard requires Agent support. A concurrent write can still occur after comparison.
+
+Icon lookup searches bundled Divi and Font Awesome icons. For a Theme Builder edit, inspect the published templates that reference the layout ID and reuse the reviewed layout checksum on apply.
+
+## MCP 1.5.77 historical release note
 
 Use `diviops_component_slot_preview` with DiviOps Agent 1.5.51 on Divi 5.19.1 to inspect a saved component Slot. Supply the page ID, shared definition ID, Slot ID and, when needed, the one-based instance index. The result identifies the owners of the shell and its ordered immediate children and includes checksums for both saved records. Reconnect the MCP client after updating to refresh its tool list.
 

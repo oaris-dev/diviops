@@ -3,7 +3,7 @@
  * Plugin Name: DiviOps Agent
  * Plugin URI: https://diviops.com/
  * Description: REST API bridge for DiviOps — connects Claude Code to your Divi 5 site for AI-powered page building and design management.
- * Version: 1.5.51
+ * Version: 1.5.52
  * Author: oaris.de
  * Author URI: https://oaris.de
  * Text Domain: diviops-agent
@@ -80,7 +80,7 @@ class DiviOps_Agent {
 	 * Plugin version — surfaced in /handshake for self-diagnosis only;
 	 * server no longer gates on it (capability map is the gate).
 	 */
-	const VERSION = '1.5.51';
+	const VERSION = '1.5.52';
 
 	/**
 	 * Minimum MCP server version this plugin is compatible with.
@@ -109,6 +109,7 @@ class DiviOps_Agent {
 	const CAPABILITIES = [
 		// canvas
 		'canvas_create', 'canvas_delete', 'canvas_duplicate', 'canvas_get', 'canvas_list', 'canvas_orphan_audit', 'canvas_update',
+		'canvas_update_expected_checksum',
 		// saved component inspection
 		'component_slot_preview',
 		// global colors / fonts
@@ -1933,17 +1934,23 @@ class DiviOps_Agent {
 			'permission_callback' => [ __CLASS__, 'check_read_permission' ],
 		] );
 
-		register_rest_route( self::REST_NAMESPACE, '/canvas/update/(?P<id>\d+)', [
+		$canvas_update_route = [
 			'methods'             => 'POST',
 			'callback'            => [ __CLASS__, 'canvas_update' ],
 			'permission_callback' => [ __CLASS__, 'check_write_permission' ],
 			'args'                => [
+				'expected_checksum' => [ 'required' => false, 'type' => 'string', 'pattern' => '^sha256:[a-f0-9]{64}$' ],
 				'content'        => [ 'required' => false, 'type' => 'string' ],
 				'title'          => [ 'required' => false, 'type' => 'string' ],
 				'append_to_main' => [ 'required' => false, 'type' => 'string' ],
 				'z_index'        => [ 'required' => false, 'type' => 'integer' ],
 			],
-		] );
+		];
+		register_rest_route( self::REST_NAMESPACE, '/canvas/update/(?P<id>\d+)', $canvas_update_route );
+		// A previously connected MCP client must fail closed if the site downgrades.
+		$canvas_update_route['args']['expected_checksum']['required'] = true;
+		$canvas_update_route['args']['content']['required'] = true;
+		register_rest_route( self::REST_NAMESPACE, '/canvas/update-reviewed/(?P<id>\d+)', $canvas_update_route );
 
 		register_rest_route( self::REST_NAMESPACE, '/canvas/delete/(?P<id>\d+)', [
 			'methods'             => 'POST',

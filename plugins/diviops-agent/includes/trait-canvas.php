@@ -1130,6 +1130,11 @@ trait DiviOps_Agent_Canvas {
 		$append_to_main = $request->get_param( 'append_to_main' );
 		$z_index        = $request->get_param( 'z_index' );
 
+		$expected_checksum = $request->get_param( 'expected_checksum' );
+		if ( null !== $expected_checksum && null === $content ) {
+			return self::envelope_error( 'invalid_input', 'expected_checksum requires a content replacement.', null, 400 );
+		}
+
 		// Reject no-op payloads. The handler structure independently null-checks
 		// each field, so a payload with no actionable params would silently
 		// return success without touching the canvas. Catch the mistake at the
@@ -1175,6 +1180,11 @@ trait DiviOps_Agent_Canvas {
 			$update_args['post_title'] = sanitize_text_field( $title );
 		}
 
+		// Compare the saved bytes after shape validation, before preview or any mutation.
+		$checksum_error = self::expected_post_content_checksum_error( $post, $expected_checksum, 'canvas', true );
+		if ( is_wp_error( $checksum_error ) ) {
+			return self::envelope_from_content_write_error( $checksum_error );
+		}
 		if ( (bool) $request->get_param( 'dry_run' ) ) {
 			$fields = [];
 			if ( null !== $content ) {

@@ -3,7 +3,7 @@ Contributors: diviops
 Tags: divi, mcp, ai, rest-api, site-builder
 Requires at least: 6.5
 Tested up to: 7.1
-Stable tag: 1.5.51
+Stable tag: 1.5.52
 Requires PHP: 7.4
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -109,6 +109,10 @@ No. Free includes the core site-authoring bridge described above. Selected advan
 2. An agent-authored page open in the Divi 5 Visual Builder, with the native Heading module content controls available for continued editing. Divi is a separate required product.
 
 == Changelog ==
+
+= 1.5.52 =
+
+* For canvas content replacement, the Agent can compare the reviewed checksum with fresh saved content on dry run and apply. A stale or unreadable record stops the request before it writes. Permissions and calls that omit the checksum retain their existing behavior. A concurrent edit can still occur between comparison and save.
 
 = 1.5.51 =
 
@@ -369,6 +373,10 @@ No. Free includes the core site-authoring bridge described above. Selected advan
 * Keeps `Stable tag` aligned with the plugin header version.
 
 == Upgrade Notice ==
+
+= 1.5.52 =
+
+Pair with DiviOps MCP Server 1.5.78 to guard canvas content replacements. Supply the reviewed checksum on preview and apply to detect intervening edits. Concurrent edits after comparison can still race.
 
 = 1.5.51 =
 

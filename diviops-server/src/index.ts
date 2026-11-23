@@ -1577,7 +1577,7 @@ registerPluginTool(
   "diviops_meta_find_icon",
   {
     description:
-      "Search for icons by keyword. Returns matching icons with unicode, type (fa/divi), and weight. Use the returned unicode/type/weight in Blurb icon or Icon module attributes. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }.",
+      "Search bundled Divi and Font Awesome icons by keyword. Uploaded icons and private collections are excluded. Returns matching icons with unicode, type (fa/divi), and weight. Use the returned unicode/type/weight in Blurb icon or Icon module attributes. Returns the standardized envelope { ok, data?, error: { code, message, hint? } }.",
     inputSchema: {
       query: z
         .string()
@@ -3516,7 +3516,7 @@ registerPluginTool(
       DRY_RUN_DESC_SUFFIX,
     inputSchema: {
       layout_id: z.number().describe("Layout post ID to update"),
-      expected_checksum: z.string().length(71).regex(/^sha256:[a-f0-9]{64}$/).optional().describe("Optional exact owning post_content checksum from diviops_page_get with the layout ID. Checked on preview/apply; drift is refused. Optimistic comparison, not an atomic lock. Omit for legacy writes."),
+      expected_checksum: z.string().length(71).regex(/^sha256:[a-f0-9]{64}$/).optional().describe("Optional guard for the layout post_content. Page through diviops_tb_template_list to see which published templates reference the target header, body or footer layout ID. Read that ID with diviops_page_get and pass its reviewed content_checksum as expected_checksum on both dry run and apply. Drift is refused. The check covers layout content only and does not lock the record."),
       content: z.string().describe("New block markup content"),
       dry_run: DRY_RUN_FIELD,
       backup: BACKUP_FIELD,
@@ -3904,6 +3904,7 @@ registerPluginTool(
         .string()
         .optional()
         .describe("New block markup (replaces entire content)"),
+      expected_checksum: z.string().length(71).regex(/^sha256:[a-f0-9]{64}$/).optional().describe("For content replacement, read the canvas post ID with diviops_page_get and reuse its content_checksum on dry run and apply. Checks saved content bytes only. Concurrent writes after the comparison are possible."),
       title: z.string().optional().describe("New canvas title"),
       append_to_main: z
         .enum(["above", "below", ""])
@@ -3915,18 +3916,25 @@ registerPluginTool(
     annotations: { idempotentHint: false },
     _meta: { idempotent: "conditional" },
   },
-  async ({ canvas_post_id, content, title, append_to_main, z_index, dry_run }) => {
+  async ({ canvas_post_id, content, title, append_to_main, z_index, dry_run, expected_checksum }) => {
+    const capability = "canvas_update_expected_checksum";
+    if (expected_checksum !== undefined && (handshakeState.kind !== "ok" || handshakeState.capabilities[capability] !== true)) {
+      const version = handshakeState.kind === "ok" ? handshakeState.pluginVersion : undefined;
+      return missingCapabilityEnvelope(new MissingCapabilityError(capability, version), "diviops_canvas_update", { serverVersion: SERVER_VERSION });
+    }
     const isolationGate = writerIsolationErrorResult("diviops_canvas_update", {
       content,
     });
     if (isolationGate) return isolationGate;
     const body: Record<string, unknown> = {};
+    if (expected_checksum !== undefined) body.expected_checksum = expected_checksum;
     if (content !== undefined) body.content = content;
     if (title !== undefined) body.title = title;
     if (append_to_main !== undefined) body.append_to_main = append_to_main;
     if (z_index !== undefined) body.z_index = z_index;
     if (dry_run) body.dry_run = true;
-    const result = await authoringWrite(`/canvas/update/${canvas_post_id}`, "POST", body, "canvas_update", dry_run === true);
+    const route = expected_checksum === undefined ? "update" : "update-reviewed";
+    const result = await authoringWrite(`/canvas/${route}/${canvas_post_id}`, "POST", body, "canvas_update", dry_run === true);
     return {
       content: [
         { type: "text" as const, text: serializeEnvelope(result, "diviops_canvas_update") },
