@@ -8,7 +8,7 @@ Requires PHP: 7.4
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
-Connect Codex or Claude to WordPress through MCP. Build and improve editable Divi 5 pages with the DiviOps AI harness.
+Connect your AI assistant to WordPress to build and maintain native Divi 5 sites. Requires the separate DiviOps MCP server.
 
 == Description ==
 

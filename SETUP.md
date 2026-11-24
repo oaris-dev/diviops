@@ -187,7 +187,7 @@ The example shows a file with just one connection:
 
 ## Step 4: Verify Registration
 
-After configuring the connection, [load the skill for your client](#step-7-load-the-divi-5-builder-skill),
+After configuring the connection, [load the skill for your client](#load-the-divi-5-builder-skill),
 then restart/reconnect and open a fresh session. In Claude Code, `claude mcp list`
 can help inspect registration; in Codex/Desktop, check the selected entry in the
 client's MCP settings. Do not post raw configuration or credential-bearing output.
@@ -206,7 +206,7 @@ stop and explain what needs correcting.
 ```
 
 Confirm the reported target yourself. A connection and capability report do not
-prove the authoring skill loaded; continue only after the [skill/reference check](#step-7-load-the-divi-5-builder-skill)
+prove the authoring skill loaded; continue only after the [skill/reference check](#load-the-divi-5-builder-skill)
 and [native draft verification](#first-run-native-divi-verification).
 After a target, plugin, theme or server change, reconnect and repeat this check;
 an existing session's startup tool catalog can be stale.

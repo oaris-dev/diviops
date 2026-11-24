@@ -1,7 +1,7 @@
 {
   "name": "@diviops/mcp-server",
-  "version": "1.5.78",
-  "description": "MCP server exposing Divi 5 Visual Builder as tools for Claude",
+  "version": "1.5.79",
+  "description": "MCP server for Divi 5 on WordPress. List pages, inspect presets and edit native Divi modules through the DiviOps Agent plugin.",
   "type": "module",
   "main": "dist/index.js",
   "bin": {

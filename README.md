@@ -154,7 +154,7 @@ claude plugin marketplace add /absolute/path/to/diviops
 claude plugin install divi-5-builder@diviops
 ```
 
-For alternative skill installation paths (cloned repo, project-local copy), see [SETUP.md](SETUP.md#step-7-load-the-divi-5-builder-skill). For existing installations, follow the [replacement procedure](SETUP.md#replacing-an-existing-builder-skill) before copying: preserve local edits outside discovery roots and retire only the confirmed old copy. Do not leave both builder names discoverable.
+For alternative skill installation paths (cloned repo, project-local copy), see [SETUP.md](SETUP.md#load-the-divi-5-builder-skill). For existing installations, follow the [replacement procedure](SETUP.md#replacing-an-existing-builder-skill) before copying: preserve local edits outside discovery roots and retire only the confirmed old copy. Do not leave both builder names discoverable.
 
 For Codex, run this from the extracted DiviOps distribution or a local repo clone, then restart Codex:
 
