@@ -1,3 +1,4 @@
+import { PRIMARY_MENU_NOTE, planMenus, type MenuMapping, type MenuSource, type MenuTarget } from "./menus.js";
 import { createHash } from "node:crypto";
 
 export type CrossEnvObjectKind = "tb_header_layout";
@@ -15,7 +16,7 @@ export interface SourceAttachmentInventoryItem {
   mime?: string;
 }
 
-export interface SourceLayoutPayload {
+export interface SourceLayoutPayload extends MenuSource {
   origin: string;
   object_kind: CrossEnvObjectKind | string;
   object_id?: number | string;
@@ -44,7 +45,7 @@ export interface Sha256Checksum {
   input?: string;
 }
 
-export interface TargetLayoutContext {
+export interface TargetLayoutContext extends MenuTarget {
   origin: string;
   destination_kind: CrossEnvObjectKind | string;
   destination_id?: number | string;
@@ -160,6 +161,7 @@ export interface CrossEnvHeaderPreflightReport {
     off_canvas: OffCanvasReference[];
   };
   rewrite_plan: {
+    menus?: MenuMapping[];
     url_rewrites: Array<{ from: string; to: string }>;
     attachment_replacements: Array<{
       from_source_id: number;
@@ -181,7 +183,7 @@ export interface CrossEnvHeaderPreflightReport {
   operator_actions: PreflightIssue[];
   notes: string[];
   confirmation_binding: {
-    schema: "diviops.cross_env.header_preflight.confirmation_binding.v1";
+    schema: "diviops.cross_env.header_preflight.confirmation_binding.v1" | "diviops.cross_env.header_preflight.confirmation_binding.v2";
     algorithm: "sha256";
     fingerprint: string;
     input: Record<string, unknown>;
@@ -896,7 +898,7 @@ function buildConfirmationBinding(
         }
       : {}),
   };
-  const schema = "diviops.cross_env.header_preflight.confirmation_binding.v1" as const;
+  const schema = report.rewrite_plan.menus ? "diviops.cross_env.header_preflight.confirmation_binding.v2" as const : "diviops.cross_env.header_preflight.confirmation_binding.v1" as const;
   const fingerprint = sha256(canonicalJson({ schema, input }));
 
   return {
@@ -1088,6 +1090,8 @@ export function preflightCrossEnvHeaderSync(
     .filter((attachment) => attachment.status !== "proven_remap")
     .map((attachment) => attachment.source_id);
 
+  const menus = planMenus(input.source, input.target);
+  blockers.push(...menus.blockers);
   const verdict: CrossEnvVerdict =
     blockers.length > 0
       ? "refused"
@@ -1130,6 +1134,7 @@ export function preflightCrossEnvHeaderSync(
       off_canvas: offCanvas,
     },
     rewrite_plan: {
+      ...(menus.mappings.length || menus.blockers.length ? { menus: menus.mappings } : {}),
       url_rewrites: urlRewrites,
       attachment_replacements: attachmentReplacements,
       third_party_urls_kept: urls
@@ -1143,6 +1148,7 @@ export function preflightCrossEnvHeaderSync(
     blockers,
     operator_actions: operatorActions,
     notes: [
+      ...(menus.refs.some(ref => ref.selection === "primary_location") ? [PRIMARY_MENU_NOTE] : []),
       "Preflight only: no WordPress write/apply path exists in this slice.",
       "The rewrite plan is descriptive and does not mutate markup.",
       "Fail-closed behavior is intentional for missing attachment remaps, missing gcid definitions, and off-canvas wiring.",

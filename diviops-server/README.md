@@ -300,7 +300,13 @@ Workflow:
 1. Call `diviops_cross_env_source_export_get` on the source site and save the
    returned `data` object as `source.json`.
 2. Call `diviops_cross_env_target_context_get` on the target site and save the
-   returned `data` object as `target.json`.
+   returned `data` object as `target.json`. An absent menu ID or empty desktop value in a header
+   or footer uses the destination's primary menu location. For explicit menu IDs,
+   pass the names from `source.json`'s `menus` as `source_menu_names`. Review the
+   source and destination term IDs and match method. If a name has zero or
+   multiple matches, inspect the menus, repeat the source export with explicit
+   `menu_targets` (for example `{"2":3}`), and pass those destination IDs as
+   `target_menu_ids` when collecting fresh target context.
 3. Run `diviops-cross-env-preflight --source source.json --target target.json --dry-run --contract layout-v1`
    for `diviops_cross_env_layout_apply`. Omit the contract flag (or select
    `header-v1`) only for the compatibility header apply tool.
@@ -513,6 +519,10 @@ Common quick fixes — full reference in [troubleshooting.md](../docs/troublesho
 - For published server versions, run `npm view @diviops/mcp-server versions --json`. [npm registry metadata](https://registry.npmjs.org/@diviops%2fmcp-server)
 - For plugin and skill updates shipped alongside the server, see the [public distribution releases](https://github.com/oaris-dev/diviops/releases).
 - The [archive through MCP 1.5.77](https://github.com/oaris-dev/diviops/blob/v1.5.95/diviops-server/README.md#mcp-1577-release-note) preserves the original version notes and their qualification limits. The 1.5.67 note refers to the [WP-CLI command tiers](https://github.com/oaris-dev/diviops/blob/main/SETUP.md#wp-cli-security).
+
+### MCP 1.5.80 release note
+
+Pair with Agent Pro 1.0.20-beta to review navigation menus when transferring an existing Theme Builder header or footer between sites. The plan matches explicit menus by a unique name or a destination you select. It identifies menus that follow the destination’s primary theme location. Apply refuses an explicit selection when either side cannot verify the reviewed mapping.
 
 ### MCP 1.5.79 release note
 

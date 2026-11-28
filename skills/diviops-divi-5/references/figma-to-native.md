@@ -41,7 +41,7 @@ breakpoints or correspond directly to Divi's phone/tablet/desktop.
   omit the action or make it noninteractive with agreement. A section jump is not
   an archive, contact service or player; a static episode badge is not a live feed.
 - Use the manual [module formats](module-formats.md) for Image spacing/sizing/fit,
-  [sticky](module-formats.md#sticky) and [flex order](module-formats.md#order-flex-order).
+  sticky positioning and flex order (the latter two sections are in the full reference).
   Check narrow-screen child widths, crop dimensions and sticky-anchor visibility,
   not just whether blocks validate. Keep any header/footer page-local unless a
   shared Theme Builder change is explicitly part of the request.

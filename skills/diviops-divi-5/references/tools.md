@@ -1,6 +1,6 @@
 # MCP Tool Reference
 
-Curated Divi-builder authoring subset. Use `diviops_meta_info` to check which tools are registered for the connected site. See [`diviops-server/README.md`](../../../../diviops-server/README.md) for the complete inventory. SCF coverage lives in the [diviops-scf/](../../diviops-scf/SKILL.md) skill; cross-cutting harness conventions (response envelope, capability handshake, `dry_run` plan shape, idempotency) live in the [diviops/](../../diviops/SKILL.md) primer skill.
+Curated Divi-builder authoring subset. Use `diviops_meta_info` to check which tools are registered for the connected site. See [public MCP server README](https://github.com/oaris-dev/diviops/blob/main/diviops-server/README.md) for the complete inventory. If the separate SCF skill is installed, use it for SCF coverage. Cross-cutting harness conventions (response envelope, capability handshake, `dry_run` plan shape, idempotency) live in the [diviops/](../../diviops/SKILL.md) primer skill.
 
 ## Divi 5.12.1 vendor boundary (source-proven)
 
@@ -20,8 +20,6 @@ The vendor AI Agent tool definitions changed materially in 5.12.1. Rediscover
 the current tools before any separately authorized AI workflow; older
 `add_module` / `edit_module_attribute` recipes are not a current contract.
 This is not a change to the DiviOps tool inventory or proof of hosted-AI behavior.
-See the [source-diff audit](../../../../docs/divi-version-audits/divi-5.12.1-audit.md)
-for evidence and pending runtime gates.
 
 ## Response shape
 

@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { PRIMARY_MENU_NOTE, type MenuMapping } from "./menus.js";
 import { staffCanonical, staffSourceProof, validStaffTarget } from "./staff-body.js";
 import {
   preflightCrossEnvHeaderSync,
@@ -73,6 +74,7 @@ export interface CrossEnvThemeBuilderLayoutPreflightReport {
     rewrite_scope: "same_origin_wp_uploads_only";
   };
   rewrite_plan: {
+    menus?: MenuMapping[];
     url_rewrites: Array<{ from: string; to: string }>;
     attachment_replacements: Array<{
       from_source_id: number;
@@ -90,7 +92,7 @@ export interface CrossEnvThemeBuilderLayoutPreflightReport {
   operator_actions: PreflightIssue[];
   notes: string[];
   confirmation_binding: {
-    schema: "diviops.cross_env.theme_builder_layout_preflight.confirmation_binding.v1";
+    schema: "diviops.cross_env.theme_builder_layout_preflight.confirmation_binding.v1" | "diviops.cross_env.theme_builder_layout_preflight.confirmation_binding.v2";
     algorithm: "sha256";
     fingerprint: string;
     input: Record<string, unknown>;
@@ -148,9 +150,7 @@ function replaceCacheDestinationKind(
 export function preflightCrossEnvThemeBuilderLayoutSync(
   input: CrossEnvThemeBuilderLayoutPreflightInput,
 ): CrossEnvThemeBuilderLayoutPreflightReport {
-  // The shipped header-v1 engine remains the immutable compatibility analyzer.
-  // The generic contract reuses its hazard inventory while owning a distinct
-  // report and fingerprint namespace.
+  // Reuse header dependency resolution with a layout-specific fingerprint namespace.
   const base = preflightCrossEnvHeaderSync({
     source: { ...input.source, object_kind: "tb_header_layout" },
     target: { ...input.target, destination_kind: "tb_header_layout" },
@@ -164,6 +164,9 @@ export function preflightCrossEnvThemeBuilderLayoutSync(
   const targetExpectedType = expectedPostType(targetKind);
   const body = sourceKind === "tb_body_layout" || targetKind === "tb_body_layout";
   if (body) {
+    if (base.rewrite_plan.menus) {
+      blockers.push({ code: "staff_body_menu_unsupported", message: "Staff body promotion cannot verify a menu-bearing recipe." });
+    }
     try {
       if (staffCanonical(staffSourceProof(input.source.markup)) !== staffCanonical(input.source.staff_body)) throw Error("missing or mismatched source proof");
       if (!validStaffTarget(input.target.staff_body, input.target.template_linkage, input.target.destination_id)) throw Error("missing or unsupported target proof");
@@ -271,6 +274,7 @@ export function preflightCrossEnvThemeBuilderLayoutSync(
     blockers,
     operator_actions: operatorActions,
     notes: [
+      ...base.notes.filter(note => note === PRIMARY_MENU_NOTE),
       "Preflight only: Free/core evidence and CLI do not mutate WordPress.",
       "The generic binding is distinct from the shipped header-v1 fingerprint.",
       "Template linkage is drift evidence only and never authorizes assignment mutation.",
@@ -315,7 +319,7 @@ export function preflightCrossEnvThemeBuilderLayoutSync(
     validator_contract: validatorContract,
   };
   const schema =
-    "diviops.cross_env.theme_builder_layout_preflight.confirmation_binding.v1" as const;
+    base.rewrite_plan.menus ? "diviops.cross_env.theme_builder_layout_preflight.confirmation_binding.v2" as const : "diviops.cross_env.theme_builder_layout_preflight.confirmation_binding.v1" as const;
   const canonicalInput = canonicalize(bindingInput) as Record<string, unknown>;
 
   return {

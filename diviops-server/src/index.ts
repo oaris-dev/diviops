@@ -47,6 +47,7 @@ import {
   type CrossEnvThemeBuilderLayoutKind,
 } from "./cross-env-preflight/layout-preflight.js";
 import { crossEnvEvidenceLayoutKinds } from "./cross-env-preflight/layout-capability.js";
+import { menuReferences, readMenus, targetMenuHints, targetMenus } from "./cross-env-preflight/menus.js";
 import { sourceHintsFromPayload } from "./cross-env-source-hints.js";
 import {
   createSourcePayloadRef,
@@ -3390,6 +3391,8 @@ function registerCrossEnvEvidenceTools(): void {
           .describe(
             `Destination kind. Existing ${layoutLabel} layout evidence is supported.${staffNote}`,
           ),
+        source_menu_names: z.array(z.string()).optional().describe("Menu names from the source export; inventories all matching destination menus."),
+        target_menu_ids: z.array(z.number().int().positive()).optional().describe("Explicit destination IDs from the source export menu_targets."),
         source_asset_hints: z
           .array(z.string())
           .optional()
@@ -3414,6 +3417,7 @@ function registerCrossEnvEvidenceTools(): void {
     async ({
       destination_id,
       destination_kind,
+      source_menu_names, target_menu_ids,
       source_asset_hints,
       source_upload_paths,
       source_attachment_ids,
@@ -3431,9 +3435,10 @@ function registerCrossEnvEvidenceTools(): void {
       if (source_attachment_ids && source_attachment_ids.length > 0) {
         body.source_attachment_ids = source_attachment_ids;
       }
-      const result = await wp.requestEnveloped("/cross-env/target-context", {
-        method: "POST",
-        body,
+      const result = await wrapResponse(async () => {
+        const context = await wp.requestEnveloped<TargetLayoutContext>("/cross-env/target-context", { method: "POST", body });
+        if (context.ok) Object.assign(context.data, await targetMenus(wp, source_menu_names, target_menu_ids));
+        return context;
       });
       return {
         content: [
@@ -3452,6 +3457,7 @@ function registerCrossEnvEvidenceTools(): void {
       description:
         `Export read-only, secret-free source-site payload for an offline cross-environment Theme Builder ${layoutLabel} preflight. Returns exact kind/post-type identity, sanitized markup and checksum, dependency inventories, and a bounded source_payload_ref. Free/core and read-only: no WordPress content, assignment, dependency, or cache mutation.${staffNote}`,
       inputSchema: {
+        menu_targets: z.record(z.string(), z.number().int().positive()).optional().describe("Optional operator-reviewed source menu ID to destination menu ID choices."),
         source_id: z
           .number()
           .int()
@@ -3473,7 +3479,7 @@ function registerCrossEnvEvidenceTools(): void {
       annotations: { idempotentHint: true },
       _meta: { idempotent: "true" },
     },
-    async ({ source_id, source_kind }) => {
+    async ({ source_id, source_kind, menu_targets }) => {
       const withRef = await wrapResponse(async () => {
         const body: Record<string, unknown> = {
           source_id,
@@ -3483,6 +3489,13 @@ function registerCrossEnvEvidenceTools(): void {
           method: "POST",
           body,
         });
+        if (result.ok) {
+          const refs = menuReferences(result.data.markup);
+          if (refs.some(ref => typeof ref.selection === "number")) {
+            result.data.menus = await readMenus(wp, term => refs.some(ref => ref.selection === term.id));
+            if (menu_targets) result.data.menu_targets = menu_targets;
+          }
+        }
         return envelopeMap(result, (data) => ({
           ...data,
           source_payload_ref: createSourcePayloadRef(data),
@@ -5683,7 +5696,7 @@ function registerProTools(): void {
     "diviops_cross_env_header_apply",
     {
       description:
-        "Apply a reviewed cross-environment Theme Builder header payload into an existing target header layout (Pro tier; requires the cross_env Pro module). This first MVP is intentionally narrow: it requires `confirm_apply: true`, either an inline source export payload or a bounded `source_payload_ref` returned by diviops_cross_env_source_export_get, an existing target `destination_id`, and the reviewed `confirmation_binding.fingerprint` from `diviops-cross-env-preflight`. Large real headers should use `source_payload_ref`; inline `source_payload` remains supported for small/disposable tests. The server loads referenced payload bytes from its own `.diviops-tmp/cross-env-source-payloads/` artifact store, verifies checksum, re-exports current target context, reruns the TypeScript preflight engine, refuses fingerprint mismatch, unsafe verdicts, destination checksum drift, missing/ambiguous attachment remaps, missing global-color value evidence, missing target module preset definitions, and off-canvas/canvas references, then calls the Pro route with the verified plan. The Pro route re-loads the destination post, verifies the current checksum again, builds content only from source-origin upload URL rewrites and proven attachment-ID remaps, writes with readback/rollback evidence, and runs Divi static-resource cleanup plus explicit _divi_dynamic_assets_cached_feature_used cleanup. No media upload/import, global-color creation/import, preset import/clone, new layout creation, off-canvas reconcile, public/store/license change, or live-site smoke is performed by this tool. Returns the standardized envelope { ok, data?, error: { code, message, hint?, data? } }. Error codes include cross_env.confirmation_required, cross_env.source_payload_ref_invalid, cross_env.fingerprint_mismatch, cross_env.preflight_not_safe, cross_env.destination_checksum_drift, cross_env.source_checksum_mismatch, cross_env.content_write_corruption, invalid_input, not_found, forbidden, and wp_error.",
+        "Apply a reviewed cross-environment Theme Builder header payload into an existing target header layout (Pro tier; requires the cross_env Pro module). This first MVP is intentionally narrow: it requires `confirm_apply: true`, either an inline source export payload or a bounded `source_payload_ref` returned by diviops_cross_env_source_export_get, an existing target `destination_id`, and the reviewed `confirmation_binding.fingerprint` from `diviops-cross-env-preflight`. Large real headers should use `source_payload_ref`; inline `source_payload` remains supported for small/disposable tests. The server loads referenced payload bytes from its own `.diviops-tmp/cross-env-source-payloads/` artifact store, verifies checksum, re-exports current target context, reruns the TypeScript preflight engine, refuses fingerprint mismatch, unsafe verdicts, destination checksum drift, missing/ambiguous attachment remaps, missing global-color value evidence, missing target module preset definitions, off-canvas/canvas references, and unverified navigation menus, then calls the Pro route with the verified plan. The Pro route re-loads the destination post, verifies the current checksum again, builds content from reviewed upload URL, attachment and menu mappings, writes with readback/rollback evidence, and runs Divi static-resource cleanup plus explicit _divi_dynamic_assets_cached_feature_used cleanup. No media upload/import, global-color creation/import, preset import/clone, new layout creation, off-canvas reconcile, public/store/license change, or live-site smoke is performed by this tool. Returns the standardized envelope { ok, data?, error: { code, message, hint?, data? } }. Error codes include cross_env.confirmation_required, cross_env.source_payload_ref_invalid, cross_env.fingerprint_mismatch, cross_env.preflight_not_safe, cross_env.destination_checksum_drift, cross_env.source_checksum_mismatch, cross_env.content_write_corruption, invalid_input, not_found, forbidden, and wp_error.",
       inputSchema: {
         source_payload: CrossEnvHeaderSourcePayloadSchema.optional().describe(
           "The `data` object returned by diviops_cross_env_source_export_get on the source site. Use source_payload_ref instead for large real headers.",
@@ -5791,6 +5804,8 @@ function registerProTools(): void {
           { method: "POST", body: targetBody },
         );
         if (!targetEnvelope.ok) return targetEnvelope;
+        const menuHints = targetMenuHints(resolvedSourcePayload);
+        Object.assign(targetEnvelope.data, await targetMenus(wp, menuHints.names, menuHints.ids));
 
         const report = preflightCrossEnvHeaderSync({
           source: resolvedSourcePayload,
@@ -5977,6 +5992,8 @@ function registerProTools(): void {
           },
         );
         if (!targetEnvelope.ok) return targetEnvelope;
+        const menuHints = targetMenuHints(resolvedSourcePayload);
+        Object.assign(targetEnvelope.data, await targetMenus(wp, menuHints.names, menuHints.ids));
 
         const report = preflightCrossEnvThemeBuilderLayoutSync({
           source: resolvedSourcePayload,
